@@ -2,7 +2,6 @@ package com.helix.common.audit;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -10,7 +9,8 @@ import java.util.Map;
 
 /**
  * Writes immutable audit events. Insert-only by design (PRD §9, §11 governance):
- * there is deliberately no update or delete path.
+ * there is deliberately no update or delete path. Audit writes join the caller's
+ * transaction (SQLite is single-writer), so they share its connection.
  */
 @Service
 public class AuditService {
@@ -25,21 +25,21 @@ public class AuditService {
     }
 
     /** Record an action performed by a named human actor. */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public AuditEvent human(String actor, String eventType, String subjectType, String subjectId,
                             String summary, Map<String, Object> detail) {
         return write(actor, "HUMAN", eventType, subjectType, subjectId, summary, detail);
     }
 
     /** Record an action performed by an AI capability (governed, never credit-binding). */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public AuditEvent ai(String capability, String eventType, String subjectType, String subjectId,
                          String summary, Map<String, Object> detail) {
         return write(capability, "AI", eventType, subjectType, subjectId, summary, detail);
     }
 
     /** Record a deterministic action performed by the engine (capital/ECL computation). */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public AuditEvent engine(String eventType, String subjectType, String subjectId,
                              String summary, Map<String, Object> detail) {
         return write("engine", "SYSTEM", eventType, subjectType, subjectId, summary, detail);

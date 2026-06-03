@@ -1,0 +1,100 @@
+# Helix — full stack on SQLite-per-service.
+# Build jars first:  mvn -DskipTests package
+# Then:              docker compose up --build
+#
+# UI:      http://localhost:8088
+# Gateway: http://localhost:8080
+
+name: helix
+
+x-service-build: &service-build
+  context: .
+  dockerfile: docker/Dockerfile.service
+
+services:
+  config-service:
+    build: { <<: *service-build, args: { SERVICE: config-service } }
+    environment: { SERVER_PORT: "8081" }
+    ports: ["8081:8081"]
+    volumes: ["config-data:/data"]
+
+  counterparty-service:
+    build: { <<: *service-build, args: { SERVICE: counterparty-service } }
+    environment: { SERVER_PORT: "8082" }
+    ports: ["8082:8082"]
+    volumes: ["counterparty-data:/data"]
+
+  origination-service:
+    build: { <<: *service-build, args: { SERVICE: origination-service } }
+    environment: { SERVER_PORT: "8083" }
+    ports: ["8083:8083"]
+    volumes: ["origination-data:/data"]
+
+  risk-service:
+    build: { <<: *service-build, args: { SERVICE: risk-service } }
+    environment:
+      SERVER_PORT: "8084"
+      CONFIG_SERVICE_URL: http://config-service:8081
+      ORIGINATION_SERVICE_URL: http://origination-service:8083
+    ports: ["8084:8084"]
+    volumes: ["risk-data:/data"]
+    depends_on: [config-service, origination-service]
+
+  decision-service:
+    build: { <<: *service-build, args: { SERVICE: decision-service } }
+    environment:
+      SERVER_PORT: "8085"
+      CONFIG_SERVICE_URL: http://config-service:8081
+      ORIGINATION_SERVICE_URL: http://origination-service:8083
+      RISK_SERVICE_URL: http://risk-service:8084
+    ports: ["8085:8085"]
+    volumes: ["decision-data:/data"]
+    depends_on: [config-service, origination-service, risk-service]
+
+  portfolio-service:
+    build: { <<: *service-build, args: { SERVICE: portfolio-service } }
+    environment:
+      SERVER_PORT: "8086"
+      CONFIG_SERVICE_URL: http://config-service:8081
+      ORIGINATION_SERVICE_URL: http://origination-service:8083
+      RISK_SERVICE_URL: http://risk-service:8084
+      DECISION_SERVICE_URL: http://decision-service:8085
+    ports: ["8086:8086"]
+    volumes: ["portfolio-data:/data"]
+    depends_on: [config-service, origination-service, risk-service, decision-service]
+
+  gateway-service:
+    build: { <<: *service-build, args: { SERVICE: gateway-service } }
+    environment:
+      SERVER_PORT: "8080"
+      CONFIG_SERVICE_URL: http://config-service:8081
+      COUNTERPARTY_SERVICE_URL: http://counterparty-service:8082
+      ORIGINATION_SERVICE_URL: http://origination-service:8083
+      RISK_SERVICE_URL: http://risk-service:8084
+      DECISION_SERVICE_URL: http://decision-service:8085
+      PORTFOLIO_SERVICE_URL: http://portfolio-service:8086
+    ports: ["8080:8080"]
+    depends_on:
+      - config-service
+      - counterparty-service
+      - origination-service
+      - risk-service
+      - decision-service
+      - portfolio-service
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_GATEWAY_URL: http://localhost:8080
+    ports: ["8088:80"]
+    depends_on: [gateway-service]
+
+volumes:
+  config-data:
+  counterparty-data:
+  origination-data:
+  risk-data:
+  decision-data:
+  portfolio-data:

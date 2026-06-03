@@ -37,3 +37,6 @@ Thumbs.db
 *.log
 .env
 .env.local
+
+# TS build info
+frontend/tsconfig.tsbuildinfo

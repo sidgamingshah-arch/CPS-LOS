@@ -1,0 +1,11 @@
+# Generic runtime image for any Helix Spring Boot service.
+# Build context is the repo root; pass the module name as SERVICE.
+# Requires the jar to be pre-built: `mvn -DskipTests package`.
+FROM eclipse-temurin:21-jre
+ARG SERVICE
+WORKDIR /app
+ENV HELIX_DATA_DIR=/data
+RUN mkdir -p /data
+COPY ${SERVICE}/target/${SERVICE}.jar /app/app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
