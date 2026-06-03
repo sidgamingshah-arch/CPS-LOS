@@ -60,6 +60,25 @@ public class UpstreamClient {
     public record RiskSummaryDto(String applicationReference, RatingDto rating, CapitalDto capital, PricingDto pricing) {
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record FacilityViewDto(Long id, String reference, int ordinal, boolean primary, String facilityType,
+                                  double amount, String currency, int tenorMonths, String purpose, Double indicativeRate) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record CollateralViewDto(Long id, Long facilityId, String collateralType, String description,
+                                    double marketValue, double haircut, double effectiveValue,
+                                    String perfectionStatus, String valuationDate, String owner) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record DealEnvelopeDto(String applicationReference, String counterpartyName, String jurisdiction,
+                                  String segment, double totalProposedAmount, String currency, int tenorMonths,
+                                  List<FacilityViewDto> facilities, List<CollateralViewDto> collaterals,
+                                  double totalCollateralCover, Map<String, Double> latestFinancials,
+                                  Map<String, Double> ratios) {
+    }
+
     public RulePackDto doaMatrix(String jurisdiction) {
         try {
             return config.get().uri(uri -> uri.path("/api/rulepacks")
@@ -76,6 +95,15 @@ public class UpstreamClient {
         try {
             return origination.get().uri("/api/applications/{ref}/credit-inputs", reference)
                     .retrieve().body(CreditInputsDto.class);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "origination-service unavailable: " + e.getMessage());
+        }
+    }
+
+    public DealEnvelopeDto envelope(String reference) {
+        try {
+            return origination.get().uri("/api/applications/{ref}/envelope", reference)
+                    .retrieve().body(DealEnvelopeDto.class);
         } catch (Exception e) {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "origination-service unavailable: " + e.getMessage());
         }

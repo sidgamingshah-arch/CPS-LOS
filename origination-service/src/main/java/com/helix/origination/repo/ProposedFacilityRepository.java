@@ -1,0 +1,10 @@
+package com.helix.origination.repo;
+
+import com.helix.origination.entity.ProposedFacility;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+
+public interface ProposedFacilityRepository extends JpaRepository<ProposedFacility, Long> {
+    List<ProposedFacility> findByApplicationIdOrderByOrdinalAsc(Long applicationId);
+}

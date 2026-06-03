@@ -89,12 +89,22 @@ docker compose up --build
 # Gateway: http://localhost:8080
 ```
 
-### End-to-end smoke test
+### End-to-end tests
 With the services running locally, exercise the entire lifecycle through the gateway:
 
 ```bash
-python3 scripts/e2e_smoke.py     # 45 assertions across all 13 PRD stages
+python3 scripts/e2e_smoke.py            # single-deal · 75 assertions across all stages + new modules
+python3 scripts/e2e_100_obligors.py     # 100-obligor distributed book · ~60s · MIS / variance / concentration
 ```
+
+The 100-obligor run synthesises a realistic book — mix of segments (mid-corp,
+SME, large-corp, project, trade, FI), jurisdictions (IN-RBI / AE-CBUAE),
+existing-vs-new borrowers, and risk profiles — drives each obligor through
+intake → spread → rate → capital → price → covenants → approve → book → ECL →
+RAROC snapshot, then asserts the population distribution and exercises the
+MIS endpoints. Typical run: ~190B EAD, ~30B RWA, 100+ booked exposures, several
+single-name / sector limit breaches, and dozens of RAROC variance observations
+feeding model-fit governance.
 
 ---
 

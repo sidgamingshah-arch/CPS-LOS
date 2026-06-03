@@ -4,22 +4,33 @@ import com.helix.common.audit.AuditService;
 import com.helix.common.model.Enums.ApplicationStatus;
 import com.helix.common.util.References;
 import com.helix.common.web.ApiException;
+import com.helix.origination.dto.Dtos.AddCollateralRequest;
+import com.helix.origination.dto.Dtos.AddFacilityRequest;
 import com.helix.origination.dto.Dtos.CellView;
+import com.helix.origination.dto.Dtos.CollateralView;
 import com.helix.origination.dto.Dtos.CreateApplicationRequest;
 import com.helix.origination.dto.Dtos.CreditInputs;
+import com.helix.origination.dto.Dtos.DealEnvelope;
+import com.helix.origination.dto.Dtos.FacilityView;
 import com.helix.origination.dto.Dtos.OverrideRequest;
 import com.helix.origination.dto.Dtos.PeriodAnalysis;
 import com.helix.origination.dto.Dtos.SpreadAnalysis;
 import com.helix.origination.dto.Dtos.SpreadRequest;
 import com.helix.origination.dto.Dtos.UploadDocumentRequest;
+import com.helix.origination.entity.Collateral;
 import com.helix.origination.entity.Document;
 import com.helix.origination.entity.FinancialPeriod;
 import com.helix.origination.entity.LoanApplication;
+import com.helix.origination.entity.ProposedFacility;
 import com.helix.origination.entity.SpreadCell;
+import com.helix.origination.repo.CollateralRepository;
 import com.helix.origination.repo.DocumentRepository;
 import com.helix.origination.repo.FinancialPeriodRepository;
 import com.helix.origination.repo.LoanApplicationRepository;
+import com.helix.origination.repo.ProposedFacilityRepository;
 import com.helix.origination.repo.SpreadCellRepository;
+
+import java.time.LocalDate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,16 +49,21 @@ public class OriginationService {
     private final DocumentRepository documents;
     private final FinancialPeriodRepository periods;
     private final SpreadCellRepository cells;
+    private final ProposedFacilityRepository facilities;
+    private final CollateralRepository collaterals;
     private final DocumentClassifier classifier;
     private final AuditService audit;
 
     public OriginationService(LoanApplicationRepository applications, DocumentRepository documents,
                               FinancialPeriodRepository periods, SpreadCellRepository cells,
+                              ProposedFacilityRepository facilities, CollateralRepository collaterals,
                               DocumentClassifier classifier, AuditService audit) {
         this.applications = applications;
         this.documents = documents;
         this.periods = periods;
         this.cells = cells;
+        this.facilities = facilities;
+        this.collaterals = collaterals;
         this.classifier = classifier;
         this.audit = audit;
     }
@@ -73,11 +89,49 @@ public class OriginationService {
         app.setSecured(req.secured());
         app.setStatus(ApplicationStatus.INTAKE.name());
         LoanApplication saved = applications.save(app);
+
+        // The application carries a "primary" proposed facility for backward compatibility.
+        // Additional facilities (term + working capital + LC line …) are added via /facilities.
+        ProposedFacility primary = new ProposedFacility();
+        primary.setApplicationId(saved.getId());
+        primary.setReference(References.forFacility());
+        primary.setOrdinal(0);
+        primary.setPrimary(true);
+        primary.setFacilityType(req.facilityType());
+        primary.setAmount(req.requestedAmount());
+        primary.setCurrency(req.currency());
+        primary.setTenorMonths(req.tenorMonths());
+        primary.setPurpose(req.purpose());
+        facilities.save(primary);
+
+        if (req.collateralType() != null && !req.collateralType().isBlank() && req.collateralValue() > 0) {
+            Collateral c = new Collateral();
+            c.setApplicationId(saved.getId());
+            c.setFacilityId(primary.getId());
+            c.setCollateralType(req.collateralType().toUpperCase());
+            c.setDescription("Primary collateral · " + req.collateralType());
+            c.setMarketValue(req.collateralValue());
+            c.setHaircut(defaultHaircut(req.collateralType()));
+            c.setPerfectionStatus("IN_PROGRESS");
+            collaterals.save(c);
+        }
+
         audit.human(actor, "APPLICATION_CREATED", "Application", saved.getReference(),
                 "Created %s facility of %.0f %s for %s".formatted(
                         req.facilityType(), req.requestedAmount(), req.currency(), req.counterpartyName()),
                 Map.of("segment", req.segment(), "jurisdiction", req.jurisdiction()));
         return saved;
+    }
+
+    private double defaultHaircut(String type) {
+        return switch (type == null ? "" : type.toUpperCase()) {
+            case "CASH" -> 0.0;
+            case "GOVT_SECURITIES" -> 0.02;
+            case "EQUITY_LISTED" -> 0.25;
+            case "PROPERTY" -> 0.40;
+            case "RECEIVABLES" -> 0.50;
+            default -> 0.30;
+        };
     }
 
     @Transactional(readOnly = true)
@@ -385,5 +439,119 @@ public class OriginationService {
                 c.getExtractedValue(), c.getConfidence(), c.getSourceDocument(), c.getSourcePage(),
                 c.getSourceCoordinates(), c.isOverridden(), c.getOverrideValue(), c.getOverrideReason(),
                 c.isMaterialOverride(), c.getOverriddenBy());
+    }
+
+    // ------------------------------------------------------- facilities (multi)
+
+    @Transactional
+    public ProposedFacility addFacility(String reference, AddFacilityRequest req, String actor) {
+        LoanApplication app = get(reference);
+        List<ProposedFacility> existing = facilities.findByApplicationIdOrderByOrdinalAsc(app.getId());
+        ProposedFacility f = new ProposedFacility();
+        f.setApplicationId(app.getId());
+        f.setReference(References.forFacility());
+        f.setOrdinal(existing.size());
+        f.setPrimary(existing.isEmpty());
+        f.setFacilityType(req.facilityType());
+        f.setAmount(req.amount());
+        f.setCurrency(req.currency());
+        f.setTenorMonths(req.tenorMonths());
+        f.setPurpose(req.purpose());
+        f.setIndicativeRate(req.indicativeRate());
+        ProposedFacility saved = facilities.save(f);
+        audit.human(actor, "FACILITY_ADDED", "Application", reference,
+                "Added %s facility %.0f %s, tenor %dm".formatted(req.facilityType(), req.amount(),
+                        req.currency(), req.tenorMonths()),
+                Map.of("facilityType", req.facilityType(), "amount", req.amount()));
+        return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProposedFacility> facilitiesFor(String reference) {
+        return facilities.findByApplicationIdOrderByOrdinalAsc(get(reference).getId());
+    }
+
+    @Transactional
+    public void removeFacility(Long facilityId, String actor) {
+        ProposedFacility f = facilities.findById(facilityId)
+                .orElseThrow(() -> ApiException.notFound("No facility: " + facilityId));
+        if (f.isPrimary()) {
+            throw ApiException.badRequest("Cannot remove the primary facility");
+        }
+        facilities.delete(f);
+        audit.human(actor, "FACILITY_REMOVED", "ProposedFacility", String.valueOf(facilityId),
+                "Removed " + f.getFacilityType(), Map.of("facilityType", f.getFacilityType()));
+    }
+
+    // ----------------------------------------------------------- collaterals
+
+    @Transactional
+    public Collateral addCollateral(String reference, AddCollateralRequest req, String actor) {
+        LoanApplication app = get(reference);
+        Collateral c = new Collateral();
+        c.setApplicationId(app.getId());
+        c.setFacilityId(req.facilityId());
+        c.setCollateralType(req.collateralType().toUpperCase());
+        c.setDescription(req.description());
+        c.setMarketValue(req.marketValue());
+        if (req.valuationDate() != null && !req.valuationDate().isBlank()) {
+            c.setValuationDate(LocalDate.parse(req.valuationDate()));
+        }
+        c.setValuationSource(req.valuationSource());
+        c.setHaircut(req.haircut() > 0 ? req.haircut() : defaultHaircut(req.collateralType()));
+        c.setOwner(req.owner());
+        c.setLocation(req.location());
+        c.setPerfectionStatus(req.perfectionStatus());
+        Collateral saved = collaterals.save(c);
+        audit.human(actor, "COLLATERAL_ADDED", "Application", reference,
+                "Added %s collateral %.0f (haircut %.0f%%, %s)".formatted(c.getCollateralType(),
+                        c.getMarketValue(), c.getHaircut() * 100, c.getPerfectionStatus()),
+                Map.of("type", c.getCollateralType(), "marketValue", c.getMarketValue()));
+        return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Collateral> collateralsFor(String reference) {
+        return collaterals.findByApplicationId(get(reference).getId());
+    }
+
+    @Transactional
+    public Collateral perfect(Long collateralId, String actor) {
+        Collateral c = collaterals.findById(collateralId)
+                .orElseThrow(() -> ApiException.notFound("No collateral: " + collateralId));
+        c.setPerfectionStatus("PERFECTED");
+        c.setPerfectionDate(LocalDate.now());
+        audit.human(actor, "COLLATERAL_PERFECTED", "Collateral", String.valueOf(collateralId),
+                "Charge perfected on %s".formatted(c.getCollateralType()), Map.of());
+        return collaterals.save(c);
+    }
+
+    // --------------------------------------------------- aggregated deal view
+
+    @Transactional(readOnly = true)
+    public DealEnvelope envelope(String reference) {
+        LoanApplication app = get(reference);
+        List<ProposedFacility> fac = facilities.findByApplicationIdOrderByOrdinalAsc(app.getId());
+        List<Collateral> cols = collaterals.findByApplicationId(app.getId());
+
+        double totalProposed = fac.stream().mapToDouble(ProposedFacility::getAmount).sum();
+        double totalCover = cols.stream().mapToDouble(Collateral::effectiveValue).sum();
+
+        List<FacilityView> facViews = fac.stream().map(f -> new FacilityView(
+                f.getId(), f.getReference(), f.getOrdinal(), f.isPrimary(),
+                f.getFacilityType(), f.getAmount(), f.getCurrency(), f.getTenorMonths(),
+                f.getPurpose(), f.getIndicativeRate())).toList();
+
+        List<CollateralView> colViews = cols.stream().map(c -> new CollateralView(
+                c.getId(), c.getFacilityId(), c.getCollateralType(), c.getDescription(),
+                c.getMarketValue(), c.getHaircut(), c.effectiveValue(), c.getPerfectionStatus(),
+                c.getValuationDate() == null ? null : c.getValuationDate().toString(), c.getOwner())).toList();
+
+        Map<String, Double> latest = creditInputs(reference).latestFinancials();
+        Map<String, Double> ratios = creditInputs(reference).ratios();
+
+        return new DealEnvelope(reference, app.getCounterpartyName(), app.getJurisdiction(), app.getSegment(),
+                totalProposed, app.getCurrency(), app.getTenorMonths(),
+                facViews, colViews, totalCover, latest, ratios);
     }
 }

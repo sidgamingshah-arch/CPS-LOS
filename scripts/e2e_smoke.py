@@ -224,6 +224,58 @@ check("core-banking re-ingest idempotent", st == 200 and r2["duplicate"], f"{st}
 st, ecl2 = call("GET", f"/portfolio/api/portfolio/exposures/{ref}/ecl/latest")
 check("ECL latest readable (GET)", st == 200 and ecl2["stage"].startswith("STAGE"), f"{st}")
 
+print("== 16. Facilities · collaterals · envelope ==")
+st, fac = call("POST", f"/origination/api/applications/{ref}/facilities",
+               {"facilityType": "WORKING_CAPITAL", "amount": 150_000_000, "currency": "INR",
+                "tenorMonths": 12, "purpose": "Working capital line", "indicativeRate": 0.105}, actor="rm.user")
+check("additional facility added", st == 200 and not fac["primary"], f"{st}")
+st, facs = call("GET", f"/origination/api/applications/{ref}/facilities")
+check("primary + additional facility listed", st == 200 and len(facs) >= 2, f"{st} {len(facs) if facs else 0}")
+st, col = call("POST", f"/origination/api/applications/{ref}/collaterals",
+               {"collateralType": "RECEIVABLES", "description": "Trade receivables pool",
+                "marketValue": 200_000_000, "haircut": 0.5, "perfectionStatus": "IN_PROGRESS"}, actor="analyst.user")
+check("additional collateral added", st == 200, f"{st}")
+st, env = call("GET", f"/origination/api/applications/{ref}/envelope")
+check("deal envelope returns multi-facility/multi-collateral", st == 200 and len(env["facilities"]) >= 2 and len(env["collaterals"]) >= 2, f"{st}")
+
+print("== 17. Covenant testing history ==")
+st, tests = call("POST", f"/decision/api/decisions/{ref}/covenants/test", actor="analyst.user")
+check("covenants tested", st == 200 and len(tests) >= 1, f"{st}")
+check("DSCR covenant passed (clean deal)", any(t["metric"] == "DSCR" and t["passed"] for t in tests), str(tests))
+
+print("== 18. Credit proposal generation (grounded, cited) ==")
+st, prop = call("POST", f"/decision/api/decisions/{ref}/credit-proposal/generate", actor="analyst.user")
+check("credit proposal v1 generated", st == 200 and prop["version"] == 1, f"{st}")
+check("proposal contains facility section in markdown", st == 200 and "Facilities proposed" in prop["markdown"])
+check("proposal HTML includes citations to source endpoints",
+      "envelope" in prop["citations"] and "rating" in prop["citations"], str(prop.get("citations")))
+st, prop2 = call("POST", f"/decision/api/decisions/{ref}/credit-proposal/generate", actor="analyst.user")
+check("regeneration bumps version", prop2["version"] == 2, f"v={prop2.get('version')}")
+
+print("== 19. Projected vs actual RAROC tracking ==")
+st, snap = call("POST", f"/portfolio/api/portfolio/exposures/{ref}/raroc/snapshot", actor="credit.ops")
+check("origination RAROC snapshot present", st == 200 and snap["origination"], f"{st}")
+st, actual = call("POST", f"/portfolio/api/portfolio/exposures/{ref}/raroc/compute?period=2026Q2&realisedProvisionDelta=0", actor="portfolio.manager")
+check("actual RAROC computed", st == 200 and not actual["origination"] and "actualRaroc" in actual, f"{st}")
+check("RAROC variance recorded", "variance" in actual, str(actual))
+st, hist = call("GET", f"/portfolio/api/portfolio/exposures/{ref}/raroc")
+check("RAROC history >= 2 rows", st == 200 and len(hist) >= 2, f"{st}")
+
+print("== 20. Configurable workflow definitions ==")
+st, wf = call("GET", "/config/api/rulepacks?jurisdiction=IN-RBI&type=WORKFLOW_DEFINITION")
+check("workflow pack returned", st == 200 and wf["payload"]["segment"] == "MID_CORPORATE", f"{st}")
+check("workflow has 10+ stages", len(wf["payload"]["stages"]) >= 10)
+
+print("== 21. MIS / dashboards ==")
+st, mis = call("GET", "/portfolio/api/mis/dashboard")
+check("MIS dashboard returned", st == 200 and "composition" in mis and "rarocVariance" in mis, f"{st}")
+st, comp = call("GET", "/portfolio/api/mis/composition")
+check("book composition by segment/grade present", st == 200 and "bySegment" in comp and "byGrade" in comp)
+st, var = call("GET", "/portfolio/api/mis/raroc-variance")
+check("RAROC variance MIS endpoint", st == 200 and var["trackedDeals"] >= 1, f"{st}")
+st, ageing = call("GET", "/portfolio/api/mis/pipeline-ageing")
+check("pipeline ageing endpoint", st == 200 and "avgAgeDays" in ageing)
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

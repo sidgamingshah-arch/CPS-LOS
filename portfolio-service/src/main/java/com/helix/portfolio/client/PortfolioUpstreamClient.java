@@ -62,7 +62,13 @@ public class PortfolioUpstreamClient {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record RiskSummaryDto(RatingDto rating, CapitalDto capital) {
+    public record PricingDto(double recommendedRate, double raroc, double hurdleRaroc, double expectedLoss,
+                             double capitalCharge, double costOfFundsAmount, double opexAmount, double ead,
+                             boolean belowHurdle) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record RiskSummaryDto(RatingDto rating, CapitalDto capital, PricingDto pricing) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

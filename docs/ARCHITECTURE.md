@@ -144,7 +144,52 @@ adapters are wired — screening-vendor → counterparty, core-banking → expos
 provenance-stamped, and surfacing reconciliation/validation issues as warnings. Full schema set
 and example payloads in [`INTEGRATIONS.md`](INTEGRATIONS.md).
 
-## 9. What is MVP vs. additive
+## 9. Structuring, monitoring and reporting modules
+
+These extend the spine with the explicit business modules per stakeholder ask:
+
+- **Multiple proposed facilities per application.** `ProposedFacility` is a first-class
+  entity (term loan + WC + LC line, each with its own type, amount, tenor, indicative
+  rate). The Application's inline fields remain the "primary" facility for backward
+  compatibility; additional facilities are added via `POST /applications/{ref}/facilities`.
+- **Collateral as first-class.** `Collateral` carries type, description, market value,
+  haircut, owner, perfection status and perfection date. Multiple items per application;
+  optionally pinned to a specific facility. `POST /applications/{ref}/collaterals`,
+  `POST /collaterals/{id}/perfect`. Effective coverage (after haircut) feeds CRM and
+  the deal envelope.
+- **Deal envelope.** `GET /applications/{ref}/envelope` returns the structured deal —
+  all facilities, all collaterals, total proposed amount, total effective collateral
+  cover, latest financials and ratios. This is what the credit-proposal generator
+  consumes; nothing is reconstructed by AI.
+- **Capital framing.** The RWA engine in `risk-service` is **explicitly framed as the
+  internal projection used for RAROC pricing**, not the regulatory system of record —
+  the bank's own engine remains authoritative. The label in the UI is "Capital
+  projection (for RAROC)".
+- **Projected vs actual RAROC tracking.** At booking, `portfolio-service` snapshots
+  the projected RAROC (`RarocTracking.origination = true`). Subsequent
+  `POST /portfolio/exposures/{ref}/raroc/compute?period=…&realisedProvisionDelta=…`
+  calls record the actual RAROC for the period (income − EL realised − opex − CoF) /
+  capital, alongside the variance. `GET /portfolio/exposures/{ref}/raroc` returns the
+  history; `GET /portfolio/raroc/variance` aggregates the book-level model-fit signal
+  (material miss > 25 %).
+- **Covenant testing history.** `POST /decisions/{ref}/covenants/test` checks every
+  active covenant against the latest spread ratios and persists the observation in
+  `covenant_tests` — historical trail for examiner review, fuel for the EWS flags.
+- **Credit proposal generation.** `POST /decisions/{ref}/credit-proposal/generate`
+  composes a formal committee memo (markdown + HTML) grounded in the deal envelope,
+  rating, capital projection, pricing, covenants and routing — every figure is
+  quoted from the services and the section-to-source map is stored in `citations`.
+  Re-generation bumps the version; history is preserved (PRD §13 trace).
+- **Configurable workflows.** A new rule-pack type `WORKFLOW_DEFINITION` declares the
+  ordered stages for a (jurisdiction × segment), with autonomy level, AI-flag,
+  human-gate flag and SLA per stage. Mid-corporate and SME (STP-eligible) workflows
+  are seeded for IN-RBI; mid-corporate for AE-CBUAE. New segments / regimes are pack
+  edits, not code releases.
+- **MIS / dashboards.** `/portfolio/api/mis/*` consolidates book composition (segment ×
+  grade × jurisdiction × status), RAROC variance, pipeline ageing, ECL by stage ×
+  jurisdiction, and the watchlist summary — a one-shot `/dashboard` returns the lot.
+
+## 10. What is MVP vs. additive
 
 Implemented end-to-end: the credit lifecycle spine for mid-corporate under RBI, plus the
 CBUAE overlay, ECL/IRAC, concentration, EWS and stress.

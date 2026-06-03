@@ -11,9 +11,13 @@ import com.helix.portfolio.dto.IngestDtos.RawCoreBankingFeed;
 import com.helix.portfolio.entity.EclResult;
 import com.helix.portfolio.entity.EwsSignal;
 import com.helix.portfolio.entity.ExposureRecord;
+import com.helix.portfolio.entity.RarocTracking;
 import com.helix.portfolio.service.CoreBankingIngestionService;
 import com.helix.portfolio.service.EwsService;
 import com.helix.portfolio.service.PortfolioService;
+import com.helix.portfolio.service.RarocTrackingService;
+
+import java.util.Map;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,11 +37,14 @@ public class PortfolioController {
     private final PortfolioService portfolio;
     private final EwsService ews;
     private final CoreBankingIngestionService coreBanking;
+    private final RarocTrackingService raroc;
 
-    public PortfolioController(PortfolioService portfolio, EwsService ews, CoreBankingIngestionService coreBanking) {
+    public PortfolioController(PortfolioService portfolio, EwsService ews, CoreBankingIngestionService coreBanking,
+                               RarocTrackingService raroc) {
         this.portfolio = portfolio;
         this.ews = ews;
         this.coreBanking = coreBanking;
+        this.raroc = raroc;
     }
 
     // ---- exposures ----
@@ -123,5 +130,36 @@ public class PortfolioController {
     public EwsSignal disposition(@PathVariable Long id, @Valid @RequestBody DispositionRequest req,
                                  @RequestHeader(value = "X-Actor", defaultValue = "portfolio.manager") String actor) {
         return ews.disposition(id, req.status(), actor);
+    }
+
+    // ---- projected vs actual RAROC tracking ----
+
+    @PostMapping("/exposures/{reference}/raroc/snapshot")
+    public RarocTracking snapshotProjected(@PathVariable String reference,
+                                           @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+        return raroc.snapshotOrigination(reference, actor);
+    }
+
+    @PostMapping("/exposures/{reference}/raroc/compute")
+    public RarocTracking computeActualRaroc(@PathVariable String reference,
+                                            @RequestParam(required = false) String period,
+                                            @RequestParam(defaultValue = "0") double realisedProvisionDelta,
+                                            @RequestHeader(value = "X-Actor", defaultValue = "portfolio.manager") String actor) {
+        return raroc.computeActual(reference, period, realisedProvisionDelta, actor);
+    }
+
+    @GetMapping("/exposures/{reference}/raroc")
+    public List<RarocTracking> rarocHistory(@PathVariable String reference) {
+        return raroc.history(reference);
+    }
+
+    @GetMapping("/exposures/{reference}/raroc/latest")
+    public RarocTracking rarocLatest(@PathVariable String reference) {
+        return raroc.latest(reference);
+    }
+
+    @GetMapping("/raroc/variance")
+    public Map<String, Object> bookRarocVariance() {
+        return raroc.bookVariance();
     }
 }

@@ -3,8 +3,11 @@ package com.helix.decision.api;
 import com.helix.decision.dto.Dtos.AddCovenantRequest;
 import com.helix.decision.dto.Dtos.DecisionRequest;
 import com.helix.decision.entity.Covenant;
+import com.helix.decision.entity.CovenantTest;
 import com.helix.decision.entity.CreditDecision;
+import com.helix.decision.entity.CreditProposal;
 import com.helix.decision.service.CovenantService;
+import com.helix.decision.service.CreditProposalService;
 import com.helix.decision.service.DecisionService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,10 +29,12 @@ public class DecisionController {
 
     private final DecisionService decisions;
     private final CovenantService covenants;
+    private final CreditProposalService proposals;
 
-    public DecisionController(DecisionService decisions, CovenantService covenants) {
+    public DecisionController(DecisionService decisions, CovenantService covenants, CreditProposalService proposals) {
         this.decisions = decisions;
         this.covenants = covenants;
+        this.proposals = proposals;
     }
 
     @PostMapping("/{reference}/route")
@@ -81,5 +86,34 @@ public class DecisionController {
     public void deactivate(@PathVariable Long id,
                            @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
         covenants.deactivate(id, actor);
+    }
+
+    @PostMapping("/{reference}/covenants/test")
+    public List<CovenantTest> testCovenants(@PathVariable String reference,
+                                            @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
+        return covenants.testAll(reference, actor);
+    }
+
+    @GetMapping("/{reference}/covenants/tests")
+    public List<CovenantTest> covenantTestHistory(@PathVariable String reference) {
+        return covenants.testHistory(reference);
+    }
+
+    // ---- credit proposal ----
+
+    @PostMapping("/{reference}/credit-proposal/generate")
+    public CreditProposal generateProposal(@PathVariable String reference,
+                                           @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
+        return proposals.generate(reference, actor);
+    }
+
+    @GetMapping("/{reference}/credit-proposal")
+    public CreditProposal latestProposal(@PathVariable String reference) {
+        return proposals.latest(reference);
+    }
+
+    @GetMapping("/{reference}/credit-proposal/versions")
+    public List<CreditProposal> proposalVersions(@PathVariable String reference) {
+        return proposals.versions(reference);
     }
 }

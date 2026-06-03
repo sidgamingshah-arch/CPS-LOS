@@ -70,6 +70,10 @@ public class RulePackSeeder implements CommandLineRunner {
         pack("rbi_kyc_md_tiers", "CDD_TIERS", "IN-RBI", cddTiers());
         pack("rbi_large_exposure_framework", "EXPOSURE_LIMITS", "IN-RBI", exposureLimits(0.15, 0.25));
         pack("rbi_pricing_v1", "PRICING", "IN-RBI", pricing(0.15, 0.075, 0.010));
+        pack("workflow_mid_corp_rbi_v1", "WORKFLOW_DEFINITION", "IN-RBI",
+                workflowMidCorporate("MID_CORPORATE", true));
+        pack("workflow_sme_rbi_v1", "WORKFLOW_DEFINITION", "IN-RBI",
+                workflowSme("SME"));
     }
 
     // --------------------------------------------------------------- AE-CBUAE
@@ -105,6 +109,8 @@ public class RulePackSeeder implements CommandLineRunner {
         pack("cbuae_aml_tiers", "CDD_TIERS", "AE-CBUAE", cddTiers());
         pack("cbuae_large_exposure", "EXPOSURE_LIMITS", "AE-CBUAE", exposureLimits(0.25, 0.25));
         pack("cbuae_pricing", "PRICING", "AE-CBUAE", pricing(0.135, 0.045, 0.011));
+        pack("workflow_mid_corp_cbuae_v1", "WORKFLOW_DEFINITION", "AE-CBUAE",
+                workflowMidCorporate("MID_CORPORATE", false));
     }
 
     // ------------------------------------------------------------ pack content
@@ -253,6 +259,54 @@ public class RulePackSeeder implements CommandLineRunner {
                 "geography_cap_pct_portfolio", 0.30,
                 "capital_base", 50_000_000_000d
         );
+    }
+
+    /**
+     * Workflow definition consumed by the orchestration layer — each stage has an
+     * autonomy level, a human gate flag, and an SLA. New segments / jurisdictions
+     * tune these without code changes (PRD configurability NFR).
+     */
+    private Map<String, Object> workflowMidCorporate(String segment, boolean ddRequired) {
+        return map("segment", segment, "stages", List.of(
+                stage("INTAKE", "Application intake & document classification", "A", true, false, 4),
+                stage("KYC_CDD", "KYC/CDD · UBO · screening", "C", true, true, 24),
+                stage("SPREADING", "Financial spreading with provenance", "C", true, false, 12),
+                stage("SPREAD_CONFIRM", "Analyst confirms canonical spread", "—", false, true, 4),
+                stage("RATING", "Scorecard rating with notch-limited overrides", "D", true, true, 8),
+                stage("CAPITAL_PROJECTION", "Capital projection for RAROC (internal)", "—", false, false, 1),
+                stage("PRICING", "RAROC-based risk-adjusted pricing (advisory)", "D", true, false, 1),
+                stage("CREDIT_PROPOSAL", "Generate credit memo (grounded, cited)", "C", true, false, 2),
+                stage("APPROVAL", "DoA routing & named-human decision", "—", false, true,
+                        ddRequired ? 72 : 48),
+                stage("DOCUMENTATION", "Sanction & security documentation · CP/CS", "C", true, true, 48),
+                stage("LIMIT_SETUP_BOOKING", "Limit setup · core-banking booking", "—", false, true, 8),
+                stage("MONITORING", "Covenant testing · EWS · review triggers", "A", true, true, 0),
+                stage("ECL_PROVISIONING", "Periodic ECL/IRAC (parallel to bank engine)", "—", false, false, 0),
+                stage("RAROC_TRACKING", "Projected vs actual RAROC variance", "—", false, false, 0)
+        ));
+    }
+
+    private Map<String, Object> workflowSme(String segment) {
+        // STP-eligible clean SME path (PRD §3.3) — fewer manual touch-points; clean
+        // names still require a named human at the approval gate.
+        return map("segment", segment, "stp_eligible", true, "stages", List.of(
+                stage("INTAKE", "Application intake & document classification", "A", true, false, 1),
+                stage("KYC_CDD", "Simplified KYC (where eligible)", "C", true, true, 8),
+                stage("SPREADING", "Templated spreading + alt-data", "C", true, false, 2),
+                stage("SPREAD_CONFIRM", "Analyst confirms canonical spread", "—", false, true, 1),
+                stage("RATING", "Templated scorecard", "D", true, true, 1),
+                stage("CAPITAL_PROJECTION", "Capital projection for RAROC", "—", false, false, 1),
+                stage("PRICING", "RAROC-based pricing", "D", true, false, 1),
+                stage("APPROVAL", "DoA routing — STP candidate, human signs", "—", false, true, 4),
+                stage("LIMIT_SETUP_BOOKING", "Limit setup · booking", "—", false, true, 2),
+                stage("MONITORING", "Covenants · EWS", "A", true, true, 0)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> stage(String key, String label, String autonomy,
+                                             boolean ai, boolean humanGate, int slaHours) {
+        return map("key", key, "label", label, "autonomy", autonomy, "ai", ai,
+                "humanGate", humanGate, "slaHours", slaHours);
     }
 
     private Map<String, Object> pricing(double hurdleRaroc, double costOfFunds, double opexRate) {

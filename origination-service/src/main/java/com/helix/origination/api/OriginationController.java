@@ -1,17 +1,23 @@
 package com.helix.origination.api;
 
-import com.helix.origination.dto.Dtos.CreateApplicationRequest;
+import com.helix.origination.dto.Dtos.AddCollateralRequest;
+import com.helix.origination.dto.Dtos.AddFacilityRequest;
 import com.helix.origination.dto.Dtos.CellView;
+import com.helix.origination.dto.Dtos.CreateApplicationRequest;
 import com.helix.origination.dto.Dtos.CreditInputs;
+import com.helix.origination.dto.Dtos.DealEnvelope;
 import com.helix.origination.dto.Dtos.OverrideRequest;
 import com.helix.origination.dto.Dtos.SpreadAnalysis;
 import com.helix.origination.dto.Dtos.SpreadRequest;
 import com.helix.origination.dto.Dtos.StatusUpdateRequest;
 import com.helix.origination.dto.Dtos.UploadDocumentRequest;
+import com.helix.origination.entity.Collateral;
 import com.helix.origination.entity.Document;
 import com.helix.origination.entity.LoanApplication;
+import com.helix.origination.entity.ProposedFacility;
 import com.helix.origination.service.OriginationService;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -102,5 +108,48 @@ public class OriginationController {
     @GetMapping("/{reference}/credit-inputs")
     public CreditInputs creditInputs(@PathVariable String reference) {
         return origination.creditInputs(reference);
+    }
+
+    // ---- proposed facilities (multi) ----
+
+    @PostMapping("/{reference}/facilities")
+    public ProposedFacility addFacility(@PathVariable String reference, @Valid @RequestBody AddFacilityRequest req,
+                                        @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
+        return origination.addFacility(reference, req, actor);
+    }
+
+    @GetMapping("/{reference}/facilities")
+    public List<ProposedFacility> facilities(@PathVariable String reference) {
+        return origination.facilitiesFor(reference);
+    }
+
+    @DeleteMapping("/facilities/{id}")
+    public void removeFacility(@PathVariable Long id,
+                               @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
+        origination.removeFacility(id, actor);
+    }
+
+    // ---- collaterals (multi) ----
+
+    @PostMapping("/{reference}/collaterals")
+    public Collateral addCollateral(@PathVariable String reference, @Valid @RequestBody AddCollateralRequest req,
+                                    @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
+        return origination.addCollateral(reference, req, actor);
+    }
+
+    @GetMapping("/{reference}/collaterals")
+    public List<Collateral> collaterals(@PathVariable String reference) {
+        return origination.collateralsFor(reference);
+    }
+
+    @PostMapping("/collaterals/{id}/perfect")
+    public Collateral perfect(@PathVariable Long id,
+                              @RequestHeader(value = "X-Actor", defaultValue = "legal.officer") String actor) {
+        return origination.perfect(id, actor);
+    }
+
+    @GetMapping("/{reference}/envelope")
+    public DealEnvelope envelope(@PathVariable String reference) {
+        return origination.envelope(reference);
     }
 }

@@ -52,6 +52,28 @@ public final class Dtos {
     public record OverrideRequest(@NotNull Double value, String reason) {
     }
 
+    public record AddFacilityRequest(
+            @NotBlank String facilityType,
+            @Positive double amount,
+            @NotBlank String currency,
+            @Positive int tenorMonths,
+            String purpose,
+            Double indicativeRate) {
+    }
+
+    public record AddCollateralRequest(
+            @NotBlank String collateralType,
+            @NotBlank String description,
+            @Positive double marketValue,
+            String valuationDate,
+            String valuationSource,
+            double haircut,
+            String owner,
+            String location,
+            @NotBlank String perfectionStatus,
+            Long facilityId) {
+    }
+
     // ---- responses ----
 
     public record CellView(Long id, String taxonomyKey, String label, boolean derived, double value,
@@ -76,5 +98,23 @@ public final class Dtos {
                                double collateralValue, boolean secured, boolean spreadConfirmed,
                                Map<String, Double> latestFinancials, Map<String, Double> ratios,
                                Map<String, Double> trends) {
+    }
+
+    /** Full deal envelope used by credit proposal generation (decision-service). */
+    public record DealEnvelope(
+            String applicationReference, String counterpartyName, String jurisdiction, String segment,
+            double totalProposedAmount, String currency, int tenorMonths,
+            List<FacilityView> facilities, List<CollateralView> collaterals, double totalCollateralCover,
+            Map<String, Double> latestFinancials, Map<String, Double> ratios) {
+    }
+
+    public record FacilityView(Long id, String reference, int ordinal, boolean primary,
+                               String facilityType, double amount, String currency,
+                               int tenorMonths, String purpose, Double indicativeRate) {
+    }
+
+    public record CollateralView(Long id, Long facilityId, String collateralType, String description,
+                                 double marketValue, double haircut, double effectiveValue,
+                                 String perfectionStatus, String valuationDate, String owner) {
     }
 }

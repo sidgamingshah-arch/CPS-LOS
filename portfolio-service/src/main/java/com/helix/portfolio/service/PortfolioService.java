@@ -38,17 +38,19 @@ public class PortfolioService {
     private final EwsSignalRepository signals;
     private final EclEngine eclEngine;
     private final EwsService ews;
+    private final RarocTrackingService raroc;
     private final PortfolioUpstreamClient upstream;
     private final AuditService audit;
 
     public PortfolioService(ExposureRecordRepository exposures, EclResultRepository eclResults,
                             EwsSignalRepository signals, EclEngine eclEngine, EwsService ews,
-                            PortfolioUpstreamClient upstream, AuditService audit) {
+                            RarocTrackingService raroc, PortfolioUpstreamClient upstream, AuditService audit) {
         this.exposures = exposures;
         this.eclResults = eclResults;
         this.signals = signals;
         this.eclEngine = eclEngine;
         this.ews = ews;
+        this.raroc = raroc;
         this.upstream = upstream;
         this.audit = audit;
     }
@@ -81,6 +83,11 @@ public class PortfolioService {
         audit.human(actor, "EXPOSURE_BOOKED", "Application", reference,
                 "Booked %s exposure %.0f, grade %s".formatted(inputs.segment(), saved.getEad(), saved.getFinalGrade()),
                 Map.of("ead", saved.getEad(), "grade", saved.getFinalGrade()));
+        // Capture the projected-RAROC snapshot at the moment of booking — closes the loop
+        // for projected-vs-actual tracking over the life of the facility (PRD §7).
+        if (risk.pricing() != null) {
+            raroc.snapshotOrigination(reference, actor);
+        }
         return saved;
     }
 

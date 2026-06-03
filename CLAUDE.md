@@ -23,7 +23,8 @@ screening-vendor → counterparty, core-banking → exposure. See `docs/INTEGRAT
 ```bash
 mvn -DskipTests package          # build all jars
 bash scripts/run-all.sh          # start every service (health-gated)
-python3 scripts/e2e_smoke.py     # full-lifecycle integration test (expects 55 passed)
+python3 scripts/e2e_smoke.py            # single-deal lifecycle + new modules (expects 75 passed)
+python3 scripts/e2e_100_obligors.py     # 100-obligor distributed book stress test
 bash scripts/stop-all.sh         # stop
 cd frontend && npm install && npm run dev   # UI on :5173
 docker compose up --build        # full stack (UI :8088, gateway :8080)
