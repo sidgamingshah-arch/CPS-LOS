@@ -43,6 +43,8 @@ export const counterparty = {
   resolveUbo: (id: number, body: any, actor: string) =>
     call<any[]>(`/counterparty/api/counterparties/${id}/ubo`, "POST", body, actor),
   ubo: (id: number) => call<any[]>(`/counterparty/api/counterparties/${id}/ubo`, "GET"),
+  ingestScreening: (id: number, envelope: any, actor: string) =>
+    call<any>(`/counterparty/api/counterparties/${id}/ingest/screening`, "POST", envelope, actor),
 };
 
 // ---- origination ----
@@ -107,6 +109,14 @@ export const portfolio = {
   watchlist: () => call<any[]>("/portfolio/api/portfolio/ews/watchlist", "GET"),
   disposition: (id: number, status: string, actor: string) =>
     call<any>(`/portfolio/api/portfolio/ews/${id}/disposition`, "POST", { status }, actor),
+  ingestCoreBanking: (ref: string, envelope: any, actor: string) =>
+    call<any>(`/portfolio/api/portfolio/exposures/${ref}/ingest/core-banking`, "POST", envelope, actor),
+};
+
+// ---- copilot ----
+export const copilot = {
+  ask: (body: any, actor: string) => call<any>("/copilot/api/copilot/ask", "POST", body, actor),
+  scope: (persona: string) => call<any>(`/copilot/api/copilot/scope?persona=${persona}`, "GET"),
 };
 
 // ---- audit (any service exposes /api/audit) ----

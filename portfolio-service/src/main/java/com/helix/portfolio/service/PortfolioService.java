@@ -112,6 +112,12 @@ public class PortfolioService {
         return saved;
     }
 
+    @Transactional(readOnly = true)
+    public EclResult latestEcl(String reference) {
+        return eclResults.findFirstByApplicationReferenceOrderByCreatedAtDesc(reference)
+                .orElseThrow(() -> ApiException.notFound("No ECL computed for " + reference));
+    }
+
     @Transactional
     public PortfolioSummary summary() {
         List<ExposureRecord> all = exposures.findAll();

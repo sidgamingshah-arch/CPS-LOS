@@ -7,11 +7,13 @@ import Counterparties from "./pages/Counterparties";
 import Deals from "./pages/Deals";
 import DealWorkspace from "./pages/DealWorkspace";
 import AuditLog from "./pages/AuditLog";
+import Copilot from "./pages/Copilot";
 
 const NAV = [
   { key: "dashboard", label: "Portfolio Dashboard" },
   { key: "deals", label: "Deals" },
   { key: "counterparties", label: "Counterparties" },
+  { key: "copilot", label: "Copilot" },
   { key: "rulepacks", label: "Jurisdictions & Rule Packs" },
   { key: "audit", label: "Audit Trail" },
 ];
@@ -20,6 +22,7 @@ const CRUMB: Record<string, string> = {
   dashboard: "Portfolio & book-level intelligence",
   deals: "Origination pipeline",
   counterparties: "Onboarding · KYC/KYB · UBO",
+  copilot: "Scoped, grounded, non-binding assistant",
   rulepacks: "Regulatory abstraction layer",
   audit: "Immutable, examiner-ready trail",
   workspace: "Deal workspace — AI-executed, human-gated",
@@ -71,6 +74,7 @@ export default function App() {
             {view === "dashboard" && <Dashboard />}
             {view === "deals" && <Deals />}
             {view === "counterparties" && <Counterparties />}
+            {view === "copilot" && <Copilot />}
             {view === "rulepacks" && <RulePacks />}
             {view === "audit" && <AuditLog />}
             {view === "workspace" && ref && <DealWorkspace reference={ref} />}

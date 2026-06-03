@@ -114,6 +114,24 @@ export default function Counterparties() {
       try { await fn(); notify(ok); cp.reload(); hits.reload(); ubo.reload(); onChange(); }
       catch (e: any) { notify(e.message, true); }
     };
+    const ingestFeed = async () => {
+      const c = cp.data;
+      const envelope = {
+        source: "SANCTIONS_SCREENING", vendor: "WorldCheck", idempotencyKey: `WC-${id}-001`, payloadVersion: "2024-06",
+        payload: {
+          entityName: c.legalName,
+          matches: [
+            { list: "OFAC", name: c.legalName, score: 0.71, risk: "HIGH", fields: ["name", `country:${c.country}`] },
+            { list: "PEP", name: c.legalName, score: 0.55, risk: "MEDIUM", fields: ["name"] },
+          ],
+        },
+      };
+      try {
+        const r = await counterparty.ingestScreening(id, envelope, actor);
+        notify(r.duplicate ? "Idempotent replay — feed already ingested" : `Vendor feed ingested: ${r.message}`);
+        hits.reload();
+      } catch (e: any) { notify(e.message, true); }
+    };
     const c = cp.data;
     if (!c) return <Card title="Loading…"><div className="loading" /></Card>;
 
@@ -135,7 +153,8 @@ export default function Counterparties() {
           </div>
         </Card>
 
-        <Card title="Screening hits" sub="Each hit cites matched fields; disposition is a named human action (no auto-clear ≥ SEVERE).">
+        <Card title="Screening hits" sub="Each hit cites matched fields; disposition is a named human action (no auto-clear ≥ SEVERE)."
+          right={<Button kind="subtle" onClick={ingestFeed}>Ingest vendor feed</Button>}>
           {(hits.data || []).length === 0 ? <div className="muted">No hits — run screening.</div> : (
             <table>
               <thead><tr><th>Source</th><th className="num">Score</th><th>Severity</th><th>Disposition</th></tr></thead>

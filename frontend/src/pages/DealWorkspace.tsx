@@ -2,6 +2,7 @@ import { useState } from "react";
 import { decision, origination, portfolio, risk, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Field, GradeBadge, statusTone, useAsync } from "../ui";
+import CopilotPanel from "../CopilotPanel";
 
 const REASON_CODES = ["POST_BALANCE_SHEET_EVENT", "MANAGEMENT_QUALITY", "GROUP_SUPPORT", "SECTOR_OUTLOOK", "DATA_QUALITY", "COLLATERAL_STRENGTH", "OTHER"];
 
@@ -224,6 +225,11 @@ export default function DealWorkspace({ reference }: { reference: string }) {
       {/* Book & monitor */}
       <Card title="Book, provision & monitor" sub="ECL/IRAC provisioning, EWS — all human-gated for staging/remediation (PRD §11–12).">
         <BookBlock reference={reference} decided={d?.status === "DECIDED"} onChange={reload} signals={signals} />
+      </Card>
+
+      {/* Copilot, scoped to this deal */}
+      <Card title="Ask the copilot about this deal" sub="Scoped to your role, grounded in this deal's data, non-binding (PRD §6.6).">
+        <CopilotPanel reference={reference} compact />
       </Card>
     </div>
   );

@@ -11,14 +11,19 @@ SQLite-per-service, React + Vite + TS front end, Spring Cloud Gateway.
 - `risk-service` (8084) — rating, capital (RWA), pricing (RAROC). Calls config + origination.
 - `decision-service` (8085) — DoA approval workflow, covenants. Calls config/origination/risk.
 - `portfolio-service` (8086) — ECL/IRAC, EWS, concentration, stress. Calls all upstreams.
+- `copilot-service` (8087) — persona-scoped, grounded, non-binding conversational copilot. Read-only fan-out to all services.
 - `gateway-service` (8080) — routes `/{service}/**` to each service.
 - `frontend/` — React app (calls the gateway; `VITE_GATEWAY_URL`, default `http://localhost:8080`).
+
+Shared ingestion contracts live in `helix-common` (`com.helix.common.ingest`): canonical
+schemas + a `Connector` interface + an idempotency guard (PRD §8). Reference adapters:
+screening-vendor → counterparty, core-banking → exposure. See `docs/INTEGRATIONS.md`.
 
 ## Build / run / test
 ```bash
 mvn -DskipTests package          # build all jars
 bash scripts/run-all.sh          # start every service (health-gated)
-python3 scripts/e2e_smoke.py     # full-lifecycle integration test (expects 45 passed)
+python3 scripts/e2e_smoke.py     # full-lifecycle integration test (expects 55 passed)
 bash scripts/stop-all.sh         # stop
 cd frontend && npm install && npm run dev   # UI on :5173
 docker compose up --build        # full stack (UI :8088, gateway :8080)

@@ -19,6 +19,7 @@ by **bounded context**, mirroring the PRD lifecycle stages.
 | `risk-service` | 8084 | §5, §6, §7 | Rating (PD/LGD/EAD), capital (RWA), RAROC pricing |
 | `decision-service` | 8085 | §8, §9 | DoA routing, approval decisions, covenants |
 | `portfolio-service` | 8086 | §11, §12 | Exposures, ECL/IRAC, EWS, concentration, stress |
+| `copilot-service` | 8087 | §6.6 | Persona-scoped, grounded, non-binding conversational copilot |
 
 `helix-common` is a shared library (not a service): canonical enums, the append-only audit
 subsystem, JSON attribute converters (SQLite has no JSON type), and web cross-cutting
@@ -119,7 +120,31 @@ implementation encodes the contract structurally:
 Every intermediate value and the rule-pack versions are written to `trace`, satisfying the
 "figure → source → version" examiner requirement (US-6.1/6.2).
 
-## 7. What is MVP vs. additive
+## 7. Conversational copilot (PRD §6.6)
+
+`copilot-service` is a stateless (bar its audit DB) retrieval layer. `ask(persona, question)`:
+
+1. **Action guardrail** — credit-consequential imperatives (approve, override, book, stage,
+   disburse) are refused and routed to the gated workflow; the copilot never mutates state
+   (all its upstream reads are GETs).
+2. **Intent + scope** — the question is classified to an intent; `PersonaScope` maps the actor
+   to a role and rejects out-of-scope topics (the scope-leak guardrail).
+3. **Grounding** — facts are retrieved from the owning services and the answer **cites** each
+   source endpoint; nothing is fabricated. Every ask is logged to the audit trail as an AI action.
+
+The reasoning is deterministic today; a generative model drops in behind this same envelope
+(scope → retrieve → ground → cite → refuse) without changing the governance behaviour.
+
+## 8. Connector ingestion (PRD §8)
+
+Shared in `helix-common` (`com.helix.common.ingest`): canonical schemas (bureau, registry/GST,
+screening, core-banking, market data), a `Connector<RAW,CANON>` interface, a `Provenance`
+stamp, and an `IngestionGuard` (idempotency via the `ingestion_records` table). Two reference
+adapters are wired — screening-vendor → counterparty, core-banking → exposure — each idempotent,
+provenance-stamped, and surfacing reconciliation/validation issues as warnings. Full schema set
+and example payloads in [`INTEGRATIONS.md`](INTEGRATIONS.md).
+
+## 9. What is MVP vs. additive
 
 Implemented end-to-end: the credit lifecycle spine for mid-corporate under RBI, plus the
 CBUAE overlay, ECL/IRAC, concentration, EWS and stress.

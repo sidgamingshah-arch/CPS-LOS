@@ -63,6 +63,20 @@ services:
     volumes: ["portfolio-data:/data"]
     depends_on: [config-service, origination-service, risk-service, decision-service]
 
+  copilot-service:
+    build: { <<: *service-build, args: { SERVICE: copilot-service } }
+    environment:
+      SERVER_PORT: "8087"
+      CONFIG_SERVICE_URL: http://config-service:8081
+      COUNTERPARTY_SERVICE_URL: http://counterparty-service:8082
+      ORIGINATION_SERVICE_URL: http://origination-service:8083
+      RISK_SERVICE_URL: http://risk-service:8084
+      DECISION_SERVICE_URL: http://decision-service:8085
+      PORTFOLIO_SERVICE_URL: http://portfolio-service:8086
+    ports: ["8087:8087"]
+    volumes: ["copilot-data:/data"]
+    depends_on: [config-service, counterparty-service, origination-service, risk-service, decision-service, portfolio-service]
+
   gateway-service:
     build: { <<: *service-build, args: { SERVICE: gateway-service } }
     environment:
@@ -73,6 +87,7 @@ services:
       RISK_SERVICE_URL: http://risk-service:8084
       DECISION_SERVICE_URL: http://decision-service:8085
       PORTFOLIO_SERVICE_URL: http://portfolio-service:8086
+      COPILOT_SERVICE_URL: http://copilot-service:8087
     ports: ["8080:8080"]
     depends_on:
       - config-service
@@ -81,6 +96,7 @@ services:
       - risk-service
       - decision-service
       - portfolio-service
+      - copilot-service
 
   frontend:
     build:
@@ -98,3 +114,4 @@ volumes:
   risk-data:
   decision-data:
   portfolio-data:
+  copilot-data:

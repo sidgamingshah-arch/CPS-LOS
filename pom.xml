@@ -29,6 +29,7 @@
         <module>risk-service</module>
         <module>decision-service</module>
         <module>portfolio-service</module>
+        <module>copilot-service</module>
         <module>gateway-service</module>
     </modules>
 

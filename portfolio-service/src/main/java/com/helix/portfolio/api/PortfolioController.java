@@ -1,13 +1,17 @@
 package com.helix.portfolio.api;
 
+import com.helix.common.ingest.Ingestion.Envelope;
+import com.helix.common.ingest.Ingestion.Result;
 import com.helix.portfolio.dto.Dtos.ConcentrationView;
 import com.helix.portfolio.dto.Dtos.DispositionRequest;
 import com.helix.portfolio.dto.Dtos.PortfolioSummary;
 import com.helix.portfolio.dto.Dtos.RegisterExposureRequest;
 import com.helix.portfolio.dto.Dtos.StressResult;
+import com.helix.portfolio.dto.IngestDtos.RawCoreBankingFeed;
 import com.helix.portfolio.entity.EclResult;
 import com.helix.portfolio.entity.EwsSignal;
 import com.helix.portfolio.entity.ExposureRecord;
+import com.helix.portfolio.service.CoreBankingIngestionService;
 import com.helix.portfolio.service.EwsService;
 import com.helix.portfolio.service.PortfolioService;
 import jakarta.validation.Valid;
@@ -28,10 +32,12 @@ public class PortfolioController {
 
     private final PortfolioService portfolio;
     private final EwsService ews;
+    private final CoreBankingIngestionService coreBanking;
 
-    public PortfolioController(PortfolioService portfolio, EwsService ews) {
+    public PortfolioController(PortfolioService portfolio, EwsService ews, CoreBankingIngestionService coreBanking) {
         this.portfolio = portfolio;
         this.ews = ews;
+        this.coreBanking = coreBanking;
     }
 
     // ---- exposures ----
@@ -54,12 +60,25 @@ public class PortfolioController {
         return portfolio.exposure(reference);
     }
 
+    /** Ingest a core-banking conduct/booking feed via the canonical connector (idempotent). */
+    @PostMapping("/exposures/{reference}/ingest/core-banking")
+    public Result ingestCoreBanking(@PathVariable String reference,
+                                    @RequestBody Envelope<RawCoreBankingFeed> envelope,
+                                    @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+        return coreBanking.ingest(reference, envelope, actor);
+    }
+
     // ---- ECL / provisioning ----
 
     @PostMapping("/exposures/{reference}/ecl")
     public EclResult computeEcl(@PathVariable String reference,
                                 @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
         return portfolio.computeEcl(reference, actor);
+    }
+
+    @GetMapping("/exposures/{reference}/ecl/latest")
+    public EclResult latestEcl(@PathVariable String reference) {
+        return portfolio.latestEcl(reference);
     }
 
     @GetMapping("/summary")

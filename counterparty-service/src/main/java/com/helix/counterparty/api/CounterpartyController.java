@@ -1,12 +1,16 @@
 package com.helix.counterparty.api;
 
+import com.helix.common.ingest.Ingestion.Envelope;
+import com.helix.common.ingest.Ingestion.Result;
 import com.helix.counterparty.dto.Dtos.CreateCounterpartyRequest;
 import com.helix.counterparty.dto.Dtos.DispositionRequest;
 import com.helix.counterparty.dto.Dtos.UboStructureRequest;
+import com.helix.counterparty.dto.IngestDtos.RawScreeningPayload;
 import com.helix.counterparty.entity.Counterparty;
 import com.helix.counterparty.entity.ScreeningHit;
 import com.helix.counterparty.entity.UboNode;
 import com.helix.counterparty.service.CounterpartyService;
+import com.helix.counterparty.service.ScreeningIngestionService;
 import com.helix.counterparty.service.ScreeningService;
 import com.helix.counterparty.service.UboService;
 import jakarta.validation.Valid;
@@ -27,11 +31,14 @@ public class CounterpartyController {
     private final CounterpartyService counterparties;
     private final UboService ubo;
     private final ScreeningService screening;
+    private final ScreeningIngestionService screeningIngestion;
 
-    public CounterpartyController(CounterpartyService counterparties, UboService ubo, ScreeningService screening) {
+    public CounterpartyController(CounterpartyService counterparties, UboService ubo, ScreeningService screening,
+                                  ScreeningIngestionService screeningIngestion) {
         this.counterparties = counterparties;
         this.ubo = ubo;
         this.screening = screening;
+        this.screeningIngestion = screeningIngestion;
     }
 
     @PostMapping
@@ -87,5 +94,12 @@ public class CounterpartyController {
     public ScreeningHit disposition(@PathVariable Long hitId, @Valid @RequestBody DispositionRequest req,
                                     @RequestHeader(value = "X-Actor", defaultValue = "compliance.officer") String actor) {
         return screening.disposition(hitId, req.disposition(), req.note(), actor);
+    }
+
+    /** Ingest a sanctions/screening vendor feed via the canonical connector (idempotent). */
+    @PostMapping("/{id}/ingest/screening")
+    public Result ingestScreening(@PathVariable Long id, @RequestBody Envelope<RawScreeningPayload> envelope,
+                                  @RequestHeader(value = "X-Actor", defaultValue = "compliance.officer") String actor) {
+        return screeningIngestion.ingest(id, envelope, actor);
     }
 }

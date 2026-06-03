@@ -52,6 +52,12 @@ spring:
             - Path=/portfolio/**
           filters:
             - StripPrefix=1
+        - id: copilot-service
+          uri: ${COPILOT_SERVICE_URL:http://localhost:8087}
+          predicates:
+            - Path=/copilot/**
+          filters:
+            - StripPrefix=1
 
 management:
   endpoints:

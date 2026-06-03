@@ -47,6 +47,9 @@ front end, behind a single **API gateway**.
 
   Each service owns a private SQLite database (sqlite-jdbc + Hibernate community dialect).
   Inter-service calls are REST (Spring RestClient) with graceful fallback when config is down.
+
+  copilot-service :8087 — a persona-scoped, grounded, non-binding conversational copilot
+  (PRD §6.6) that reads (GET-only) across the services and cites its sources.
 ```
 
 **Tech:** Java 21, Spring Boot 3.3, Spring Cloud Gateway 2023.0, SQLite (xerial JDBC +
@@ -114,11 +117,18 @@ python3 scripts/e2e_smoke.py     # 45 assertions across all 13 PRD stages
      covenants; a **named human** records APPROVE/CONDITIONAL/DECLINE — AI cannot approve.
    - **Book & monitor** — book the exposure, compute **ECL with parallel IRAC**
      (reported = jurisdiction policy), run the **EWS** scan.
+   - **Ask the copilot** — a deal-scoped, grounded, non-binding Q&A panel.
 3. **Portfolio Dashboard** → staging split, override-rate model-fit signal, concentration vs
    limits, EWS watchlist, stress scenarios.
-4. **Jurisdictions & Rule Packs** → inspect the abstraction layer (switch IN-RBI / AE-CBUAE).
-5. **Audit Trail** → every action attributed to a named **HUMAN**, governed **AI**, or
+4. **Copilot** → persona-scoped Q&A; it grounds-and-cites in-scope answers and **refuses**
+   credit-consequential actions, routing them to the gated workflow.
+5. **Jurisdictions & Rule Packs** → inspect the abstraction layer (switch IN-RBI / AE-CBUAE).
+6. **Audit Trail** → every action attributed to a named **HUMAN**, governed **AI**, or
    deterministic **SYSTEM** actor.
+
+Counterparties also expose an **ingest vendor feed** action and exposures accept a
+**core-banking conduct feed** — the canonical connector ingestion path (idempotent,
+provenance-stamped); see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
 
 ---
 
@@ -132,9 +142,12 @@ python3 scripts/e2e_smoke.py     # 45 assertions across all 13 PRD stages
 | `/risk` | risk-service | `POST /api/risk/{ref}/rate`, `POST /api/risk/{ref}/capital`, `GET /api/risk/{ref}/capital/explain` |
 | `/decision` | decision-service | `POST /api/decisions/{ref}/route`, `POST /api/decisions/{ref}/decide` |
 | `/portfolio` | portfolio-service | `POST /api/portfolio/exposures/{ref}/ecl`, `GET /api/portfolio/concentration`, `GET /api/portfolio/stress` |
-| `/{svc}` | any | `GET /api/audit` — immutable trail |
+| `/copilot` | copilot-service | `POST /api/copilot/ask`, `GET /api/copilot/scope?persona=…` |
+| `/{svc}` | any | `GET /api/audit` — immutable trail; `POST …/ingest/{connector}` — vendor feeds |
 
 All write calls accept an `X-Actor` header so the audit trail names the responsible party.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the canonical model, per-service
-responsibilities, design decisions, and the full PRD-stage → service mapping.
+responsibilities, design decisions, and the full PRD-stage → service mapping, and
+[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) for the connector pattern and canonical
+ingestion schemas.
