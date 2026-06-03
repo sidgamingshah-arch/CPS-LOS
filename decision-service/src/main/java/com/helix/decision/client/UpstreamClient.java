@@ -1,0 +1,103 @@
+package com.helix.decision.client;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.helix.common.web.ApiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Pulls authoritative figures from upstream services so approval routing uses
+ * system-of-record data, never client-supplied values (PRD §8/§13 traceability).
+ */
+@Component
+public class UpstreamClient {
+
+    private static final Logger log = LoggerFactory.getLogger(UpstreamClient.class);
+
+    private final RestClient config;
+    private final RestClient origination;
+    private final RestClient risk;
+
+    public UpstreamClient(@Value("${helix.config-service.base-url}") String configUrl,
+                          @Value("${helix.origination-service.base-url}") String originationUrl,
+                          @Value("${helix.risk-service.base-url}") String riskUrl) {
+        this.config = RestClient.builder().baseUrl(configUrl).build();
+        this.origination = RestClient.builder().baseUrl(originationUrl).build();
+        this.risk = RestClient.builder().baseUrl(riskUrl).build();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record RulePackDto(String code, int version, Map<String, Object> payload) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record CreditInputsDto(String applicationReference, String counterpartyName, String jurisdiction,
+                                  String segment, String facilityType, double requestedAmount, String currency,
+                                  int tenorMonths, Map<String, Double> ratios) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record RatingDto(String finalGrade, String modelGrade, double pd, boolean overridden,
+                            boolean escalated, boolean confirmed) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record CapitalDto(double rwa, double capitalRequired, String exposureClass) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record PricingDto(double recommendedRate, double raroc, double hurdleRaroc, boolean belowHurdle) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record RiskSummaryDto(String applicationReference, RatingDto rating, CapitalDto capital, PricingDto pricing) {
+    }
+
+    public RulePackDto doaMatrix(String jurisdiction) {
+        try {
+            return config.get().uri(uri -> uri.path("/api/rulepacks")
+                            .queryParam("jurisdiction", jurisdiction)
+                            .queryParam("type", "DOA_MATRIX").build())
+                    .retrieve().body(RulePackDto.class);
+        } catch (Exception e) {
+            log.warn("config-service unreachable for DOA_MATRIX/{}; using fallback ({})", jurisdiction, e.getMessage());
+            return fallbackDoa();
+        }
+    }
+
+    public CreditInputsDto creditInputs(String reference) {
+        try {
+            return origination.get().uri("/api/applications/{ref}/credit-inputs", reference)
+                    .retrieve().body(CreditInputsDto.class);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "origination-service unavailable: " + e.getMessage());
+        }
+    }
+
+    public RiskSummaryDto riskSummary(String reference) {
+        try {
+            return risk.get().uri("/api/risk/{ref}", reference).retrieve().body(RiskSummaryDto.class);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "risk-service unavailable: " + e.getMessage());
+        }
+    }
+
+    private RulePackDto fallbackDoa() {
+        Map<String, Object> payload = Map.of(
+                "levels", List.of(
+                        Map.of("max_amount", 50_000_000d, "min_grade", "BBB", "authority", "RM_HEAD"),
+                        Map.of("max_amount", 250_000_000d, "min_grade", "BB", "authority", "CREDIT_OFFICER"),
+                        Map.of("max_amount", 1_000_000_000d, "min_grade", "B", "authority", "CREDIT_COMMITTEE"),
+                        Map.of("max_amount", Double.MAX_VALUE, "min_grade", "D", "authority", "BOARD_COMMITTEE")),
+                "deviation_escalates_one_level", true,
+                "below_hurdle_requires_escalation", true);
+        return new RulePackDto("fallback_doa_matrix", 0, payload);
+    }
+}

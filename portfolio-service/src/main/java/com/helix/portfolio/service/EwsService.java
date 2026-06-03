@@ -1,0 +1,160 @@
+package com.helix.portfolio.service;
+
+import com.helix.common.audit.AuditService;
+import com.helix.common.model.Enums.SignalSeverity;
+import com.helix.common.web.ApiException;
+import com.helix.portfolio.client.PortfolioUpstreamClient;
+import com.helix.portfolio.client.PortfolioUpstreamClient.CovenantDto;
+import com.helix.portfolio.client.PortfolioUpstreamClient.CreditInputsDto;
+import com.helix.portfolio.entity.EwsSignal;
+import com.helix.portfolio.entity.ExposureRecord;
+import com.helix.portfolio.repo.EwsSignalRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Agentic early-warning (PRD §11/§6.5). Scans internal + external signals and
+ * ranks watch candidates autonomously [A], but only flags and proposes — it
+ * cannot reclassify, re-stage or change limits. Humans decide.
+ */
+@Service
+public class EwsService {
+
+    private final EwsSignalRepository signals;
+    private final PortfolioUpstreamClient upstream;
+    private final AuditService audit;
+
+    public EwsService(EwsSignalRepository signals, PortfolioUpstreamClient upstream, AuditService audit) {
+        this.signals = signals;
+        this.upstream = upstream;
+        this.audit = audit;
+    }
+
+    @Transactional
+    public List<EwsSignal> scan(ExposureRecord exp) {
+        // Replace prior signals for this exposure to avoid duplicates on re-scan.
+        signals.deleteAll(signals.findByApplicationReferenceOrderByScoreDesc(exp.getApplicationReference()));
+
+        CreditInputsDto inputs = upstream.creditInputs(exp.getApplicationReference());
+        List<CovenantDto> covenants = upstream.covenants(exp.getApplicationReference());
+        Map<String, Double> ratios = inputs.ratios() == null ? Map.of() : inputs.ratios();
+
+        List<EwsSignal> raised = new ArrayList<>();
+
+        // 1) Covenant breaches (internal).
+        for (CovenantDto cov : covenants) {
+            if (!cov.active()) {
+                continue;
+            }
+            double observed = ratios.getOrDefault(cov.metric(), 0.0);
+            if (!satisfies(observed, cov.operator(), cov.threshold())) {
+                raised.add(build(exp, "COVENANT_BREACH", mapSeverity(cov.breachSeverity()), "INTERNAL", 0.85,
+                        "Covenant %s %s %.2f breached — observed %.2f (source: management accounts)"
+                                .formatted(cov.metric(), cov.operator(), cov.threshold(), observed),
+                        "Raise to watchlist and trigger review (human-decided)"));
+            }
+        }
+
+        // 2) Leverage / coverage stress (internal).
+        double netLeverage = ratios.getOrDefault("NET_LEVERAGE", 0.0);
+        if (netLeverage > 4.0) {
+            raised.add(build(exp, "LEVERAGE_SPIKE", SignalSeverity.MEDIUM, "INTERNAL",
+                    Math.min(0.5 + (netLeverage - 4.0) / 10.0, 0.9),
+                    "Net leverage %.1fx above 4.0x watch level".formatted(netLeverage),
+                    "Refresh financials; assess for watchlist"));
+        }
+        double dscr = ratios.getOrDefault("DSCR", 99.0);
+        if (dscr < 1.1) {
+            raised.add(build(exp, "DSCR_PRESSURE", SignalSeverity.HIGH, "INTERNAL", 0.8,
+                    "DSCR %.2f below 1.10x — debt-service pressure".formatted(dscr),
+                    "Engage RM; consider review trigger"));
+        }
+
+        // 3) Delinquency (internal/conduct).
+        int dpd = exp.getDaysPastDue();
+        if (dpd >= 30) {
+            SignalSeverity sev = dpd >= 90 ? SignalSeverity.SEVERE : SignalSeverity.HIGH;
+            raised.add(build(exp, "DAYS_PAST_DUE", sev, "INTERNAL", dpd >= 90 ? 0.95 : 0.7,
+                    "%d days past due".formatted(dpd),
+                    "Candidate for stage migration — staging is human-decided, not auto-applied"));
+        }
+
+        // 4) Weak grade (external/rating drift proxy).
+        if (List.of("CCC", "CC", "C", "D").contains(exp.getFinalGrade())) {
+            raised.add(build(exp, "SUB_INVESTMENT_GRADE", SignalSeverity.HIGH, "EXTERNAL", 0.72,
+                    "Current grade %s is deep sub-investment grade".formatted(exp.getFinalGrade()),
+                    "Watchlist candidate; review remediation options"));
+        }
+
+        List<EwsSignal> saved = signals.saveAll(raised);
+        audit.ai("ews-agent", "EWS_SCAN", "Application", exp.getApplicationReference(),
+                "Scan raised %d signal(s); flags only — no autonomous reclassification".formatted(saved.size()),
+                Map.of("signalCount", saved.size()));
+        return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public List<EwsSignal> watchlist() {
+        return signals.findByStatusOrderByScoreDesc("OPEN");
+    }
+
+    @Transactional(readOnly = true)
+    public List<EwsSignal> forApplication(String reference) {
+        return signals.findByApplicationReferenceOrderByScoreDesc(reference);
+    }
+
+    @Transactional
+    public EwsSignal disposition(Long id, String status, String actor) {
+        EwsSignal s = signals.findById(id).orElseThrow(() -> ApiException.notFound("No signal: " + id));
+        String target = status.toUpperCase();
+        if (!List.of("REVIEWED", "DISMISSED", "OPEN").contains(target)) {
+            throw ApiException.badRequest("status must be REVIEWED, DISMISSED or OPEN");
+        }
+        s.setStatus(target);
+        s.setReviewedBy(actor);
+        s.setReviewedAt(Instant.now());
+        audit.human(actor, "EWS_SIGNAL_DISPOSITIONED", "Application", s.getApplicationReference(),
+                "Signal %s (%s) marked %s".formatted(s.getSignalType(), s.getSeverity(), target),
+                Map.of("signalType", s.getSignalType(), "status", target));
+        return signals.save(s);
+    }
+
+    private EwsSignal build(ExposureRecord exp, String type, SignalSeverity severity, String source,
+                            double score, String rationale, String proposedAction) {
+        EwsSignal s = new EwsSignal();
+        s.setApplicationReference(exp.getApplicationReference());
+        s.setCounterpartyRef(exp.getCounterpartyRef());
+        s.setCounterpartyName(exp.getCounterpartyName());
+        s.setSignalType(type);
+        s.setSeverity(severity.name());
+        s.setSource(source);
+        s.setScore(Math.round(score * 1000.0) / 1000.0);
+        s.setRationale(rationale);
+        s.setProposedAction(proposedAction);
+        return s;
+    }
+
+    private SignalSeverity mapSeverity(String breachSeverity) {
+        return switch (breachSeverity == null ? "" : breachSeverity.toUpperCase()) {
+            case "CRITICAL" -> SignalSeverity.SEVERE;
+            case "MAJOR" -> SignalSeverity.HIGH;
+            default -> SignalSeverity.MEDIUM;
+        };
+    }
+
+    private boolean satisfies(double observed, String operator, double threshold) {
+        return switch (operator) {
+            case ">=" -> observed >= threshold;
+            case ">" -> observed > threshold;
+            case "<=" -> observed <= threshold;
+            case "<" -> observed < threshold;
+            case "==" -> Math.abs(observed - threshold) < 1e-9;
+            default -> true;
+        };
+    }
+}

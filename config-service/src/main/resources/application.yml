@@ -1,0 +1,29 @@
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  application:
+    name: config-service
+  datasource:
+    url: jdbc:sqlite:${HELIX_DATA_DIR:./data}/config.db
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 1   # SQLite is single-writer
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.community.dialect.SQLiteDialect
+        format_sql: false
+    show-sql: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
