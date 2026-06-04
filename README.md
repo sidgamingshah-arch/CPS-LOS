@@ -85,7 +85,7 @@ bash scripts/stop-all.sh
 ```bash
 mvn -DskipTests package          # build jars first (compose copies them in)
 docker compose up --build
-# UI:      http://localhost:8088
+# UI:      http://localhost:5173
 # Gateway: http://localhost:8080
 ```
 
@@ -93,7 +93,7 @@ docker compose up --build
 With the services running locally, exercise the entire lifecycle through the gateway:
 
 ```bash
-python3 scripts/e2e_smoke.py            # single-deal · 75 assertions across all stages + new modules
+python3 scripts/e2e_smoke.py            # single-deal · ~143 assertions across all stages + modules
 python3 scripts/e2e_100_obligors.py     # 100-obligor distributed book · ~60s · MIS / variance / concentration
 ```
 

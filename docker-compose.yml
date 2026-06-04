@@ -2,7 +2,7 @@
 # Build jars first:  mvn -DskipTests package
 # Then:              docker compose up --build
 #
-# UI:      http://localhost:8088
+# UI:      http://localhost:5173
 # Gateway: http://localhost:8080
 
 name: helix
@@ -116,7 +116,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_GATEWAY_URL: http://localhost:8080
-    ports: ["8088:80"]
+    ports: ["5173:80"]
     depends_on: [gateway-service]
 
 volumes:
