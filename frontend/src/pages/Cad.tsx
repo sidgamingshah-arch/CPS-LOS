@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cad, origination } from "../api";
+import { cad, mer, origination } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Field, statusTone, useAsync } from "../ui";
 
@@ -147,8 +147,13 @@ function CaseDetail({ caseId, onChange }: { caseId: number; onChange: () => void
           <Button kind="ghost" disabled={c.status !== "COMPLETED"}
             onClick={() => run(() => cad.limitRelease(caseId, { processingFeeAmortised: true, lienMarked: true, cashMarginCaptured: true, comment: "all set" }, actor),
               "Limit release triggered")}>Trigger limit release</Button>
+          <Button kind="ghost" disabled={!["COMPLETED", "LIMIT_RELEASED"].includes(c.status)}
+            onClick={() => run(async () => {
+              const built = await mer.generateFromCad(caseId, actor, actor);
+              notify(`Built ${built.length} monitoring item(s) — see Monitoring · MER`);
+            }, "Monitoring register built")}>Build monitoring register</Button>
         </div>
-        <small className="prov">On release, a LIMIT_RELEASE_TRIGGER event feeds limit-service so the line becomes utilisable.</small>
+        <small className="prov">On release, a LIMIT_RELEASE_TRIGGER event feeds limit-service so the line becomes utilisable. Building the monitoring register carries deferred documents and renewals (insurance · valuation · annual review) into the MER tracker.</small>
       </Card>
     </div>
   );

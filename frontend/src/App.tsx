@@ -11,6 +11,7 @@ import Copilot from "./pages/Copilot";
 import Mis from "./pages/Mis";
 import Customer360 from "./pages/Customer360";
 import Cad from "./pages/Cad";
+import Monitoring from "./pages/Monitoring";
 import Limits from "./pages/Limits";
 
 const NAV = [
@@ -19,6 +20,7 @@ const NAV = [
   { key: "counterparties", label: "Counterparties" },
   { key: "limits", label: "Limits" },
   { key: "cad", label: "CAD · Documentation" },
+  { key: "monitoring", label: "Monitoring · MER" },
   { key: "customer360", label: "Customer-360" },
   { key: "mis", label: "MIS · Reports" },
   { key: "copilot", label: "Copilot" },
@@ -32,6 +34,7 @@ const CRUMB: Record<string, string> = {
   counterparties: "Onboarding · KYC/KYB · UBO",
   limits: "Multi-level limit tree · fungibility · View/Validation/Utilisation APIs",
   cad: "Credit Administration · checklist · waivers/deviations · limit release",
+  monitoring: "Deferred docs · conditions subsequent · renewals · reminders · escalation · DMS feed",
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
   mis: "Composition · RAROC variance · ECL · ageing · watchlist",
   copilot: "Scoped, grounded, non-binding assistant",
@@ -88,6 +91,7 @@ export default function App() {
             {view === "counterparties" && <Counterparties />}
             {view === "limits" && <Limits />}
             {view === "cad" && <Cad />}
+            {view === "monitoring" && <Monitoring />}
             {view === "customer360" && <Customer360 />}
             {view === "mis" && <Mis />}
             {view === "copilot" && <Copilot />}

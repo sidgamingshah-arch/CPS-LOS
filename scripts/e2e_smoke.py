@@ -572,6 +572,50 @@ check("CAP sweep endpoint runs", st == 200 and "overdue" in sweep, f"{st}")
 st, byref = call("GET", f"/portfolio/api/cap/{ref}")
 check("CAPs queryable by application", st == 200 and len(byref) >= 1, f"{st}")
 
+print("== 33. MER tracking: deferred docs · renewals · DMS feed · maker-checker · escalation ==")
+st, mers = call("POST", f"/decision/api/mer/generate/from-cad/{case_id}?owner=rm.alice", actor="cad.officer")
+check("MER register built from CAD case", st == 200 and len(mers) >= 2, f"{st} {len(mers) if mers else 0}")
+deferred = next((m for m in mers if m["itemType"] == "DEFERRED_DOCUMENT"), None)
+check("deferred document obligation captured from waived item", deferred is not None, str([m["itemType"] for m in mers]))
+review = next((m for m in mers if m["recurring"] and m["itemType"] == "RENEWAL_REVIEW"), None)
+check("annual review seeded as recurring renewal", review is not None, str([m["itemType"] for m in mers]))
+check("collateral renewals seeded (insurance/valuation)",
+      any(m["itemType"] in ("INSURANCE", "VALUATION") for m in mers), str([m["itemType"] for m in mers]))
+
+# Submit evidence on the deferred document -> SUBMITTED + DMS feed
+st, sub = call("POST", f"/decision/api/mer/{deferred['id']}/submit",
+               {"docRef": "DMS-MER-1", "comment": "Insurance assignment executed"}, actor="rm.alice")
+check("evidence submitted -> SUBMITTED (DMS-fed)", st == 200 and sub["status"] == "SUBMITTED" and sub["docRef"] == "DMS-MER-1", f"{st}")
+# SoD: verifier cannot be the submitter
+st, sodv = call("POST", f"/decision/api/mer/{deferred['id']}/verify", {"approve": True, "comment": "self"}, actor="rm.alice")
+check("verifier cannot be submitter (403)", st == 403, f"{st}")
+st, ver = call("POST", f"/decision/api/mer/{deferred['id']}/verify", {"approve": True, "comment": "verified"}, actor="cad.officer")
+check("verified by a different actor -> CLEARED", st == 200 and ver["status"] == "CLEARED", f"{st}")
+
+# Recurring renewal: submit + verify rolls the due date forward and re-opens for the next cycle
+call("POST", f"/decision/api/mer/{review['id']}/submit", {"docRef": "DMS-REVIEW-1", "comment": "Annual review note"}, actor="rm.alice")
+st, rver = call("POST", f"/decision/api/mer/{review['id']}/verify", {"approve": True}, actor="credit.officer")
+check("recurring renewal rolls forward (OPEN, cycle 1)", st == 200 and rver["status"] == "OPEN" and rver["cycleCount"] == 1,
+      f"{st} {rver.get('status') if rver else None} {rver.get('cycleCount') if rver else None}")
+check("renewal due date advanced", rver["dueDate"] > review["dueDate"], f"{rver.get('dueDate')} vs {review.get('dueDate')}")
+
+# Waiver with maker-checker SoD: the owner cannot waive their own item
+st, allm = call("GET", f"/decision/api/mer/{ref}")
+waivable = next((m for m in allm if m["status"] in ("OPEN", "SUBMITTED", "OVERDUE", "ESCALATED")), None)
+st, sodw = call("POST", f"/decision/api/mer/{waivable['id']}/waive", {"reason": "self"}, actor="rm.alice")
+check("owner cannot waive own item (403)", st == 403, f"{st}")
+st, wv = call("POST", f"/decision/api/mer/{waivable['id']}/waive",
+              {"reason": "Covered by group master insurance policy"}, actor="credit.officer")
+check("waiver by a non-owner -> WAIVED", st == 200 and wv["status"] == "WAIVED", f"{st}")
+
+# Sweep (escalation ageing), reminders and the dashboard summary
+st, mswp = call("POST", "/decision/api/mer/sweep", actor="system")
+check("MER sweep runs", st == 200 and "markedOverdue" in mswp and "markedEscalated" in mswp, f"{st}")
+st, mrem = call("POST", "/decision/api/mer/reminders/send?days=400", actor="system")
+check("MER reminders emitted for near-due items", st == 200 and mrem["remindersSent"] >= 1, f"{st}")
+st, msum = call("GET", f"/decision/api/mer/summary?reference={ref}")
+check("MER summary returns status breakdown", st == 200 and msum["total"] >= 2 and "byStatus" in msum, f"{st}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

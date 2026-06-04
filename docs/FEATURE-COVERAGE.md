@@ -123,7 +123,8 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 | CAD inbox post-CP, checklist suggestion from master config, per-item status update (complied/non-complied/waived) | ✅ (`POST /cad/cases`, `GET /cad/cases`, `POST /cad/items/{id}`) |
 | Waiver/Deviation workflow (sequential 2-level, maker-checker with SoD) | ✅ (`items/{id}/deviation`, `deviations/{id}/decision`; raiser≠approver, L1≠L2) |
 | Completion gate + limit-release checklist + feed to limit management | ✅ (`cases/{id}/complete`, `cases/{id}/limit-release` → LIMIT_RELEASE_TRIGGER) |
-| MER tracking workflow, pre-populated doc/TnC generation, DMS versioning, email templates per stage | ◑ / ○ (EMAIL_TEMPLATE master + audit events; MER + doc-gen are further builds) |
+| MER tracking workflow (deferred docs / conditions subsequent / recurring renewals — insurance · valuation · annual review), reminders + escalation sweep, maker-checker clearance, DMS feed | ✅ (`/api/mer`: `generate/from-cad`, `submit`→DMS_FEED, `verify` [verifier≠submitter], `waive` [≠owner], `sweep`→OVERDUE/ESCALATED, `reminders/send`, recurring roll-forward; React **Monitoring · MER**) |
+| Pre-populated doc/TnC generation, DMS versioning, email templates per stage | ◑ / ○ (EMAIL_TEMPLATE master + audit events; doc-gen is a further build) |
 | GenAI (template selection, casual→legal language, clause add/remove, translation, signature verification, doc checks) | ○ |
 
 ---

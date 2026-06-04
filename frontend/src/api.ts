@@ -185,6 +185,25 @@ export const cad = {
     call<any>(`/decision/api/cad/cases/${id}/limit-release`, "POST", body, actor),
 };
 
+// ---- MER (monitoring of exceptions & renewals) ----
+export const mer = {
+  generateFromCad: (caseId: number, owner: string, actor: string) =>
+    call<any[]>(`/decision/api/mer/generate/from-cad/${caseId}?owner=${encodeURIComponent(owner)}`, "POST", undefined, actor),
+  raise: (body: any, actor: string) => call<any>("/decision/api/mer/raise", "POST", body, actor),
+  forApp: (ref: string) => call<any[]>(`/decision/api/mer/${ref}`, "GET"),
+  inbox: (owner?: string, status?: string) => {
+    const q = [owner ? `owner=${encodeURIComponent(owner)}` : "", status ? `status=${status}` : ""].filter(Boolean).join("&");
+    return call<any[]>("/decision/api/mer/inbox" + (q ? `?${q}` : ""), "GET");
+  },
+  summary: (ref?: string) => call<any>("/decision/api/mer/summary" + (ref ? `?reference=${ref}` : ""), "GET"),
+  submit: (id: number, body: any, actor: string) => call<any>(`/decision/api/mer/${id}/submit`, "POST", body, actor),
+  verify: (id: number, body: any, actor: string) => call<any>(`/decision/api/mer/${id}/verify`, "POST", body, actor),
+  waive: (id: number, body: any, actor: string) => call<any>(`/decision/api/mer/${id}/waive`, "POST", body, actor),
+  sweep: (actor: string) => call<any>("/decision/api/mer/sweep", "POST", undefined, actor),
+  upcoming: (days: number) => call<any[]>(`/decision/api/mer/upcoming?days=${days}`, "GET"),
+  sendReminders: (days: number, actor: string) => call<any>(`/decision/api/mer/reminders/send?days=${days}`, "POST", undefined, actor),
+};
+
 // ---- limit management ----
 export const limits = {
   build: (ref: string, actor: string) => call<any>(`/limits/api/limits/build/${ref}`, "POST", undefined, actor),
