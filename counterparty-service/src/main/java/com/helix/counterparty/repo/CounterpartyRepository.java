@@ -7,4 +7,8 @@ import java.util.Optional;
 
 public interface CounterpartyRepository extends JpaRepository<Counterparty, Long> {
     Optional<Counterparty> findByReference(String reference);
+
+    java.util.List<Counterparty> findByGroupId(Long groupId);
+
+    java.util.List<Counterparty> findByRecordTypeAndLifecycleStatus(String recordType, String lifecycleStatus);
 }

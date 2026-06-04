@@ -70,6 +70,28 @@ public class Counterparty {
     private String verifiedBy;
     private Instant verifiedAt;
 
+    // ---- credit-initiation lifecycle (prospect -> obligor) ----
+    @Column(length = 20)
+    private String recordType = "OBLIGOR";   // PROSPECT | OBLIGOR (existing flow defaults to OBLIGOR)
+
+    @Column(length = 20)
+    private String lifecycleStatus = "ACTIVE"; // DRAFT | ACTIVE | DROPPED | DISCARDED | CLOSED
+
+    @Column(length = 20)
+    private String borrowerType;             // NTB | ETB | DUAL_OBLIGOR
+
+    private String rmId;                      // default RM = creator; reassignable via workflow
+    private Long groupId;                     // tagged group, if any
+
+    private String industry;
+    private String subIndustry;
+    private String businessSegment;
+    private String subSegment;
+
+    private String externalId;                // CRM / core-banking obligor id mapping
+    private String droppedReason;
+    private Instant lastActivityAt;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;

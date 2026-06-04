@@ -303,6 +303,86 @@ check("RAROC variance MIS endpoint", st == 200 and var["trackedDeals"] >= 1, f"{
 st, ageing = call("GET", "/portfolio/api/mis/pipeline-ageing")
 check("pipeline ageing endpoint", st == 200 and "avgAgeDays" in ageing)
 
+print("== 22. Generic master-data + maker-checker ==")
+st, dedupM = call("GET", "/config/api/masters/DEDUP_RULES")
+check("DEDUP_RULES master seeded (active)", st == 200 and len(dedupM) >= 1, f"{st}")
+st, neg = call("GET", "/config/api/masters/NEGATIVE_LIST")
+check("NEGATIVE_LIST master seeded", st == 200 and len(neg) >= 3, f"{st}")
+st, cov = call("GET", "/config/api/masters/COVENANT_LIBRARY")
+check("COVENANT_LIBRARY master seeded", st == 200 and len(cov) >= 3, f"{st}")
+# maker-checker lifecycle
+st, sub = call("POST", "/config/api/masters/FACILITY_MASTER",
+               {"recordKey": "OVERDRAFT", "payload": {"classification": "FUND_BASED", "type": "REVOLVING", "category": "SHORT_TERM"}},
+               actor="master.maker")
+check("maker submits master record (pending)", st == 200 and sub["status"] == "PENDING_APPROVAL", f"{st} {sub.get('status')}")
+# SoD: same actor cannot approve own record
+st, sod = call("POST", f"/config/api/masters/records/{sub['id']}/approve", actor="master.maker")
+check("maker cannot approve own record (SoD, 403)", st == 403, f"{st}")
+st, appr = call("POST", f"/config/api/masters/records/{sub['id']}/approve", actor="master.checker")
+check("checker approves -> ACTIVE", st == 200 and appr["status"] == "ACTIVE", f"{st} {appr.get('status')}")
+st, bulk = call("POST", "/config/api/masters/EWS_TRIGGER/bulk",
+                [{"recordKey": "CHEQUE_RETURNS", "payload": {"enabled": True, "criticality": "HIGH"}}], actor="master.maker")
+check("bulk submit master rows", st == 200 and len(bulk) == 1, f"{st}")
+
+print("== 23. Credit initiation: prospect · dedup · negative · summary ==")
+st, p1 = call("POST", "/counterparty/api/initiation/prospects",
+              {"legalName": "Helix Demo Steel Pvt Ltd", "legalForm": "PRIVATE_LTD", "registrationNo": "UDEDUP123",
+               "jurisdiction": "IN-RBI", "segment": "MID_CORPORATE", "sector": "MANUFACTURING", "country": "IN",
+               "borrowerType": "NTB"}, actor="rm.alice")
+check("prospect created (default RM = creator)", st == 200 and p1["recordType"] == "PROSPECT" and p1["rmId"] == "rm.alice", f"{st}")
+# Create a near-duplicate to trigger dedup (same registration no + similar name)
+st, p2 = call("POST", "/counterparty/api/initiation/prospects",
+              {"legalName": "Helix Demo Steel Private Limited", "registrationNo": "UDEDUP123",
+               "jurisdiction": "IN-RBI", "segment": "MID_CORPORATE", "sector": "MANUFACTURING", "country": "IN"}, actor="rm.bob")
+st, dd = call("GET", f"/counterparty/api/initiation/prospects/{p2['id']}/dedup")
+check("dedup finds the duplicate (identifier + name)", st == 200 and dd["matchCount"] >= 1, f"{st} {dd.get('matchCount')}")
+check("dedup match exposes RM + classification + lastUpdated",
+      st == 200 and dd["matches"][0]["rmId"] is not None and dd["matches"][0]["matchType"] in ("IDENTIFIER", "NAME", "NAME_AND_IDENTIFIER"))
+# Negative check: sanctioned country
+st, pn = call("POST", "/counterparty/api/initiation/prospects",
+              {"legalName": "Pyongyang Trading Co", "jurisdiction": "IN-RBI", "segment": "TRADE_FINANCE",
+               "sector": "TRADING", "country": "KP", "borrowerType": "NTB"}, actor="rm.alice")
+st, nc = call("GET", f"/counterparty/api/initiation/prospects/{pn['id']}/negative-check")
+check("negative check hits sanctioned country", st == 200 and nc["hit"], f"{st}")
+st, blocked = call("POST", f"/counterparty/api/initiation/prospects/{pn['id']}/approve", actor="rm.alice")
+check("obligor creation blocked while on negative list (409)", blocked is not None and st == 409, f"{st}")
+
+print("== 24. External/source-system checks (fetch + refresh + unified) ==")
+for ct in ["SCREENING_INTERNAL", "CREDIT_BUREAU", "KYC_AML", "EXTERNAL_RATING"]:
+    call("POST", f"/counterparty/api/initiation/prospects/{p1['id']}/checks/fetch",
+         {"entityType": "OBLIGOR", "checkType": ct}, actor="compliance.officer")
+st, uni = call("GET", f"/counterparty/api/initiation/prospects/{p1['id']}/checks")
+check("unified screening view returns all check types", st == 200 and len(uni) == 4, f"{st} {len(uni) if uni else 0}")
+check("bureau/rating checks CLEAR", any(c["checkType"] == "CREDIT_BUREAU" and c["status"] == "CLEAR" for c in uni))
+st, refreshed = call("POST", f"/counterparty/api/initiation/checks/{uni[0]['id']}/refresh", actor="compliance.officer")
+check("check refresh re-fetches from source", st == 200 and refreshed["status"] in ("CLEAR", "HIT"), f"{st}")
+
+print("== 25. Obligor creation summary + decision + approve ==")
+st, summ = call("GET", f"/counterparty/api/initiation/prospects/{p1['id']}/summary")
+check("creation summary aggregates dedup+negative+checks", st == 200 and "dedup" in summ and "negative" in summ and "externalChecks" in summ, f"{st}")
+call("POST", f"/counterparty/api/initiation/prospects/{p1['id']}/decision", {"proceed": True, "reason": ""}, actor="rm.alice")
+st, ob = call("POST", f"/counterparty/api/initiation/prospects/{p1['id']}/approve", actor="rm.alice")
+check("prospect approved into obligor", st == 200 and ob["recordType"] == "OBLIGOR" and ob["externalId"], f"{st}")
+
+print("== 26. RM ownership + groups ==")
+st, oa = call("POST", f"/counterparty/api/initiation/counterparties/{p1['id']}/ownership/request",
+              {"toRm": "rm.carol", "mode": "ASSIGN", "note": "coverage change"}, actor="rm.alice")
+check("ownership request pending", st == 200 and oa["status"] == "PENDING", f"{st}")
+st, wrong = call("POST", f"/counterparty/api/initiation/ownership/{oa['id']}/decision?accept=true", actor="rm.eve")
+check("only receiving RM can accept (403)", st == 403, f"{st}")
+st, acc = call("POST", f"/counterparty/api/initiation/ownership/{oa['id']}/decision?accept=true", actor="rm.carol")
+check("receiving RM accepts -> reassigned", st == 200 and acc["status"] == "ACCEPTED", f"{st}")
+st, ob2 = call("GET", f"/counterparty/api/counterparties/{p1['id']}")
+check("counterparty RM reassigned to rm.carol", st == 200 and ob2["rmId"] == "rm.carol", f"{st} {ob2.get('rmId')}")
+st, grp = call("POST", "/counterparty/api/initiation/groups",
+               {"name": "Helix Demo Group", "groupRmId": "rm.group", "country": "IN", "multiCountry": False}, actor="rm.alice")
+check("group created", st == 200, f"{st}")
+call("POST", f"/counterparty/api/initiation/counterparties/{p1['id']}/group/{grp['id']}", actor="rm.alice")
+st, gx = call("GET", f"/counterparty/api/initiation/groups/{grp['id']}/exposure")
+check("group exposure summary lists members", st == 200 and gx["memberCount"] >= 1, f"{st}")
+st, cu = call("POST", "/counterparty/api/initiation/auto-cleanup", actor="system")
+check("auto-cleanup endpoint runs (config-driven months)", st == 200 and "cleanupMonths" in cu, f"{st}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

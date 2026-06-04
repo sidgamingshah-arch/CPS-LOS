@@ -5,8 +5,12 @@ SQLite-per-service, React + Vite + TS front end, Spring Cloud Gateway.
 
 ## Layout
 - `helix-common/` — shared lib: canonical `Enums`, append-only audit, JSON converters, web config.
-- `config-service` (8081) — abstraction layer: jurisdiction profiles + versioned rule packs.
-- `counterparty-service` (8082) — KYC/CDD, UBO graph, screening.
+- `config-service` (8081) — abstraction layer: jurisdiction profiles + versioned rule packs, and a
+  generic Master-Data engine (`/api/masters/{type}`) with maker-checker + bulk (dedup, negative list,
+  facility/collateral/covenant/RAROC masters, EWS triggers, benchmarks, …). See `docs/FEATURE-COVERAGE.md`.
+- `counterparty-service` (8082) — KYC/CDD, UBO graph, screening, and credit-initiation lifecycle
+  (`/api/initiation`): prospect→obligor, deduplication, negative check, source-system check façade
+  (screening/bureau/KYC/rating fetch+refresh), RM ownership, groups.
 - `origination-service` (8083) — applications, document classification, financial spreading.
 - `risk-service` (8084) — rating, capital (RWA), pricing (RAROC). Calls config + origination.
 - `decision-service` (8085) — DoA approval workflow, covenants. Calls config/origination/risk.

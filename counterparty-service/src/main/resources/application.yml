@@ -27,3 +27,7 @@ management:
     health:
       show-details: always
 
+helix:
+  config-service:
+    base-url: ${CONFIG_SERVICE_URL:http://localhost:8081}
+
