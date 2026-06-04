@@ -2,10 +2,12 @@ package com.helix.origination.api;
 
 import com.helix.origination.dto.Dtos.AddCollateralRequest;
 import com.helix.origination.dto.Dtos.AddFacilityRequest;
+import com.helix.origination.dto.Dtos.AddSublimitRequest;
 import com.helix.origination.dto.Dtos.CellView;
 import com.helix.origination.dto.Dtos.CreateApplicationRequest;
 import com.helix.origination.dto.Dtos.CreditInputs;
 import com.helix.origination.dto.Dtos.DealEnvelope;
+import com.helix.origination.dto.Dtos.FacilityView;
 import com.helix.origination.dto.Dtos.OverrideRequest;
 import com.helix.origination.dto.Dtos.SpreadAnalysis;
 import com.helix.origination.dto.Dtos.SpreadRequest;
@@ -15,6 +17,7 @@ import com.helix.origination.entity.Collateral;
 import com.helix.origination.entity.Document;
 import com.helix.origination.entity.LoanApplication;
 import com.helix.origination.entity.ProposedFacility;
+import com.helix.origination.entity.Sublimit;
 import com.helix.origination.service.OriginationService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -151,5 +154,30 @@ public class OriginationController {
     @GetMapping("/{reference}/envelope")
     public DealEnvelope envelope(@PathVariable String reference) {
         return origination.envelope(reference);
+    }
+
+    /** Enriched facility list: each facility includes its sublimits + interchangeability groups. */
+    @GetMapping("/{reference}/facilities/view")
+    public List<FacilityView> facilityViews(@PathVariable String reference) {
+        return origination.facilityViewsFor(reference);
+    }
+
+    // ---- sublimits ----
+
+    @PostMapping("/facilities/{facilityId}/sublimits")
+    public Sublimit addSublimit(@PathVariable Long facilityId, @Valid @RequestBody AddSublimitRequest req,
+                                @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
+        return origination.addSublimit(facilityId, req, actor);
+    }
+
+    @GetMapping("/facilities/{facilityId}/sublimits")
+    public List<Sublimit> sublimits(@PathVariable Long facilityId) {
+        return origination.sublimitsFor(facilityId);
+    }
+
+    @DeleteMapping("/sublimits/{id}")
+    public void removeSublimit(@PathVariable Long id,
+                               @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
+        origination.removeSublimit(id, actor);
     }
 }

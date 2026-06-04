@@ -6,13 +6,16 @@ import com.helix.common.util.References;
 import com.helix.common.web.ApiException;
 import com.helix.origination.dto.Dtos.AddCollateralRequest;
 import com.helix.origination.dto.Dtos.AddFacilityRequest;
+import com.helix.origination.dto.Dtos.AddSublimitRequest;
 import com.helix.origination.dto.Dtos.CellView;
 import com.helix.origination.dto.Dtos.CollateralView;
 import com.helix.origination.dto.Dtos.CreateApplicationRequest;
 import com.helix.origination.dto.Dtos.CreditInputs;
 import com.helix.origination.dto.Dtos.DealEnvelope;
 import com.helix.origination.dto.Dtos.FacilityView;
+import com.helix.origination.dto.Dtos.InterchangeabilityGroupView;
 import com.helix.origination.dto.Dtos.OverrideRequest;
+import com.helix.origination.dto.Dtos.SublimitView;
 import com.helix.origination.dto.Dtos.PeriodAnalysis;
 import com.helix.origination.dto.Dtos.SpreadAnalysis;
 import com.helix.origination.dto.Dtos.SpreadRequest;
@@ -23,12 +26,16 @@ import com.helix.origination.entity.FinancialPeriod;
 import com.helix.origination.entity.LoanApplication;
 import com.helix.origination.entity.ProposedFacility;
 import com.helix.origination.entity.SpreadCell;
+import com.helix.origination.entity.Sublimit;
 import com.helix.origination.repo.CollateralRepository;
 import com.helix.origination.repo.DocumentRepository;
 import com.helix.origination.repo.FinancialPeriodRepository;
 import com.helix.origination.repo.LoanApplicationRepository;
 import com.helix.origination.repo.ProposedFacilityRepository;
 import com.helix.origination.repo.SpreadCellRepository;
+import com.helix.origination.repo.SublimitRepository;
+
+import java.util.stream.Collectors;
 
 import java.time.LocalDate;
 import org.springframework.stereotype.Service;
@@ -51,12 +58,14 @@ public class OriginationService {
     private final SpreadCellRepository cells;
     private final ProposedFacilityRepository facilities;
     private final CollateralRepository collaterals;
+    private final SublimitRepository sublimits;
     private final DocumentClassifier classifier;
     private final AuditService audit;
 
     public OriginationService(LoanApplicationRepository applications, DocumentRepository documents,
                               FinancialPeriodRepository periods, SpreadCellRepository cells,
                               ProposedFacilityRepository facilities, CollateralRepository collaterals,
+                              SublimitRepository sublimits,
                               DocumentClassifier classifier, AuditService audit) {
         this.applications = applications;
         this.documents = documents;
@@ -64,6 +73,7 @@ public class OriginationService {
         this.cells = cells;
         this.facilities = facilities;
         this.collaterals = collaterals;
+        this.sublimits = sublimits;
         this.classifier = classifier;
         this.audit = audit;
     }
@@ -471,6 +481,13 @@ public class OriginationService {
         return facilities.findByApplicationIdOrderByOrdinalAsc(get(reference).getId());
     }
 
+    /** Enriched view including sublimits and interchangeability groups. */
+    @Transactional(readOnly = true)
+    public List<FacilityView> facilityViewsFor(String reference) {
+        return facilities.findByApplicationIdOrderByOrdinalAsc(get(reference).getId())
+                .stream().map(this::toFacilityView).toList();
+    }
+
     @Transactional
     public void removeFacility(Long facilityId, String actor) {
         ProposedFacility f = facilities.findById(facilityId)
@@ -537,10 +554,7 @@ public class OriginationService {
         double totalProposed = fac.stream().mapToDouble(ProposedFacility::getAmount).sum();
         double totalCover = cols.stream().mapToDouble(Collateral::effectiveValue).sum();
 
-        List<FacilityView> facViews = fac.stream().map(f -> new FacilityView(
-                f.getId(), f.getReference(), f.getOrdinal(), f.isPrimary(),
-                f.getFacilityType(), f.getAmount(), f.getCurrency(), f.getTenorMonths(),
-                f.getPurpose(), f.getIndicativeRate())).toList();
+        List<FacilityView> facViews = fac.stream().map(this::toFacilityView).toList();
 
         List<CollateralView> colViews = cols.stream().map(c -> new CollateralView(
                 c.getId(), c.getFacilityId(), c.getCollateralType(), c.getDescription(),
@@ -553,5 +567,90 @@ public class OriginationService {
         return new DealEnvelope(reference, app.getCounterpartyName(), app.getJurisdiction(), app.getSegment(),
                 totalProposed, app.getCurrency(), app.getTenorMonths(),
                 facViews, colViews, totalCover, latest, ratios);
+    }
+
+    // ----------------------------------------------------- sublimits (multi)
+
+    /**
+     * Adds a sublimit to a facility. Enforces the rule that the sum of sublimits
+     * cannot exceed the parent facility amount — protects the structuring cap.
+     */
+    @Transactional
+    public Sublimit addSublimit(Long facilityId, AddSublimitRequest req, String actor) {
+        ProposedFacility f = facilities.findById(facilityId)
+                .orElseThrow(() -> ApiException.notFound("No facility: " + facilityId));
+        List<Sublimit> existing = sublimits.findByFacilityIdOrderByOrdinalAsc(facilityId);
+        double allocated = existing.stream().mapToDouble(Sublimit::getAmount).sum();
+        if (allocated + req.amount() > f.getAmount() + 1e-6) {
+            throw ApiException.badRequest(
+                    "Sublimit would breach facility cap: allocated %.0f + new %.0f > facility cap %.0f"
+                            .formatted(allocated, req.amount(), f.getAmount()));
+        }
+        if (req.currency() != null && !req.currency().equalsIgnoreCase(f.getCurrency())) {
+            // We could support multi-currency sublimits in future; flag rather than allow silent drift.
+            throw ApiException.badRequest("Sublimit currency must match the parent facility (" + f.getCurrency() + ")");
+        }
+        Sublimit s = new Sublimit();
+        s.setFacilityId(facilityId);
+        s.setOrdinal(existing.size());
+        s.setCode(req.code().toUpperCase());
+        s.setProductType(req.productType().toUpperCase());
+        s.setAmount(req.amount());
+        s.setCurrency(req.currency());
+        s.setTenorMonths(req.tenorMonths());
+        s.setPurpose(req.purpose());
+        s.setInterchangeableGroup(req.interchangeableGroup() == null || req.interchangeableGroup().isBlank()
+                ? null : req.interchangeableGroup().toUpperCase());
+        Sublimit saved = sublimits.save(s);
+        audit.human(actor, "SUBLIMIT_ADDED", "ProposedFacility", String.valueOf(facilityId),
+                "Added %s sublimit %.0f%s".formatted(s.getCode(), s.getAmount(),
+                        s.isFungible() ? " (group " + s.getInterchangeableGroup() + ")" : ""),
+                Map.of("code", s.getCode(), "amount", s.getAmount(),
+                        "interchangeableGroup", String.valueOf(s.getInterchangeableGroup())));
+        return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Sublimit> sublimitsFor(Long facilityId) {
+        return sublimits.findByFacilityIdOrderByOrdinalAsc(facilityId);
+    }
+
+    @Transactional
+    public void removeSublimit(Long id, String actor) {
+        Sublimit s = sublimits.findById(id)
+                .orElseThrow(() -> ApiException.notFound("No sublimit: " + id));
+        sublimits.delete(s);
+        audit.human(actor, "SUBLIMIT_REMOVED", "Sublimit", String.valueOf(id),
+                "Removed " + s.getCode(), Map.of());
+    }
+
+    /** Maps a facility entity to its view, embedding sublimits and interchangeability groups. */
+    private FacilityView toFacilityView(ProposedFacility f) {
+        List<Sublimit> ss = sublimits.findByFacilityIdOrderByOrdinalAsc(f.getId());
+        List<SublimitView> subViews = ss.stream().map(s -> new SublimitView(
+                s.getId(), s.getFacilityId(), s.getOrdinal(), s.getCode(), s.getProductType(),
+                s.getAmount(), s.getCurrency(), s.getTenorMonths(), s.getPurpose(),
+                s.getInterchangeableGroup(), s.isFungible())).toList();
+
+        // Group fungible sublimits by group key; each group's combined cap is the sum
+        // of member amounts (utilisation can move within, capped by the combined sum).
+        Map<String, List<Sublimit>> byGroup = ss.stream()
+                .filter(Sublimit::isFungible)
+                .collect(Collectors.groupingBy(Sublimit::getInterchangeableGroup, java.util.LinkedHashMap::new,
+                        Collectors.toList()));
+        List<InterchangeabilityGroupView> groupViews = byGroup.entrySet().stream()
+                .map(e -> new InterchangeabilityGroupView(
+                        e.getKey(),
+                        e.getValue().stream().mapToDouble(Sublimit::getAmount).sum(),
+                        f.getCurrency(),
+                        e.getValue().stream().map(Sublimit::getCode).toList(),
+                        e.getValue().size()))
+                .toList();
+
+        double sublimitTotal = ss.stream().mapToDouble(Sublimit::getAmount).sum();
+        double headroom = Math.max(0.0, f.getAmount() - sublimitTotal);
+        return new FacilityView(f.getId(), f.getReference(), f.getOrdinal(), f.isPrimary(),
+                f.getFacilityType(), f.getAmount(), f.getCurrency(), f.getTenorMonths(),
+                f.getPurpose(), f.getIndicativeRate(), subViews, groupViews, sublimitTotal, headroom);
     }
 }

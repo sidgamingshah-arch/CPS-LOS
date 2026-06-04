@@ -87,6 +87,33 @@ public class CreditProposalService {
             }
         }
 
+        // 2b) Sublimits and interchangeability per facility
+        boolean anySublimits = env.facilities() != null && env.facilities().stream()
+                .anyMatch(f -> f.sublimits() != null && !f.sublimits().isEmpty());
+        if (anySublimits) {
+            md.h2("2b. Sublimits and interchangeability");
+            for (var f : env.facilities()) {
+                if (f.sublimits() == null || f.sublimits().isEmpty()) continue;
+                md.line("**" + f.facilityType() + " · " + money(f.amount(), f.currency()) + "** — sublimit total "
+                        + money(f.sublimitTotal(), f.currency()) + " · headroom " + money(f.sublimitHeadroom(), f.currency()));
+                md.table(new String[]{"Code", "Product", "Amount", "Tenor", "Interchangeable group", "Purpose"});
+                for (var s : f.sublimits()) {
+                    md.row(s.code(), s.productType(), money(s.amount(), s.currency()),
+                            s.tenorMonths() == null ? "—" : s.tenorMonths() + "m",
+                            s.interchangeableGroup() == null ? "fixed (hard cap)" : s.interchangeableGroup(),
+                            nv(s.purpose()));
+                }
+                if (f.interchangeabilityGroups() != null && !f.interchangeabilityGroups().isEmpty()) {
+                    md.line("Fungibility pools (utilisation may move freely within each):");
+                    for (var g : f.interchangeabilityGroups()) {
+                        md.line("- **" + g.groupKey() + "** · combined cap "
+                                + money(g.combinedCap(), g.currency()) + " · members: "
+                                + String.join(", ", g.memberCodes()));
+                    }
+                }
+            }
+        }
+
         // 3) Collateral
         md.h2("3. Collateral and security");
         if (env.collaterals() == null || env.collaterals().isEmpty()) {

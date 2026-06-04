@@ -33,7 +33,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
   const dec = useAsync(() => decision.latest(reference).catch(() => null), [reference]);
   const covs = useAsync(() => decision.covenants(reference), [reference]);
   const signals = useAsync(() => portfolio.scan(reference, actor).catch(() => [] as any[]), [reference]);
-  const facs = useAsync(() => origination.facilities(reference), [reference]);
+  const facs = useAsync(() => origination.facilityViews(reference), [reference]);
   const cols = useAsync(() => origination.collaterals(reference), [reference]);
   const covTests = useAsync(() => decision.covenantTests(reference).catch(() => [] as any[]), [reference]);
   const rarocHist = useAsync(() => portfolio.rarocHistory(reference).catch(() => [] as any[]), [reference]);
@@ -74,8 +74,8 @@ export default function DealWorkspace({ reference }: { reference: string }) {
       </Card>
 
       {/* Facilities proposed */}
-      <Card title="Facilities proposed"
-        sub="An application can propose multiple facilities (term + working capital + LC line). The primary is auto-created from the application; add more here."
+      <Card title="Facilities proposed · sublimits · interchangeability"
+        sub="An application can propose multiple facilities; each facility may carry sublimits (CC · LC · BG · PCFC …) with optional interchangeability groups. Sublimits in the same group share a combined cap — utilisation may move freely within. Cap overflow is enforced server-side."
         right={<AddFacilityButton reference={reference} onAdded={facs.reload} />}>
         <FacilitiesTable facs={facs.data || []} onChange={() => { facs.reload(); reload(); }} />
       </Card>
@@ -462,19 +462,116 @@ export default function DealWorkspace({ reference }: { reference: string }) {
   function FacilitiesTable({ facs, onChange }: { facs: any[]; onChange: () => void }) {
     if (facs.length === 0) return <div className="muted">No facilities recorded.</div>;
     return (
-      <table><thead><tr><th>#</th><th>Type</th><th>Reference</th><th className="num">Amount</th><th>Tenor</th><th>Indicative rate</th><th>Purpose</th><th></th></tr></thead>
-        <tbody>{facs.map((f: any) => (
-          <tr key={f.id}>
-            <td>{f.ordinal}{f.primary && <span title="primary"> ★</span>}</td>
-            <td><span className="mono">{f.facilityType}</span></td>
-            <td className="mono">{f.reference}</td>
-            <td className="num">{fmt.money(f.amount, f.currency)}</td>
-            <td>{f.tenorMonths}m</td>
-            <td>{f.indicativeRate == null ? "—" : fmt.pct(f.indicativeRate, 2)}</td>
-            <td>{f.purpose || "—"}</td>
-            <td>{!f.primary && <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
-              onClick={() => run(() => origination.removeFacility(f.id, actor), "Facility removed").then(onChange)}>Remove</button>}</td>
-          </tr>))}</tbody></table>
+      <div>
+        {facs.map((f: any) => (
+          <FacilityCard key={f.id} f={f} onChange={onChange} />
+        ))}
+      </div>
+    );
+  }
+
+  function FacilityCard({ f, onChange }: { f: any; onChange: () => void }) {
+    const [addingSublimit, setAddingSublimit] = useState(false);
+    const hasSublimits = (f.sublimits || []).length > 0;
+    return (
+      <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 12, marginBottom: 10, background: "#fcfcff" }}>
+        <div className="flexbetween">
+          <div>
+            <b>#{f.ordinal}{f.primary && <span title="primary"> ★</span>} · {f.facilityType}</b>
+            <span className="mono" style={{ marginLeft: 8, color: "var(--muted)", fontSize: 11 }}>{f.reference}</span>
+          </div>
+          <div className="btnrow">
+            <Badge>{fmt.money(f.amount, f.currency)}</Badge>
+            <Badge kind="info">{f.tenorMonths}m</Badge>
+            {f.indicativeRate != null && <Badge>{fmt.pct(f.indicativeRate, 2)}</Badge>}
+            <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+              onClick={() => setAddingSublimit((s) => !s)}>{addingSublimit ? "Close" : "+ Sublimit"}</button>
+            {!f.primary && (
+              <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                onClick={() => run(() => origination.removeFacility(f.id, actor), "Facility removed").then(onChange)}>Remove</button>
+            )}
+          </div>
+        </div>
+        {f.purpose && <small className="prov">{f.purpose}</small>}
+
+        {(hasSublimits || addingSublimit) && (
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px dashed var(--line)" }}>
+            <div className="flexbetween" style={{ marginBottom: 6 }}>
+              <small className="prov">
+                Sublimits {hasSublimits ? `· allocated ${fmt.money(f.sublimitTotal, f.currency)} · headroom ${fmt.money(f.sublimitHeadroom, f.currency)}` : ""}
+              </small>
+            </div>
+            {hasSublimits && (
+              <table style={{ marginBottom: 8 }}>
+                <thead><tr><th>Code</th><th>Product</th><th className="num">Amount</th><th>Tenor</th><th>Interchangeable group</th><th>Purpose</th><th></th></tr></thead>
+                <tbody>{f.sublimits.map((s: any) => (
+                  <tr key={s.id}>
+                    <td><b>{s.code}</b></td>
+                    <td><span className="mono">{s.productType}</span></td>
+                    <td className="num">{fmt.money(s.amount, s.currency)}</td>
+                    <td>{s.tenorMonths ? s.tenorMonths + "m" : "—"}</td>
+                    <td>{s.fungible
+                      ? <Badge kind="ai">{s.interchangeableGroup}</Badge>
+                      : <Badge>fixed (hard cap)</Badge>}</td>
+                    <td>{s.purpose || "—"}</td>
+                    <td><button className="btn subtle" style={{ fontSize: 11, padding: "2px 6px" }}
+                      onClick={() => run(() => origination.removeSublimit(s.id, actor), "Sublimit removed").then(onChange)}>×</button></td>
+                  </tr>))}</tbody>
+              </table>
+            )}
+            {(f.interchangeabilityGroups || []).length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                <small className="prov">Fungibility pools — utilisation may move freely within each:</small>
+                <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 12 }}>
+                  {f.interchangeabilityGroups.map((g: any) => (
+                    <li key={g.groupKey}>
+                      <Badge kind="ai">{g.groupKey}</Badge> · combined cap <b>{fmt.money(g.combinedCap, g.currency)}</b> · members: {g.memberCodes.join(", ")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {addingSublimit && (
+              <AddSublimitForm facility={f} onDone={() => { setAddingSublimit(false); onChange(); }} />
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function AddSublimitForm({ facility, onDone }: { facility: any; onDone: () => void }) {
+    const PRODUCTS: Record<string, string> = {
+      "CC": "CASH_CREDIT", "OD": "OVERDRAFT", "BD": "BILL_DISCOUNTING",
+      "PCFC": "PACKING_CREDIT", "LC_INLAND": "LETTER_OF_CREDIT",
+      "LC_FOREIGN": "LETTER_OF_CREDIT", "BG_PERF": "BANK_GUARANTEE",
+      "BG_FIN": "BANK_GUARANTEE",
+    };
+    const [s, setS] = useState<any>({
+      code: "CC", productType: "CASH_CREDIT", amount: 50_000_000,
+      tenorMonths: facility.tenorMonths, purpose: "", interchangeableGroup: "WC_FUNDED",
+    });
+    return (
+      <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: 10 }}>
+        <div className="grid cols-4" style={{ gap: 8 }}>
+          <Field label="Code">
+            <select value={s.code} onChange={(e) => setS({ ...s, code: e.target.value, productType: PRODUCTS[e.target.value] || s.productType })}>
+              {Object.keys(PRODUCTS).map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Product"><input value={s.productType} onChange={(e) => setS({ ...s, productType: e.target.value })} /></Field>
+          <Field label="Amount"><input type="number" value={s.amount} onChange={(e) => setS({ ...s, amount: +e.target.value })} /></Field>
+          <Field label="Interchangeable group (blank = hard cap)">
+            <input value={s.interchangeableGroup || ""} onChange={(e) => setS({ ...s, interchangeableGroup: e.target.value })} placeholder="e.g. WC_FUNDED" />
+          </Field>
+        </div>
+        <div className="btnrow">
+          <Button onClick={() => run(() => origination.addSublimit(facility.id,
+            { ...s, currency: facility.currency }, actor), "Sublimit added").then(onDone)}>Add sublimit</Button>
+          <Button kind="subtle" onClick={onDone}>Cancel</Button>
+          <small className="prov">Facility cap is enforced — overflow is rejected.</small>
+        </div>
+      </div>
     );
   }
 

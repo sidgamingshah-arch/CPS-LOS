@@ -66,10 +66,16 @@ export const origination = {
   analysis: (ref: string) => call<any>(`/origination/api/applications/${ref}/analysis`, "GET"),
   envelope: (ref: string) => call<any>(`/origination/api/applications/${ref}/envelope`, "GET"),
   facilities: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/facilities`, "GET"),
+  facilityViews: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/facilities/view`, "GET"),
   addFacility: (ref: string, body: any, actor: string) =>
     call<any>(`/origination/api/applications/${ref}/facilities`, "POST", body, actor),
   removeFacility: (id: number, actor: string) =>
     call<any>(`/origination/api/applications/facilities/${id}`, "DELETE", undefined, actor),
+  sublimits: (facilityId: number) => call<any[]>(`/origination/api/applications/facilities/${facilityId}/sublimits`, "GET"),
+  addSublimit: (facilityId: number, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/facilities/${facilityId}/sublimits`, "POST", body, actor),
+  removeSublimit: (id: number, actor: string) =>
+    call<any>(`/origination/api/applications/sublimits/${id}`, "DELETE", undefined, actor),
   collaterals: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/collaterals`, "GET"),
   addCollateral: (ref: string, body: any, actor: string) =>
     call<any>(`/origination/api/applications/${ref}/collaterals`, "POST", body, actor),

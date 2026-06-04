@@ -74,6 +74,16 @@ public final class Dtos {
             Long facilityId) {
     }
 
+    public record AddSublimitRequest(
+            @NotBlank String code,
+            @NotBlank String productType,
+            @Positive double amount,
+            @NotBlank String currency,
+            Integer tenorMonths,
+            String purpose,
+            String interchangeableGroup) {
+    }
+
     // ---- responses ----
 
     public record CellView(Long id, String taxonomyKey, String label, boolean derived, double value,
@@ -110,7 +120,19 @@ public final class Dtos {
 
     public record FacilityView(Long id, String reference, int ordinal, boolean primary,
                                String facilityType, double amount, String currency,
-                               int tenorMonths, String purpose, Double indicativeRate) {
+                               int tenorMonths, String purpose, Double indicativeRate,
+                               List<SublimitView> sublimits, List<InterchangeabilityGroupView> interchangeabilityGroups,
+                               double sublimitTotal, double sublimitHeadroom) {
+    }
+
+    public record SublimitView(Long id, Long facilityId, int ordinal, String code, String productType,
+                               double amount, String currency, Integer tenorMonths, String purpose,
+                               String interchangeableGroup, boolean fungible) {
+    }
+
+    /** Pool view: members of an interchangeable group share a combined cap. */
+    public record InterchangeabilityGroupView(String groupKey, double combinedCap, String currency,
+                                              List<String> memberCodes, int memberCount) {
     }
 
     public record CollateralView(Long id, Long facilityId, String collateralType, String description,

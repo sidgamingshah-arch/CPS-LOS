@@ -62,7 +62,20 @@ public class UpstreamClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record FacilityViewDto(Long id, String reference, int ordinal, boolean primary, String facilityType,
-                                  double amount, String currency, int tenorMonths, String purpose, Double indicativeRate) {
+                                  double amount, String currency, int tenorMonths, String purpose, Double indicativeRate,
+                                  List<SublimitViewDto> sublimits, List<InterchangeabilityGroupViewDto> interchangeabilityGroups,
+                                  double sublimitTotal, double sublimitHeadroom) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record SublimitViewDto(Long id, Long facilityId, int ordinal, String code, String productType,
+                                  double amount, String currency, Integer tenorMonths, String purpose,
+                                  String interchangeableGroup, boolean fungible) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record InterchangeabilityGroupViewDto(String groupKey, double combinedCap, String currency,
+                                                 List<String> memberCodes, int memberCount) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

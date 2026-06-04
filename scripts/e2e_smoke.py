@@ -238,6 +238,33 @@ check("additional collateral added", st == 200, f"{st}")
 st, env = call("GET", f"/origination/api/applications/{ref}/envelope")
 check("deal envelope returns multi-facility/multi-collateral", st == 200 and len(env["facilities"]) >= 2 and len(env["collaterals"]) >= 2, f"{st}")
 
+print("== 16b. Sublimits and interchangeability ==")
+# Use the WC facility we added to build a CC/LC/BG sublimit set, with CC+LC interchangeable.
+wc = next((f for f in facs if f["facilityType"] == "WORKING_CAPITAL"), facs[-1])
+def add_sublimit(code, ptype, amount, group=None):
+    return call("POST", f"/origination/api/applications/facilities/{wc['id']}/sublimits",
+                {"code": code, "productType": ptype, "amount": amount, "currency": wc["currency"],
+                 "tenorMonths": 12, "purpose": code, "interchangeableGroup": group}, actor="analyst.user")
+st, s1 = add_sublimit("CC", "CASH_CREDIT", 60_000_000, "WC_FUNDED")
+st2, s2 = add_sublimit("BD", "BILL_DISCOUNTING", 40_000_000, "WC_FUNDED")
+st3, s3 = add_sublimit("BG", "BANK_GUARANTEE", 50_000_000, None)   # hard cap, not fungible
+check("CC + BD + BG sublimits added under WC", st == 200 and st2 == 200 and st3 == 200, f"{st}/{st2}/{st3}")
+# Negative: a sublimit that would overflow the facility cap must be rejected.
+st_over, _ = add_sublimit("EXTRA", "OVERDRAFT", 999_000_000, None)
+check("sublimit exceeding facility cap rejected (400)", st_over == 400, f"{st_over}")
+# Verify enriched facility view exposes sublimits + the WC_FUNDED interchangeability pool.
+st, fv = call("GET", f"/origination/api/applications/{ref}/facilities/view")
+check("facility view returned", st == 200, f"{st}")
+wc_view = next((f for f in fv if f["id"] == wc["id"]), {})
+check("WC facility view has 3 sublimits", len(wc_view.get("sublimits", [])) == 3,
+      str(len(wc_view.get("sublimits", []))))
+check("WC_FUNDED group has 2 members and combined cap 100m",
+      any(g["groupKey"] == "WC_FUNDED" and g["memberCount"] == 2 and abs(g["combinedCap"] - 100_000_000) < 1
+          for g in wc_view.get("interchangeabilityGroups", [])),
+      str(wc_view.get("interchangeabilityGroups")))
+check("BG sublimit is non-fungible (hard cap)",
+      any(s["code"] == "BG" and not s["fungible"] for s in wc_view.get("sublimits", [])))
+
 print("== 17. Covenant testing history ==")
 st, tests = call("POST", f"/decision/api/decisions/{ref}/covenants/test", actor="analyst.user")
 check("covenants tested", st == 200 and len(tests) >= 1, f"{st}")
