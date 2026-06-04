@@ -438,6 +438,39 @@ check("child exceeding parent cap rejected (400)", badchild is not None and st =
 st, exp = call("GET", f"/limits/api/limits/{cp_ref}/exposure")
 check("exposure-norm check returns single-name + sector", st == 200 and len(exp["checks"]) >= 2, f"{st}")
 
+print("== 28. CAD / documentation: checklist · deviation (2-level) · limit release ==")
+st, cad = call("POST", "/decision/api/cad/cases",
+               {"applicationRef": ref, "counterpartyName": cp["legalName"], "cpType": "NEW"}, actor="cad.officer")
+items = cad["items"] if cad else []
+check("CAD case opened with checklist from master", st == 200 and len(items) >= 3, f"{st} {len(items)}")
+case_id = cad["cadCase"]["id"]
+# comply all but the last item; the last goes to deviation/waiver
+for it in items[:-1]:
+    call("POST", f"/decision/api/cad/items/{it['id']}", {"status": "COMPLIED", "docRef": "DMS-1"}, actor="cad.officer")
+last = items[-1]
+st, dev = call("POST", f"/decision/api/cad/items/{last['id']}/deviation",
+               {"type": "WAIVER", "reason": "Insurance assignment pending; 30-day cure"}, actor="cad.officer")
+check("deviation raised (pending L1)", st == 200 and dev["status"] == "PENDING_L1", f"{st}")
+# SoD: raiser cannot approve
+st, sod = call("POST", f"/decision/api/cad/deviations/{dev['id']}/decision", {"approve": True}, actor="cad.officer")
+check("raiser cannot approve own deviation (403)", st == 403, f"{st}")
+st, l1 = call("POST", f"/decision/api/cad/deviations/{dev['id']}/decision", {"approve": True, "comment": "ok L1"}, actor="cad.l1")
+check("L1 approves -> pending L2", st == 200 and l1["status"] == "PENDING_L2", f"{st}")
+# SoD: L2 must differ from L1
+st, samel = call("POST", f"/decision/api/cad/deviations/{dev['id']}/decision", {"approve": True}, actor="cad.l1")
+check("L2 must differ from L1 (403)", st == 403, f"{st}")
+st, l2 = call("POST", f"/decision/api/cad/deviations/{dev['id']}/decision", {"approve": True, "comment": "ok L2"}, actor="cad.l2")
+check("L2 approves -> deviation approved (item waived)", st == 200 and l2["status"] == "APPROVED", f"{st}")
+# complete + limit release
+st, comp = call("POST", f"/decision/api/cad/cases/{case_id}/complete", actor="cad.officer")
+check("CAD checklist completed (all complied/waived)", st == 200 and comp["cadCase"]["status"] == "COMPLETED", f"{st}")
+st, badrel = call("POST", f"/decision/api/cad/cases/{case_id}/limit-release",
+                  {"processingFeeAmortised": False, "lienMarked": False, "cashMarginCaptured": False}, actor="cad.officer")
+check("incomplete limit-release checklist rejected (400)", badrel is not None and st == 400, f"{st}")
+st, rel = call("POST", f"/decision/api/cad/cases/{case_id}/limit-release",
+               {"processingFeeAmortised": True, "lienMarked": True, "cashMarginCaptured": True, "comment": "ok"}, actor="cad.officer")
+check("limit release triggers feed to limit mgmt", st == 200 and rel["cadCase"]["status"] == "LIMIT_RELEASED", f"{st}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

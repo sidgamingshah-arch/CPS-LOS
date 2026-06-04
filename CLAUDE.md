@@ -13,7 +13,8 @@ SQLite-per-service, React + Vite + TS front end, Spring Cloud Gateway.
   (screening/bureau/KYC/rating fetch+refresh), RM ownership, groups.
 - `origination-service` (8083) — applications, document classification, financial spreading.
 - `risk-service` (8084) — rating, capital (RWA), pricing (RAROC). Calls config + origination.
-- `decision-service` (8085) — DoA approval workflow, covenants. Calls config/origination/risk.
+- `decision-service` (8085) — DoA approval workflow, covenants, credit proposal, and CAD/documentation
+  (`/api/cad`: checklist from master, sequential 2-level waiver/deviation, limit-release trigger). Calls config/origination/risk.
 - `portfolio-service` (8086) — ECL/IRAC, EWS, concentration, stress. Calls all upstreams.
 - `copilot-service` (8087) — persona-scoped, grounded, non-binding conversational copilot. Read-only fan-out to all services.
 - `limit-service` (8088) — limit management: multi-level limit tree (build from deal facilities/sublimits),

@@ -92,6 +92,21 @@ public class UpstreamClient {
                                   Map<String, Double> ratios) {
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record MasterRecordDto(Long id, String masterType, String recordKey, Map<String, Object> payload) {
+    }
+
+    /** Active master records of a type (e.g. CHECKLIST_MASTER) from config-service. */
+    public List<MasterRecordDto> masters(String type) {
+        try {
+            MasterRecordDto[] arr = config.get().uri("/api/masters/{t}", type).retrieve().body(MasterRecordDto[].class);
+            return arr == null ? List.of() : List.of(arr);
+        } catch (Exception e) {
+            log.warn("config masters {} unavailable ({})", type, e.getMessage());
+            return List.of();
+        }
+    }
+
     public RulePackDto doaMatrix(String jurisdiction) {
         try {
             return config.get().uri(uri -> uri.path("/api/rulepacks")
