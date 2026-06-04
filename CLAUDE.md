@@ -16,6 +16,9 @@ SQLite-per-service, React + Vite + TS front end, Spring Cloud Gateway.
 - `decision-service` (8085) — DoA approval workflow, covenants. Calls config/origination/risk.
 - `portfolio-service` (8086) — ECL/IRAC, EWS, concentration, stress. Calls all upstreams.
 - `copilot-service` (8087) — persona-scoped, grounded, non-binding conversational copilot. Read-only fan-out to all services.
+- `limit-service` (8088) — limit management: multi-level limit tree (build from deal facilities/sublimits),
+  fungibility roll-up, exposure norms, and the product-processor View / Validation / Utilisation APIs
+  (UTILISE/RELEASE/RESERVE/REVERSAL, override, freeze). Calls config + origination.
 - `gateway-service` (8080) — routes `/{service}/**` to each service.
 - `frontend/` — React app (calls the gateway; `VITE_GATEWAY_URL`, default `http://localhost:8080`).
 

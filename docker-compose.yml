@@ -77,6 +77,16 @@ services:
     volumes: ["copilot-data:/data"]
     depends_on: [config-service, counterparty-service, origination-service, risk-service, decision-service, portfolio-service]
 
+  limit-service:
+    build: { <<: *service-build, args: { SERVICE: limit-service } }
+    environment:
+      SERVER_PORT: "8088"
+      CONFIG_SERVICE_URL: http://config-service:8081
+      ORIGINATION_SERVICE_URL: http://origination-service:8083
+    ports: ["8088:8088"]
+    volumes: ["limit-data:/data"]
+    depends_on: [config-service, origination-service]
+
   gateway-service:
     build: { <<: *service-build, args: { SERVICE: gateway-service } }
     environment:
@@ -88,6 +98,7 @@ services:
       DECISION_SERVICE_URL: http://decision-service:8085
       PORTFOLIO_SERVICE_URL: http://portfolio-service:8086
       COPILOT_SERVICE_URL: http://copilot-service:8087
+      LIMIT_SERVICE_URL: http://limit-service:8088
     ports: ["8080:8080"]
     depends_on:
       - config-service
@@ -97,6 +108,7 @@ services:
       - decision-service
       - portfolio-service
       - copilot-service
+      - limit-service
 
   frontend:
     build:
@@ -115,3 +127,4 @@ volumes:
   decision-data:
   portfolio-data:
   copilot-data:
+  limit-data:

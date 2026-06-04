@@ -13,6 +13,7 @@ declare -A SERVICES=(
   [decision-service]=8085
   [portfolio-service]=8086
   [copilot-service]=8087
+  [limit-service]=8088
   [gateway-service]=8080
 )
 
@@ -25,12 +26,12 @@ start() {
 
 # config first (others fall back gracefully if it lags)
 start config-service 8081
-for svc in counterparty-service origination-service risk-service decision-service portfolio-service copilot-service gateway-service; do
+for svc in counterparty-service origination-service risk-service decision-service portfolio-service copilot-service limit-service gateway-service; do
   start "$svc" "${SERVICES[$svc]}"
 done
 
 echo "All services launching. Waiting for health..."
-for port in 8081 8082 8083 8084 8085 8086 8087 8080; do
+for port in 8081 8082 8083 8084 8085 8086 8087 8088 8080; do
   curl -s --retry 60 --retry-connrefused --retry-delay 1 "http://localhost:$port/actuator/health" >/dev/null && echo "  :$port UP"
 done
 echo "Helix is up. Gateway at http://localhost:8080"

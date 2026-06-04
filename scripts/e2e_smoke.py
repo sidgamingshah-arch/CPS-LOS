@@ -383,6 +383,61 @@ check("group exposure summary lists members", st == 200 and gx["memberCount"] >=
 st, cu = call("POST", "/counterparty/api/initiation/auto-cleanup", actor="system")
 check("auto-cleanup endpoint runs (config-driven months)", st == 200 and "cleanupMonths" in cu, f"{st}")
 
+print("== 27. Limit management: tree · fungibility · transaction APIs ==")
+cp_ref = cp["reference"]
+st, tree = call("POST", f"/limits/api/limits/build/{ref}", actor="credit.ops")
+check("limit tree built from deal facilities", st == 200 and len(tree["nodes"]) >= 3, f"{st} {len(tree.get('nodes', [])) if tree else 0}")
+check("tree exposes interchangeability group (WC_FUNDED)",
+      any(g["groupKey"] == "WC_FUNDED" for g in tree.get("interchangeabilityGroups", [])), str(tree.get("interchangeabilityGroups")))
+# View API: full tree by CIF
+st, view = call("GET", f"/limits/api/limits/view?cif={cp_ref}")
+check("View API returns tree for CIF", st == 200 and view["cif"] == cp_ref and view["totalSanctionedBase"] > 0, f"{st}")
+# pick the obligor root and a leaf sublimit line
+root_node = next((n for n in view["nodes"] if n["level"] == 0), None)
+leaf = next((n for n in view["nodes"] if n["level"] == 2), None) or next((n for n in view["nodes"] if n["level"] == 1), None)
+check("obligor root + leaf present", root_node is not None and leaf is not None)
+line_id = leaf["reference"]
+avail = leaf["available"]
+# Validation API: a within-limit amount passes
+st, val = call("POST", f"/limits/api/limits/validate?cif={cp_ref}&line={line_id}&amount={int(avail*0.4)}&currency=INR")
+check("Validation API passes within available", st == 200 and val["success"], f"{st} {val}")
+# Utilisation API: utilise then check balances rolled up
+st, ur = call("POST", "/limits/api/limits/utilise",
+              {"cif": cp_ref, "productProcessor": "FINACLE",
+               "actions": [{"lineId": line_id, "action": "UTILISE", "amount": int(avail*0.4), "currency": "INR", "transactionRef": "TXN-1"}]},
+              actor="product.processor")
+check("Utilisation API confirms utilise", st == 200 and ur["success"] and ur["results"][0]["newOutstanding"] > 0, f"{st} {ur}")
+st, view2 = call("GET", f"/limits/api/limits/view?cif={cp_ref}")
+root2 = next((n for n in view2["nodes"] if n["level"] == 0), {})
+check("utilisation rolled up to obligor root", root2.get("outstanding", 0) > 0, str(root2.get("outstanding")))
+# Over-limit utilise is rejected
+st, over = call("POST", "/limits/api/limits/utilise",
+                {"cif": cp_ref, "actions": [{"lineId": line_id, "action": "UTILISE", "amount": 999_000_000_000, "currency": "INR"}]},
+                actor="product.processor")
+check("over-limit utilise rejected", st == 200 and not over["results"][0]["success"], f"{st}")
+# Override forces it through
+st, forced = call("POST", "/limits/api/limits/utilise",
+                  {"cif": cp_ref, "overrideFlag": True,
+                   "actions": [{"lineId": line_id, "action": "UTILISE", "amount": 5_000_000, "currency": "INR"}]},
+                  actor="product.processor")
+check("override forces utilisation", st == 200 and forced["results"][0]["success"], f"{st}")
+# Freeze blocks utilisation even with override
+st, frozen = call("POST", f"/limits/api/limits/{leaf['id']}/freeze", {"reason": "investigation"}, actor="credit.ops")
+st, blk = call("POST", "/limits/api/limits/utilise",
+               {"cif": cp_ref, "overrideFlag": True,
+                "actions": [{"lineId": line_id, "action": "UTILISE", "amount": 1000, "currency": "INR"}]},
+               actor="product.processor")
+check("frozen line blocks utilisation (even override)", st == 200 and not blk["results"][0]["success"], f"{st}")
+call("POST", f"/limits/api/limits/{leaf['id']}/unfreeze", actor="credit.ops")
+# Cap validation on manual child add
+st, badchild = call("POST", f"/limits/api/limits/{root_node['id']}/child",
+                    {"code": "OVERSIZED", "productType": "TERM_LOAN", "classification": "FUND_BASED",
+                     "revolving": False, "sanctionedAmount": 999_000_000_000, "currency": "INR"}, actor="credit.ops")
+check("child exceeding parent cap rejected (400)", badchild is not None and st == 400, f"{st}")
+# Exposure norms
+st, exp = call("GET", f"/limits/api/limits/{cp_ref}/exposure")
+check("exposure-norm check returns single-name + sector", st == 200 and len(exp["checks"]) >= 2, f"{st}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

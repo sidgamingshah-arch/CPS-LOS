@@ -133,13 +133,19 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 
 ---
 
-## 9. Limit Management — sublimits built, full engine roadmap
+## 9. Limit Management — `limit-service` (:8088)
 
 | Requested | Status |
 |---|---|
-| Facility + multi-level sub-limits, interchangeability/fungibility (combined cap, move within), hard caps, cap-overflow validation | ✅ (sublimits + interchangeability groups; cap enforced) |
-| Facility hierarchy master, fungibility at each level | ◑ (`FACILITY_MASTER`; tree fungibility roadmap) |
-| Exposure validation (group/industry/segment/country/department), country & department limits, ICR/FI country review, CIF mapping, EOD batch utilisation, freeze/unfreeze, View/Validation/Utilisation APIs, reconciliation, currency revaluation | ○ (concentration-vs-limits built in portfolio; full limit-tree + transaction APIs are a dedicated module) |
+| Facility + multi-level sub-limits (up to 5 levels, 50/parent), interchangeability/fungibility (combined cap, move within), hard caps, cap-overflow validation | ✅ |
+| Build limit tree from approved deal (obligor → facilities → sub-limits) | ✅ (`POST /limits/build/{ref}`) |
+| **View API** (CIF / line / product → tree or node, base-currency roll-up) | ✅ (`GET /limits/view`) |
+| **Validation API** (status · expiry · tenor · line & obligor available · single-name exposure) | ✅ (`POST /limits/validate`) |
+| **Utilisation API** (UTILISE/RELEASE/RESERVE/REVERSAL, multi-action, **override force**, ancestor roll-up) | ✅ (`POST /limits/utilise`) |
+| Freeze/unfreeze, expiry extension; currency conversion to base for cross-currency roll-up | ✅ |
+| Exposure norms (single-name, sector/geography) from config rule pack; single-name enforced per transaction, sector/geo at portfolio/sanction review | ✅ |
+| Facility hierarchy master, fungibility defined at each level | ✅ (`FACILITY_MASTER` + per-node `fungible`) |
+| Country & department limits, ICR/FI country review, CIF-to-facility mapping, EOD batch utilisation/reconciliation, transaction screens for FI, cash-margin LTV | ◑ / ○ (single-/group-name + transaction APIs built; country/department-limit ledger and FI transaction workflow are a further build) |
 
 ---
 
