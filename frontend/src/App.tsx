@@ -9,11 +9,17 @@ import DealWorkspace from "./pages/DealWorkspace";
 import AuditLog from "./pages/AuditLog";
 import Copilot from "./pages/Copilot";
 import Mis from "./pages/Mis";
+import Customer360 from "./pages/Customer360";
+import Cad from "./pages/Cad";
+import Limits from "./pages/Limits";
 
 const NAV = [
   { key: "dashboard", label: "Portfolio Dashboard" },
   { key: "deals", label: "Deals" },
   { key: "counterparties", label: "Counterparties" },
+  { key: "limits", label: "Limits" },
+  { key: "cad", label: "CAD · Documentation" },
+  { key: "customer360", label: "Customer-360" },
   { key: "mis", label: "MIS · Reports" },
   { key: "copilot", label: "Copilot" },
   { key: "rulepacks", label: "Jurisdictions & Rule Packs" },
@@ -24,6 +30,9 @@ const CRUMB: Record<string, string> = {
   dashboard: "Portfolio & book-level intelligence",
   deals: "Origination pipeline",
   counterparties: "Onboarding · KYC/KYB · UBO",
+  limits: "Multi-level limit tree · fungibility · View/Validation/Utilisation APIs",
+  cad: "Credit Administration · checklist · waivers/deviations · limit release",
+  customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
   mis: "Composition · RAROC variance · ECL · ageing · watchlist",
   copilot: "Scoped, grounded, non-binding assistant",
   rulepacks: "Regulatory abstraction layer",
@@ -77,6 +86,9 @@ export default function App() {
             {view === "dashboard" && <Dashboard />}
             {view === "deals" && <Deals />}
             {view === "counterparties" && <Counterparties />}
+            {view === "limits" && <Limits />}
+            {view === "cad" && <Cad />}
+            {view === "customer360" && <Customer360 />}
             {view === "mis" && <Mis />}
             {view === "copilot" && <Copilot />}
             {view === "rulepacks" && <RulePacks />}

@@ -144,7 +144,7 @@ export const portfolio = {
   rarocVariance: () => call<any>("/portfolio/api/portfolio/raroc/variance", "GET"),
 };
 
-// ---- mis / reports ----
+// ---- mis / reports / 360 dashboards ----
 export const mis = {
   dashboard: () => call<any>("/portfolio/api/mis/dashboard", "GET"),
   composition: () => call<any>("/portfolio/api/mis/composition", "GET"),
@@ -152,6 +152,98 @@ export const mis = {
   pipelineAgeing: () => call<any>("/portfolio/api/mis/pipeline-ageing", "GET"),
   eclByStage: () => call<any>("/portfolio/api/mis/ecl-by-stage", "GET"),
   watchlist: () => call<any>("/portfolio/api/mis/watchlist", "GET"),
+  customer360: (ref: string) => call<any>(`/portfolio/api/mis/customer360/${ref}`, "GET"),
+  portfolio360: () => call<any>("/portfolio/api/mis/portfolio360", "GET"),
+};
+
+// ---- corrective action plan (CAP) ----
+export const cap = {
+  raise: (body: any, actor: string) => call<any>("/portfolio/api/cap/actions", "POST", body, actor),
+  respond: (id: number, body: any, actor: string) => call<any>(`/portfolio/api/cap/actions/${id}/respond`, "POST", body, actor),
+  close: (id: number, body: any, actor: string) => call<any>(`/portfolio/api/cap/actions/${id}/close`, "POST", body, actor),
+  escalate: (id: number, body: any, actor: string) => call<any>(`/portfolio/api/cap/actions/${id}/escalate`, "POST", body, actor),
+  forApp: (ref: string) => call<any[]>(`/portfolio/api/cap/${ref}`, "GET"),
+  inbox: (status?: string, owner?: string) => {
+    const q = owner ? `?owner=${owner}` : status ? `?status=${status}` : "";
+    return call<any[]>("/portfolio/api/cap/inbox" + q, "GET");
+  },
+  sweep: (actor: string) => call<any>("/portfolio/api/cap/sweep", "POST", undefined, actor),
+};
+
+// ---- CAD ----
+export const cad = {
+  initiate: (body: any, actor: string) => call<any>("/decision/api/cad/cases", "POST", body, actor),
+  inbox: (status?: string) => call<any[]>("/decision/api/cad/cases" + (status ? `?status=${status}` : ""), "GET"),
+  view: (id: number) => call<any>(`/decision/api/cad/cases/${id}`, "GET"),
+  updateItem: (id: number, body: any, actor: string) => call<any>(`/decision/api/cad/items/${id}`, "POST", body, actor),
+  raiseDeviation: (itemId: number, body: any, actor: string) =>
+    call<any>(`/decision/api/cad/items/${itemId}/deviation`, "POST", body, actor),
+  decideDeviation: (devId: number, body: any, actor: string) =>
+    call<any>(`/decision/api/cad/deviations/${devId}/decision`, "POST", body, actor),
+  complete: (id: number, actor: string) => call<any>(`/decision/api/cad/cases/${id}/complete`, "POST", undefined, actor),
+  limitRelease: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/cad/cases/${id}/limit-release`, "POST", body, actor),
+};
+
+// ---- limit management ----
+export const limits = {
+  build: (ref: string, actor: string) => call<any>(`/limits/api/limits/build/${ref}`, "POST", undefined, actor),
+  view: (cif: string) => call<any>(`/limits/api/limits/view?cif=${cif}`, "GET"),
+  exposure: (cif: string) => call<any>(`/limits/api/limits/${cif}/exposure`, "GET"),
+  ledger: (cif: string) => call<any[]>(`/limits/api/limits/${cif}/ledger`, "GET"),
+  utilise: (body: any, actor: string) => call<any>("/limits/api/limits/utilise", "POST", body, actor),
+  validate: (cif: string, line: string, amount: number) =>
+    call<any>(`/limits/api/limits/validate?cif=${cif}&line=${line}&amount=${amount}`, "POST"),
+  freeze: (id: number, body: any, actor: string) => call<any>(`/limits/api/limits/${id}/freeze`, "POST", body, actor),
+  unfreeze: (id: number, actor: string) => call<any>(`/limits/api/limits/${id}/unfreeze`, "POST", undefined, actor),
+  countries: () => call<any[]>("/limits/api/limits/countries", "GET"),
+  countryView: (country: string) => call<any>(`/limits/api/limits/country/${country}`, "GET"),
+  upsertCountry: (body: any, actor: string) => call<any>("/limits/api/limits/country", "POST", body, actor),
+  upsertDept: (body: any, actor: string) => call<any>("/limits/api/limits/department", "POST", body, actor),
+  pendingFi: () => call<any[]>("/limits/api/limits/fi/transactions/pending", "GET"),
+  submitFi: (body: any, actor: string) => call<any>("/limits/api/limits/fi/transactions", "POST", body, actor),
+  decideFi: (id: number, body: any, actor: string) =>
+    call<any>(`/limits/api/limits/fi/transactions/${id}/decision`, "POST", body, actor),
+};
+
+// ---- covenant tracking workflow ----
+export const tracking = {
+  init: (body: any, actor: string) => call<any[]>("/decision/api/covenants/tracking/init", "POST", body, actor),
+  list: (ref: string) => call<any[]>(`/decision/api/covenants/tracking/${ref}`, "GET"),
+  runDue: (ref: string, actor: string) => call<any[]>(`/decision/api/covenants/tracking/${ref}/run-due`, "POST", undefined, actor),
+  upcoming: (days: number) => call<any[]>(`/decision/api/covenants/tracking/upcoming?days=${days}`, "GET"),
+  sendAlerts: (days: number, actor: string) => call<any>(`/decision/api/covenants/tracking/alerts/send?days=${days}`, "POST", undefined, actor),
+  requestExtension: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/tracking/schedules/${id}/request/extension`, "POST", body, actor),
+  requestWaiver: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/tracking/schedules/${id}/request/waiver`, "POST", body, actor),
+  freeze: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/tracking/schedules/${id}/freeze-accounts`, "POST", body, actor),
+  decide: (actionId: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/tracking/actions/${actionId}/decision`, "POST", body, actor),
+  actions: (id: number) => call<any[]>(`/decision/api/covenants/tracking/schedules/${id}/actions`, "GET"),
+};
+
+// ---- credit-initiation (prospect lifecycle) ----
+export const initiation = {
+  createProspect: (body: any, actor: string) => call<any>("/counterparty/api/initiation/prospects", "POST", body, actor),
+  dedup: (id: number) => call<any>(`/counterparty/api/initiation/prospects/${id}/dedup`, "GET"),
+  negative: (id: number) => call<any>(`/counterparty/api/initiation/prospects/${id}/negative-check`, "GET"),
+  summary: (id: number) => call<any>(`/counterparty/api/initiation/prospects/${id}/summary`, "GET"),
+  decide: (id: number, body: any, actor: string) => call<any>(`/counterparty/api/initiation/prospects/${id}/decision`, "POST", body, actor),
+  approve: (id: number, actor: string) => call<any>(`/counterparty/api/initiation/prospects/${id}/approve`, "POST", undefined, actor),
+  fetchCheck: (id: number, body: any, actor: string) => call<any>(`/counterparty/api/initiation/prospects/${id}/checks/fetch`, "POST", body, actor),
+  refreshCheck: (checkId: number, actor: string) => call<any>(`/counterparty/api/initiation/checks/${checkId}/refresh`, "POST", undefined, actor),
+  checks: (id: number) => call<any[]>(`/counterparty/api/initiation/prospects/${id}/checks`, "GET"),
+};
+
+// ---- master data (generic, maker-checker) ----
+export const masters = {
+  list: (type: string) => call<any[]>(`/config/api/masters/${type}`, "GET"),
+  submit: (type: string, body: any, actor: string) => call<any>(`/config/api/masters/${type}`, "POST", body, actor),
+  pending: () => call<any[]>("/config/api/masters/queue/pending", "GET"),
+  approve: (id: number, actor: string) => call<any>(`/config/api/masters/records/${id}/approve`, "POST", undefined, actor),
+  reject: (id: number, actor: string) => call<any>(`/config/api/masters/records/${id}/reject`, "POST", undefined, actor),
 };
 
 // ---- copilot ----

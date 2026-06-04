@@ -162,9 +162,10 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 |---|---|
 | Ingest from CP/limit/spreading/rating/core/covenant/CAD/bureau; borrower & relationship mapping | ◑ (cross-service reads + connector ingestion; some feeds roadmap) |
 | Trigger maintenance master (enable/disable, threshold, criticality), EWS signals, close triggers, corrective-action planning | ◑ (`EWS_TRIGGER` master + EWS signal flagging; CAP module roadmap) |
-| Customer-360 dashboard (borrower profile · limits & utilisation · triggers/breaches · financials · ratios · covenants · RAROC · provisioning · industry outlook) | ✅ (`GET /mis/customer360/{ref}`) |
+| Customer-360 dashboard (borrower profile · limits & utilisation · triggers/breaches · financials · ratios · covenants · RAROC · provisioning · industry outlook) | ✅ (`GET /mis/customer360/{ref}` + React page) |
 | Portfolio-360 dashboard (exposure count · total EAD/RWA · by internal rating · by segment · by jurisdiction · by status · by vintage year · open signals) | ✅ (`GET /mis/portfolio360`) |
 | MIS reports (composition, RAROC variance, pipeline ageing, ECL by stage, watchlist) | ✅ |
+| Corrective Action Plan (CAP) — raise · respond · close (SoD) · escalate · auto-overdue sweep | ✅ (`/api/cap/actions`, `/api/cap/sweep`) |
 | RAG/ML borrower scoring, statistical thresholds, macro directional impact, AI commentary | ○ |
 | ECL/IRAC provisioning, concentration vs limits, stress testing | ✅ |
 

@@ -547,6 +547,31 @@ st, fdec = call("POST", f"/limits/api/limits/fi/transactions/{fitx['id']}/decisi
                 {"approve": True, "approvedRate": 0.085, "comment": "ok"}, actor="credit.officer")
 check("FI transaction approved -> utilisation applied", st == 200 and fdec["status"] in ("APPROVED", "EXCEPTION_APPROVED"), f"{st}")
 
+print("== 32. Corrective Action Plan (CAP) ==")
+fut = "2030-06-01"
+st, capr = call("POST", "/portfolio/api/cap/actions",
+                {"applicationReference": ref, "description": "Submit revised cash-flow projections",
+                 "criticality": "HIGH", "targetDate": fut, "owner": "rm.alice",
+                 "reminderDays": 3, "escalationDays": 5}, actor="credit.officer")
+check("CAP raised by credit team", st == 200 and capr["status"] == "OPEN", f"{st}")
+# Only owner may respond
+st, wrong = call("POST", f"/portfolio/api/cap/actions/{capr['id']}/respond",
+                 {"response": "x", "docRef": "DMS-CAP-1"}, actor="rm.bob")
+check("non-owner cannot respond (403)", st == 403, f"{st}")
+st, resp = call("POST", f"/portfolio/api/cap/actions/{capr['id']}/respond",
+                {"response": "Projections attached", "docRef": "DMS-CAP-1"}, actor="rm.alice")
+check("owner submits response -> IN_PROGRESS", st == 200 and resp["status"] == "IN_PROGRESS", f"{st}")
+# SoD: owner cannot close their own CAP
+st, sod = call("POST", f"/portfolio/api/cap/actions/{capr['id']}/close", {"comment": "self"}, actor="rm.alice")
+check("owner cannot close own CAP (403)", st == 403, f"{st}")
+st, closed = call("POST", f"/portfolio/api/cap/actions/{capr['id']}/close",
+                  {"comment": "Approved"}, actor="credit.officer")
+check("credit team closes CAP", st == 200 and closed["status"] == "COMPLETED", f"{st}")
+st, sweep = call("POST", "/portfolio/api/cap/sweep", actor="system")
+check("CAP sweep endpoint runs", st == 200 and "overdue" in sweep, f"{st}")
+st, byref = call("GET", f"/portfolio/api/cap/{ref}")
+check("CAPs queryable by application", st == 200 and len(byref) >= 1, f"{st}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

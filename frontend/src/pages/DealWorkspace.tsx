@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { decision, origination, portfolio, risk, fmt } from "../api";
+import { decision, origination, portfolio, risk, tracking as covTracking, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Field, GradeBadge, statusTone, useAsync } from "../ui";
 import CopilotPanel from "../CopilotPanel";
@@ -259,6 +259,9 @@ export default function DealWorkspace({ reference }: { reference: string }) {
               </tr>))}</tbody></table>
         )}
       </Card>
+
+      {/* Covenant tracking workflow */}
+      <CovenantTrackingBlock reference={reference} />
 
       {/* Credit proposal */}
       <Card title="Credit proposal"
@@ -665,6 +668,58 @@ export default function DealWorkspace({ reference }: { reference: string }) {
           )}
         </div>
       </div>
+    );
+  }
+
+  function CovenantTrackingBlock({ reference }: { reference: string }) {
+    const list = useAsync(() => covTracking.list(reference).catch(() => [] as any[]), [reference]);
+    const init = async () => run(() => covTracking.init({ applicationRef: reference,
+      startDate: new Date().toISOString().slice(0, 10),
+      endDate: new Date(Date.now() + 3 * 365 * 86400_000).toISOString().slice(0, 10) }, actor), "Schedules initialised").then(() => list.reload());
+    const runDue = async () => run(() => covTracking.runDue(reference, actor), "Tested due schedules").then(() => list.reload());
+    return (
+      <Card title="Covenant tracking · workflow"
+        sub="Schedule (frequency · period · grace) drives the state machine; waiver/extension goes through maker-checker with SoD (PRD covenant tracking module)."
+        right={<div className="btnrow">
+          <Button kind="subtle" onClick={init}>Initialise schedules</Button>
+          <Button kind="ghost" disabled={(list.data || []).length === 0} onClick={runDue}>Test due</Button>
+        </div>}>
+        {(list.data || []).length === 0 ? <div className="muted">No schedules yet.</div> : (
+          <table>
+            <thead><tr><th>Metric</th><th>Frequency</th><th>Next due</th><th>Status</th><th>Last tested</th><th>Actions</th></tr></thead>
+            <tbody>
+              {list.data!.map((s: any) => (
+                <tr key={s.id}>
+                  <td><b>{s.metric}</b></td>
+                  <td>{s.testFrequency}</td>
+                  <td className="mono">{s.currentDueDate}</td>
+                  <td><Badge kind={s.status === "COMPLIANT" ? "ok"
+                    : s.status === "BREACHED" || s.status === "OVERDUE" ? "bad"
+                    : s.status === "WAIVED" || s.status === "EXTENDED" ? "info" : ""}>{s.status}</Badge></td>
+                  <td className="mono">{s.lastTestedAt || "—"}</td>
+                  <td>
+                    {["BREACHED", "OVERDUE"].includes(s.status) && (
+                      <div className="btnrow">
+                        <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                          onClick={() => {
+                            const r = window.prompt("Waiver reason:");
+                            if (r) run(() => covTracking.requestWaiver(s.id, { reason: r }, actor), "Waiver requested").then(() => list.reload());
+                          }}>Request waiver</button>
+                        <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                          onClick={() => {
+                            const d = window.prompt("New due date (YYYY-MM-DD):");
+                            if (d) run(() => covTracking.requestExtension(s.id, { newDueDate: d, reason: "extension" }, actor), "Extension requested").then(() => list.reload());
+                          }}>Request extension</button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <small className="prov">Tip: pending waivers/extensions are decided by credit team via <span className="mono">POST /actions/&#123;id&#125;/decision</span>. SoD enforced (requester ≠ approver).</small>
+      </Card>
     );
   }
 }
