@@ -471,6 +471,82 @@ st, rel = call("POST", f"/decision/api/cad/cases/{case_id}/limit-release",
                {"processingFeeAmortised": True, "lienMarked": True, "cashMarginCaptured": True, "comment": "ok"}, actor="cad.officer")
 check("limit release triggers feed to limit mgmt", st == 200 and rel["cadCase"]["status"] == "LIMIT_RELEASED", f"{st}")
 
+print("== 29. Covenant tracking workflow (schedule · state machine · waiver) ==")
+st, scheds = call("POST", "/decision/api/covenants/tracking/init",
+                  {"applicationRef": ref, "startDate": "2026-01-01", "endDate": "2029-01-01"}, actor="analyst.user")
+check("schedules initialised for active covenants", st == 200 and len(scheds) >= 1, f"{st}")
+st, run1 = call("POST", f"/decision/api/covenants/tracking/{ref}/run-due", actor="portfolio.manager")
+check("run-due executes the state machine", st == 200 and all(s["status"] in ("COMPLIANT", "BREACHED", "OVERDUE") for s in run1), f"{st}")
+# Manufacture a breach so we can exercise the waiver flow: add a tight covenant we know will breach.
+call("POST", f"/decision/api/decisions/{ref}/covenants",
+     {"covenantType": "FINANCIAL_MAINTENANCE", "metric": "NET_LEVERAGE", "operator": "<=", "threshold": 0.01,
+      "testFrequency": "QUARTERLY", "source": "borrower_management_accounts", "curePeriodDays": 30,
+      "breachSeverity": "MAJOR", "onBreach": ["raise_EWS"]}, actor="analyst.user")
+call("POST", "/decision/api/covenants/tracking/init",
+     {"applicationRef": ref, "startDate": "2026-01-01", "endDate": "2029-01-01"}, actor="analyst.user")
+st, run2 = call("POST", f"/decision/api/covenants/tracking/{ref}/run-due", actor="portfolio.manager")
+breached = [s for s in run2 if s["status"] in ("BREACHED", "OVERDUE")]
+check("at least one schedule breached after tight covenant", len(breached) >= 1, f"{[s.get('status') for s in run2]}")
+sched_id = breached[0]["id"]
+# RM requests a waiver
+st, req = call("POST", f"/decision/api/covenants/tracking/schedules/{sched_id}/request/waiver",
+               {"reason": "Temporary breach due to one-off acquisition cost"}, actor="rm.user")
+check("waiver request raised (pending)", st == 200 and req["status"] == "PENDING", f"{st}")
+# SoD: requester cannot self-approve
+st, sod = call("POST", f"/decision/api/covenants/tracking/actions/{req['id']}/decision",
+               {"approve": True, "comment": "self"}, actor="rm.user")
+check("requester cannot approve own action (403)", st == 403, f"{st}")
+st, dec = call("POST", f"/decision/api/covenants/tracking/actions/{req['id']}/decision",
+               {"approve": True, "comment": "1-quarter waiver"}, actor="credit.officer")
+check("credit officer approves waiver", st == 200 and dec["status"] == "APPROVED", f"{st}")
+st, after = call("GET", f"/decision/api/covenants/tracking/{ref}")
+check("schedule status updated to WAIVED", any(s["id"] == sched_id and s["status"] == "WAIVED" for s in after), str([s.get("status") for s in after]))
+# Extension flow
+st, breached_now = call("GET", f"/decision/api/covenants/tracking/{ref}")
+ext_sched = next((s for s in breached_now if s["status"] in ("BREACHED", "OVERDUE")), None)
+if ext_sched:
+    fut = "2030-01-01"
+    st, ereq = call("POST", f"/decision/api/covenants/tracking/schedules/{ext_sched['id']}/request/extension",
+                    {"newDueDate": fut, "reason": "Need more time"}, actor="rm.user")
+    check("extension request raised", st == 200 and ereq["status"] == "PENDING", f"{st}")
+    st, edec = call("POST", f"/decision/api/covenants/tracking/actions/{ereq['id']}/decision",
+                    {"approve": True, "comment": "ok"}, actor="credit.officer")
+    check("extension approved -> EXTENDED + due date advanced", st == 200 and edec["status"] == "APPROVED", f"{st}")
+st, alerts = call("POST", "/decision/api/covenants/tracking/alerts/send?days=120", actor="system")
+check("upcoming alerts emitted", st == 200 and alerts["alertsSent"] >= 0, f"{st}")
+
+print("== 30. Customer-360 / Portfolio-360 dashboards ==")
+st, c360 = call("GET", f"/portfolio/api/mis/customer360/{ref}")
+check("Customer-360 aggregates borrower view", st == 200 and "borrowerProfile" in c360 and "ratios" in c360 and "raroc" in c360, f"{st}")
+check("Customer-360 surfaces triggers + provisioning", "triggersAndBreaches" in c360 and "provisioning" in c360)
+st, p360 = call("GET", "/portfolio/api/mis/portfolio360")
+check("Portfolio-360 returns book-level cuts", st == 200 and p360["exposureCount"] >= 1 and "byInternalRating" in p360 and "byVintageYear" in p360, f"{st}")
+
+print("== 31. Country & department limits · FI transaction workflow ==")
+st, cy = call("POST", "/limits/api/limits/country",
+              {"country": "IN", "overallLimit": 50_000_000_000, "currency": "INR", "externalRating": "BBB"}, actor="credit.ops")
+check("country limit upserted", st == 200, f"{st}")
+st, dept = call("POST", "/limits/api/limits/department",
+                {"country": "IN", "department": "FI", "limit": 10_000_000_000, "currency": "INR", "cashCollateral": 0}, actor="credit.ops")
+check("FI department limit upserted", st == 200, f"{st}")
+st, bad = call("POST", "/limits/api/limits/department",
+               {"country": "IN", "department": "CORPORATE", "limit": 99_000_000_000_000, "currency": "INR", "cashCollateral": 0}, actor="credit.ops")
+check("department overflowing country cap rejected (400)", bad is not None and st == 400, f"{st}")
+st, cv = call("GET", "/limits/api/limits/country/IN")
+check("country view aggregates departments", st == 200 and cv["country"] == "IN" and len(cv["departments"]) >= 1, f"{st}")
+# Submit an FI transaction against the existing obligor's working-capital leaf line
+st, fv = call("GET", f"/limits/api/limits/view?cif={cp['reference']}")
+fi_line = next((n for n in fv["nodes"] if n["level"] >= 1), None)
+st, fitx = call("POST", "/limits/api/limits/fi/transactions",
+                {"cif": cp["reference"], "country": "IN", "department": "FI", "lineId": fi_line["reference"],
+                 "facilityType": fi_line["productType"] or fi_line["code"], "amount": 5_000_000, "currency": "INR",
+                 "productProcessor": "FI-PP", "bookingUnit": "MUM01", "transactionRef": "FX-01", "cashMargin": 0},
+                actor="product.processor")
+check("FI transaction submitted (pending approval)", st == 200 and fitx["status"] == "PENDING_APPROVAL", f"{st}")
+st, fdec = call("POST", f"/limits/api/limits/fi/transactions/{fitx['id']}/decision",
+                {"approve": True, "approvedRate": 0.085, "comment": "ok"}, actor="credit.officer")
+check("FI transaction approved -> utilisation applied", st == 200 and fdec["status"] in ("APPROVED", "EXCEPTION_APPROVED"), f"{st}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

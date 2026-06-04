@@ -89,14 +89,16 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 
 ---
 
-## 5. Covenant Monitoring — `decision-service` + `portfolio-service`
+## 5. Covenant Monitoring — `decision-service` `/api/covenants/tracking`
 
 | Requested | Status |
 |---|---|
 | Covenant library master (Affirmative/Negative/Financial/Non-financial), by industry/segment/facility, bulk upload, maker-checker | ✅ (`COVENANT_LIBRARY` via master engine) |
-| Covenant schedule (frequency, period, thresholds, grace), tracking workflow (Compliant/Breached/Waived/Overdue/Extended), RM/credit actions | ◑ (covenant entities + testing + EWS breach flagging; full schedule state machine roadmap) |
-| Auto status from financial spreading; GenAI extraction from compliance certs / CP free-text | ◑ / ○ |
-| Alerts to RMs, downstream freeze actions, dashboards/reports | ◑ |
+| Covenant schedule (frequency, period, thresholds, grace), tracking workflow (Compliant/Breached/Waived/Overdue/Extended), RM/credit actions, request-and-approve with SoD | ✅ (`init`, `run-due`, schedule state machine; `request/{extension,waiver}` + `actions/{id}/decision`; raiser≠approver) |
+| Auto status from financial spreading | ✅ (driven by latest spread ratios from origination) |
+| Alerts to RMs (configurable horizon) | ✅ (`alerts/send?days=`) |
+| Freeze accounts / freeze disbursement triggers to limit mgmt | ✅ (`LIMIT_FREEZE_TRIGGER` audit event) |
+| GenAI extraction from compliance certs / CP free-text | ○ |
 
 ---
 
@@ -148,7 +150,9 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 | Freeze/unfreeze, expiry extension; currency conversion to base for cross-currency roll-up | ✅ |
 | Exposure norms (single-name, sector/geography) from config rule pack; single-name enforced per transaction, sector/geo at portfolio/sanction review | ✅ |
 | Facility hierarchy master, fungibility defined at each level | ✅ (`FACILITY_MASTER` + per-node `fungible`) |
-| Country & department limits, ICR/FI country review, CIF-to-facility mapping, EOD batch utilisation/reconciliation, transaction screens for FI, cash-margin LTV | ◑ / ○ (single-/group-name + transaction APIs built; country/department-limit ledger and FI transaction workflow are a further build) |
+| Country & department limits with non-fungible departments rolling up to country cap; cash-margin captured per FI tx | ✅ (`/limits/country`, `/limits/department`, `/limits/country/{country}` view) |
+| FI standalone transaction workflow (submit → approve/exception-approved → utilises obligor line; rejection captured) | ✅ (`/limits/fi/transactions`, `/limits/fi/transactions/{id}/decision`, pending inbox) |
+| ICR country review (multi-FI tagged, simultaneous renewal), EOD batch utilisation/reconciliation, currency revaluation EOD | ◑ / ○ |
 
 ---
 
@@ -158,7 +162,10 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 |---|---|
 | Ingest from CP/limit/spreading/rating/core/covenant/CAD/bureau; borrower & relationship mapping | ◑ (cross-service reads + connector ingestion; some feeds roadmap) |
 | Trigger maintenance master (enable/disable, threshold, criticality), EWS signals, close triggers, corrective-action planning | ◑ (`EWS_TRIGGER` master + EWS signal flagging; CAP module roadmap) |
-| Customer-360 & Portfolio-360 dashboards (widgets + drilldown), MIS reports, RAG/ML borrower scoring, statistical thresholds, macro directional impact, AI commentary | ◑ (MIS dashboard: composition, RAROC variance, ageing, ECL by stage, watchlist; ML/AI commentary roadmap) |
+| Customer-360 dashboard (borrower profile · limits & utilisation · triggers/breaches · financials · ratios · covenants · RAROC · provisioning · industry outlook) | ✅ (`GET /mis/customer360/{ref}`) |
+| Portfolio-360 dashboard (exposure count · total EAD/RWA · by internal rating · by segment · by jurisdiction · by status · by vintage year · open signals) | ✅ (`GET /mis/portfolio360`) |
+| MIS reports (composition, RAROC variance, pipeline ageing, ECL by stage, watchlist) | ✅ |
+| RAG/ML borrower scoring, statistical thresholds, macro directional impact, AI commentary | ○ |
 | ECL/IRAC provisioning, concentration vs limits, stress testing | ✅ |
 
 ---

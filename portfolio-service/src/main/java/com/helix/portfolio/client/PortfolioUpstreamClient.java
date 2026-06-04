@@ -115,4 +115,42 @@ public class PortfolioUpstreamClient {
             return List.of();
         }
     }
+
+    /** Generic GET wrapper so portfolio aggregations can pull from any upstream by URL. */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getMap(String svc, String uri, Object... vars) {
+        RestClient c = switch (svc) {
+            case "origination" -> origination;
+            case "risk" -> risk;
+            case "decision" -> decision;
+            case "config" -> config;
+            default -> null;
+        };
+        if (c == null) return Map.of();
+        try {
+            return c.get().uri(uri, vars).retrieve().body(Map.class);
+        } catch (Exception e) {
+            log.warn("upstream {} {} unavailable ({})", svc, uri, e.getMessage());
+            return Map.of();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> getList(String svc, String uri, Object... vars) {
+        RestClient c = switch (svc) {
+            case "origination" -> origination;
+            case "risk" -> risk;
+            case "decision" -> decision;
+            case "config" -> config;
+            default -> null;
+        };
+        if (c == null) return List.of();
+        try {
+            List<?> raw = c.get().uri(uri, vars).retrieve().body(List.class);
+            return raw == null ? List.of() : (List<Map<String, Object>>) raw;
+        } catch (Exception e) {
+            log.warn("upstream {} {} unavailable ({})", svc, uri, e.getMessage());
+            return List.of();
+        }
+    }
 }
