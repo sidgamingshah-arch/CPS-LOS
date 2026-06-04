@@ -223,6 +223,12 @@ export const limits = {
   submitFi: (body: any, actor: string) => call<any>("/limits/api/limits/fi/transactions", "POST", body, actor),
   decideFi: (id: number, body: any, actor: string) =>
     call<any>(`/limits/api/limits/fi/transactions/${id}/decision`, "POST", body, actor),
+  // ---- EOD batch (FX refresh · revaluation · reconciliation) ----
+  eodFx: () => call<any>("/limits/api/limits/eod/fx", "GET"),
+  eodRefreshFx: (body: any, actor: string) => call<any>("/limits/api/limits/eod/fx/refresh", "POST", body, actor),
+  eodRun: (actor: string) => call<any>("/limits/api/limits/eod/run", "POST", undefined, actor),
+  eodRuns: () => call<any[]>("/limits/api/limits/eod/runs", "GET"),
+  eodRunDetail: (id: number) => call<any>(`/limits/api/limits/eod/runs/${id}`, "GET"),
 };
 
 // ---- covenant tracking workflow ----

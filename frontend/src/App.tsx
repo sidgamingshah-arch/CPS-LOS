@@ -13,6 +13,7 @@ import Customer360 from "./pages/Customer360";
 import Cad from "./pages/Cad";
 import Monitoring from "./pages/Monitoring";
 import Limits from "./pages/Limits";
+import Masters from "./pages/Masters";
 
 const NAV = [
   { key: "dashboard", label: "Portfolio Dashboard" },
@@ -25,6 +26,7 @@ const NAV = [
   { key: "mis", label: "MIS · Reports" },
   { key: "copilot", label: "Copilot" },
   { key: "rulepacks", label: "Jurisdictions & Rule Packs" },
+  { key: "masters", label: "Master Data" },
   { key: "audit", label: "Audit Trail" },
 ];
 
@@ -39,6 +41,7 @@ const CRUMB: Record<string, string> = {
   mis: "Composition · RAROC variance · ECL · ageing · watchlist",
   copilot: "Scoped, grounded, non-binding assistant",
   rulepacks: "Regulatory abstraction layer",
+  masters: "Generic Master-Data engine · maker-checker SoD · 22 master types",
   audit: "Immutable, examiner-ready trail",
   workspace: "Deal workspace — AI-executed, human-gated",
 };
@@ -96,6 +99,7 @@ export default function App() {
             {view === "mis" && <Mis />}
             {view === "copilot" && <Copilot />}
             {view === "rulepacks" && <RulePacks />}
+            {view === "masters" && <Masters />}
             {view === "audit" && <AuditLog />}
             {view === "workspace" && ref && <DealWorkspace reference={ref} />}
           </div>

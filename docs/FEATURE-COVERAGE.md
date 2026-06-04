@@ -17,7 +17,7 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 
 | Requested (examples) | Generic capability | Status |
 |---|---|---|
-| Deduplication Logic Master, Inactivity Threshold Master, Negative List Master, Covenant Library, Facility Master, Collateral Master, Valuation/Charge/Rating-Agency masters, RAROC masters (PD term structure, CCF, opex, liquidity premium, FTP, benchmarks), EWS Trigger maintenance, Industry Benchmark config, Checklist/Document-Template/TnC masters | **One generic Master-Data engine** (`config-service` `MasterRecord` + `/api/masters/{type}`) — any `masterType`, JSON payload, **maker-checker with SoD**, versioning, bulk upsert, pending queue, history. 30+ masters seeded. | ✅ |
+| Deduplication Logic Master, Inactivity Threshold Master, Negative List Master, Covenant Library, Facility Master, Collateral Master, Valuation/Charge/Rating-Agency masters, RAROC masters (PD term structure, CCF, opex, liquidity premium, FTP, benchmarks), EWS Trigger maintenance, Industry Benchmark config, Checklist/Document-Template/TnC masters | **One generic Master-Data engine** (`config-service` `MasterRecord` + `/api/masters/{type}`) — any `masterType`, JSON payload, **maker-checker with SoD**, versioning, bulk upsert, pending queue, history. 30+ masters seeded. **React Master Data admin page** with type picker, active records, pending queue with approve/reject, propose-new with JSON payload editor. | ✅ |
 | "…front end add/edit/delete… 1-level maker/checker… bulk upload" (repeated ~15×) | Same engine: `POST /masters/{type}`, `…/bulk`, `records/{id}/approve|reject` (checker ≠ maker enforced) | ✅ |
 | Configurable Approval Workflows, Standard/Default workflows (CP, rating, spreading, RAROC, CAD), segment/borrower-type-specific | **`WORKFLOW_DEFINITION` rule pack** — ordered stages with autonomy level, AI flag, human-gate, SLA per (jurisdiction × segment). Mid-corp + SME(STP) + CBUAE seeded. | ◑ (definitions + DoA routing built; full multi-actor state machine is impl) |
 | Email Notifications through master (ownership claim/change, obligor approved, covenant due, CAD alerts) | **`EMAIL_TEMPLATE` master** + template-driven notification events emitted to the immutable audit trail (no SMTP binding in this build) | ◑ |
@@ -153,7 +153,8 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 | Facility hierarchy master, fungibility defined at each level | ✅ (`FACILITY_MASTER` + per-node `fungible`) |
 | Country & department limits with non-fungible departments rolling up to country cap; cash-margin captured per FI tx | ✅ (`/limits/country`, `/limits/department`, `/limits/country/{country}` view) |
 | FI standalone transaction workflow (submit → approve/exception-approved → utilises obligor line; rejection captured) | ✅ (`/limits/fi/transactions`, `/limits/fi/transactions/{id}/decision`, pending inbox) |
-| ICR country review (multi-FI tagged, simultaneous renewal), EOD batch utilisation/reconciliation, currency revaluation EOD | ◑ / ○ |
+| ICR country review (multi-FI tagged, simultaneous renewal) | ○ |
+| EOD batch: FX refresh + currency revaluation (sanctioned mark-to-market with per-node delta) + utilisation reconciliation (leaf-vs-ledger and parent-vs-children variance detection); immutable run history queryable by id | ✅ (`/api/limits/eod/fx`, `/api/limits/eod/fx/refresh`, `/api/limits/eod/run`, `/api/limits/eod/runs`, `/api/limits/eod/runs/{id}`; React **EOD batch** panel on the Limits page) |
 
 ---
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { counterparty, fmt, limits as L, origination } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, statusTone, useAsync } from "../ui";
+import { Badge, Button, Card, Field, Stat, statusTone, useAsync } from "../ui";
 
 /**
  * Limit management: build limit tree from a deal, view per-CIF tree with
@@ -55,7 +55,131 @@ export default function Limits() {
           </table>
         </Card>
       )}
+
+      <EodPanel actor={actor} notify={notify} />
     </div>
+  );
+}
+
+function EodPanel({ actor, notify }: { actor: string; notify: any }) {
+  const fxv = useAsync(() => L.eodFx(), []);
+  const runs = useAsync(() => L.eodRuns(), []);
+  const [selected, setSelected] = useState<number | null>(null);
+  const detail = useAsync(() => (selected ? L.eodRunDetail(selected) : Promise.resolve(null)), [selected]);
+
+  const reloadAll = () => { fxv.reload(); runs.reload(); detail.reload(); };
+
+  const refresh = async () => {
+    const ccy = window.prompt("Currency code (e.g. USD):", "USD");
+    if (!ccy) return;
+    const rateStr = window.prompt(`Today's mid-market rate for 1 ${ccy.toUpperCase()} in ${fxv.data?.base || "INR"}:`,
+      String(fxv.data?.rates?.[ccy.toUpperCase()] || ""));
+    if (!rateStr) return;
+    try {
+      const r = await L.eodRefreshFx({ currency: ccy, rate: +rateStr }, actor);
+      notify(`${r.currency}: ${r.previous} → ${r.current}`);
+      reloadAll();
+    } catch (e: any) { notify(e.message, true); }
+  };
+
+  const runEod = async () => {
+    try {
+      const r = await L.eodRun(actor);
+      notify(`EOD #${r.id}: ${r.revaluedCount} revalued · Δ ${fmt.money(r.revaluationDeltaBase)} · ${r.varianceCount} variance(s)`);
+      setSelected(r.id);
+      reloadAll();
+    } catch (e: any) { notify(e.message, true); }
+  };
+
+  const latest = runs.data?.[0];
+
+  return (
+    <Card title="EOD batch · FX revaluation + utilisation reconciliation"
+      sub="Refresh market rates, mark sanctioned limits to today's FX, and reconcile the utilisation ledger against recorded balances. Variances are surfaced for the ops desk."
+      right={
+        <div className="btnrow">
+          <Button kind="ghost" onClick={refresh}>Refresh FX…</Button>
+          <Button onClick={runEod}>Run EOD</Button>
+        </div>
+      }>
+      <div className="grid cols-3">
+        <Stat label={`Rates (base ${fxv.data?.base || "INR"})`}
+          value={<span className="mono" style={{ fontSize: 12 }}>{fxv.data
+            ? Object.entries(fxv.data.rates).map(([k, v]) => `${k} ${v}`).join(" · ")
+            : "—"}</span>} />
+        <Stat label="Last EOD"
+          value={latest ? `#${latest.id} · ${latest.runDate}` : "—"}
+          delta={latest ? `${latest.revaluedCount} revalued · ${latest.varianceCount} variance(s)` : undefined} />
+        <Stat label="Net revaluation Δ (base)"
+          value={latest ? fmt.money(latest.revaluationDeltaBase) : "—"}
+          tone={latest && latest.revaluationDeltaBase < 0 ? "var(--bad)" : undefined} />
+      </div>
+
+      {(runs.data || []).length > 0 && (
+        <table style={{ marginTop: 10 }}>
+          <thead><tr><th>Run</th><th>Date</th><th>By</th><th className="num">Revalued</th><th className="num">Δ base</th><th className="num">Variances</th><th>Completed</th></tr></thead>
+          <tbody>
+            {runs.data!.slice(0, 8).map((r: any) => (
+              <tr key={r.id} className={selected === r.id ? "rowlink active" : "rowlink"} onClick={() => setSelected(r.id)}>
+                <td className="mono">#{r.id}</td>
+                <td className="mono">{r.runDate}</td>
+                <td className="mono">{r.runBy}</td>
+                <td className="num">{r.revaluedCount}</td>
+                <td className="num">{fmt.money(r.revaluationDeltaBase)}</td>
+                <td className="num">{r.varianceCount > 0 ? <Badge kind="warn">{r.varianceCount}</Badge> : 0}</td>
+                <td className="mono"><small className="prov">{new Date(r.completedAt).toLocaleString()}</small></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {detail.data && (
+        <div className="grid cols-2" style={{ marginTop: 10 }}>
+          <Card title={`Revaluations · run #${selected}`}
+            sub={(detail.data.revaluations || []).length === 0 ? "No revaluations" : `${detail.data.revaluations.length} entry(ies)`}>
+            {(detail.data.revaluations || []).length > 0 && (
+              <table>
+                <thead><tr><th>Line</th><th>Ccy</th><th className="num">Sanctioned</th><th className="num">Old base</th><th className="num">New base</th><th className="num">Δ</th><th className="num">Rate</th></tr></thead>
+                <tbody>
+                  {detail.data.revaluations.map((r: any) => (
+                    <tr key={r.id}>
+                      <td><b>{r.code}</b></td>
+                      <td className="mono">{r.currency}</td>
+                      <td className="num">{fmt.money(r.sanctionedAmount, r.currency)}</td>
+                      <td className="num">{fmt.money(r.oldBase)}</td>
+                      <td className="num">{fmt.money(r.newBase)}</td>
+                      <td className="num">{fmt.money(r.delta)}</td>
+                      <td className="num mono">{r.fxRate}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </Card>
+          <Card title={`Reconciliation variances · run #${selected}`}
+            sub={(detail.data.variances || []).length === 0 ? "No variances — ledger reconciles" : `${detail.data.variances.length} variance(s)`}>
+            {(detail.data.variances || []).length > 0 ? (
+              <table>
+                <thead><tr><th>Line</th><th>Scope</th><th>Field</th><th className="num">Recorded</th><th className="num">Computed</th><th className="num">Δ</th></tr></thead>
+                <tbody>
+                  {detail.data.variances.map((v: any) => (
+                    <tr key={v.id}>
+                      <td><b>{v.code}</b></td>
+                      <td><Badge>{v.scope}</Badge></td>
+                      <td className="mono">{v.field}</td>
+                      <td className="num">{fmt.money(v.recorded)}</td>
+                      <td className="num">{fmt.money(v.computed)}</td>
+                      <td className="num"><Badge kind={Math.abs(v.variance) > 0 ? "bad" : ""}>{fmt.money(v.variance)}</Badge></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <div className="muted">Clean run.</div>}
+          </Card>
+        </div>
+      )}
+    </Card>
   );
 }
 

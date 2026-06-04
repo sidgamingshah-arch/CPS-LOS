@@ -616,6 +616,60 @@ check("MER reminders emitted for near-due items", st == 200 and mrem["remindersS
 st, msum = call("GET", f"/decision/api/mer/summary?reference={ref}")
 check("MER summary returns status breakdown", st == 200 and msum["total"] >= 2 and "byStatus" in msum, f"{st}")
 
+print("== 34. EOD batch: FX refresh · currency revaluation · utilisation reconciliation ==")
+# A USD-denominated root so revaluation has a non-base-currency node to move.
+st, usd_root = call("POST", "/limits/api/limits/root",
+                    {"cif": "EOD-USD-1", "applicationRef": "EOD-USD-APP", "code": "USD-ROOT",
+                     "sanctionedAmount": 5_000_000, "currency": "USD", "tenorMonths": 36,
+                     "segment": "WHOLESALE", "sector": "TRADE", "country": "AE", "fungible": False},
+                    actor="credit.ops")
+check("USD root created for revaluation test", st == 200 and usd_root["currency"] == "USD", f"{st}")
+
+# Initial FX view
+st, fxv = call("GET", "/limits/api/limits/eod/fx")
+check("FX view returns rates + base", st == 200 and fxv["base"] == "INR" and "USD" in fxv["rates"], f"{st}")
+
+# A clean EOD run before any rate change should produce no revaluations.
+st, run0 = call("POST", "/limits/api/limits/eod/run", actor="eod.batch")
+check("first EOD run completes", st == 200 and "id" in run0, f"{st}")
+check("clean run produces no revaluations", run0["revaluedCount"] == 0, f"{run0.get('revaluedCount')}")
+check("clean run produces no variances on freshly built book", run0["varianceCount"] == 0, f"{run0.get('varianceCount')}")
+
+# Refresh the USD rate +5% to simulate today's market move.
+st, fxr = call("POST", "/limits/api/limits/eod/fx/refresh", {"currency": "USD", "rate": 87.15}, actor="market.data")
+check("USD rate refreshed", st == 200 and abs(fxr["current"] - 87.15) < 0.01, f"{st}")
+
+# Negative: a non-positive rate must be rejected.
+st, badr = call("POST", "/limits/api/limits/eod/fx/refresh", {"currency": "USD", "rate": -1}, actor="market.data")
+check("non-positive FX rate rejected (400)", badr is not None and st == 400, f"{st}")
+
+# Re-run EOD; USD-priced nodes must revalue and produce a positive delta.
+st, run1 = call("POST", "/limits/api/limits/eod/run", actor="eod.batch")
+check("EOD revalues USD nodes", st == 200 and run1["revaluedCount"] >= 1, f"{run1.get('revaluedCount')}")
+check("net revaluation delta is positive (USD up)", run1["revaluationDeltaBase"] > 0, f"{run1.get('revaluationDeltaBase')}")
+st, detail = call("GET", f"/limits/api/limits/eod/runs/{run1['id']}")
+check("per-run detail returns the revaluation entries",
+      len(detail["revaluations"]) >= 1 and detail["revaluations"][0]["currency"] == "USD", str(detail.get("revaluations")))
+
+# Idempotency: an immediate re-run at the same rates should produce no further moves.
+st, run2 = call("POST", "/limits/api/limits/eod/run", actor="eod.batch")
+check("re-running EOD with no rate change is idempotent (no new revaluation)",
+      run2["revaluedCount"] == 0, f"{run2.get('revaluedCount')}")
+
+# Variance detection: utilise on a leaf line on the INR book and prove the ledger reconciles.
+fv = call("GET", f"/limits/api/limits/view?cif={cp['reference']}")[1]
+leaf = next((n for n in fv["nodes"] if n["level"] >= 1), None)
+call("POST", "/limits/api/limits/utilise",
+     {"cif": cp["reference"], "productProcessor": "EOD-T",
+      "actions": [{"lineId": leaf["reference"], "action": "UTILISE", "amount": 100_000, "currency": "INR"}]},
+     actor="product.processor")
+st, run3 = call("POST", "/limits/api/limits/eod/run", actor="eod.batch")
+check("ledger-consistent utilisation reconciles cleanly", run3["varianceCount"] == 0, f"{run3.get('varianceCount')}")
+
+st, runs = call("GET", "/limits/api/limits/eod/runs")
+check("EOD run history queryable (most recent first)",
+      st == 200 and len(runs) >= 4 and runs[0]["id"] > runs[-1]["id"], f"{st} {len(runs) if runs else 0}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")
