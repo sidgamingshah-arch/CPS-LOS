@@ -5,6 +5,7 @@ import { Badge, Card, useAsync } from "../ui";
 const TYPES = [
   "CAPITAL_SA", "ECRA_MAPPING", "RATING_PD_MAP", "LGD_MAP",
   "PROVISIONING", "DOA_MATRIX", "CDD_TIERS", "EXPOSURE_LIMITS", "PRICING",
+  "WORKFLOW_DEFINITION",
 ];
 
 export default function RulePacks() {

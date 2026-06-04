@@ -64,6 +64,17 @@ export const origination = {
   confirmSpread: (ref: string, actor: string) =>
     call<any>(`/origination/api/applications/${ref}/spread/confirm`, "POST", undefined, actor),
   analysis: (ref: string) => call<any>(`/origination/api/applications/${ref}/analysis`, "GET"),
+  envelope: (ref: string) => call<any>(`/origination/api/applications/${ref}/envelope`, "GET"),
+  facilities: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/facilities`, "GET"),
+  addFacility: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/${ref}/facilities`, "POST", body, actor),
+  removeFacility: (id: number, actor: string) =>
+    call<any>(`/origination/api/applications/facilities/${id}`, "DELETE", undefined, actor),
+  collaterals: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/collaterals`, "GET"),
+  addCollateral: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/${ref}/collaterals`, "POST", body, actor),
+  perfectCollateral: (id: number, actor: string) =>
+    call<any>(`/origination/api/applications/collaterals/${id}/perfect`, "POST", undefined, actor),
 };
 
 // ---- risk ----
@@ -91,6 +102,13 @@ export const decision = {
   addCovenant: (ref: string, body: any, actor: string) =>
     call<any>(`/decision/api/decisions/${ref}/covenants`, "POST", body, actor),
   suggest: (grade: string) => call<any[]>(`/decision/api/decisions/${grade}/covenants/suggest?grade=${grade}`, "GET"),
+  testCovenants: (ref: string, actor: string) =>
+    call<any[]>(`/decision/api/decisions/${ref}/covenants/test`, "POST", undefined, actor),
+  covenantTests: (ref: string) => call<any[]>(`/decision/api/decisions/${ref}/covenants/tests`, "GET"),
+  generateProposal: (ref: string, actor: string) =>
+    call<any>(`/decision/api/decisions/${ref}/credit-proposal/generate`, "POST", undefined, actor),
+  latestProposal: (ref: string) => call<any>(`/decision/api/decisions/${ref}/credit-proposal`, "GET"),
+  proposalVersions: (ref: string) => call<any[]>(`/decision/api/decisions/${ref}/credit-proposal/versions`, "GET"),
 };
 
 // ---- portfolio ----
@@ -111,6 +129,23 @@ export const portfolio = {
     call<any>(`/portfolio/api/portfolio/ews/${id}/disposition`, "POST", { status }, actor),
   ingestCoreBanking: (ref: string, envelope: any, actor: string) =>
     call<any>(`/portfolio/api/portfolio/exposures/${ref}/ingest/core-banking`, "POST", envelope, actor),
+  rarocSnapshot: (ref: string, actor: string) =>
+    call<any>(`/portfolio/api/portfolio/exposures/${ref}/raroc/snapshot`, "POST", undefined, actor),
+  rarocCompute: (ref: string, period: string, realisedProvisionDelta: number, actor: string) =>
+    call<any>(`/portfolio/api/portfolio/exposures/${ref}/raroc/compute?period=${encodeURIComponent(period)}&realisedProvisionDelta=${realisedProvisionDelta}`,
+      "POST", undefined, actor),
+  rarocHistory: (ref: string) => call<any[]>(`/portfolio/api/portfolio/exposures/${ref}/raroc`, "GET"),
+  rarocVariance: () => call<any>("/portfolio/api/portfolio/raroc/variance", "GET"),
+};
+
+// ---- mis / reports ----
+export const mis = {
+  dashboard: () => call<any>("/portfolio/api/mis/dashboard", "GET"),
+  composition: () => call<any>("/portfolio/api/mis/composition", "GET"),
+  rarocVariance: () => call<any>("/portfolio/api/mis/raroc-variance", "GET"),
+  pipelineAgeing: () => call<any>("/portfolio/api/mis/pipeline-ageing", "GET"),
+  eclByStage: () => call<any>("/portfolio/api/mis/ecl-by-stage", "GET"),
+  watchlist: () => call<any>("/portfolio/api/mis/watchlist", "GET"),
 };
 
 // ---- copilot ----

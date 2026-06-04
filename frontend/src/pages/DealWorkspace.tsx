@@ -33,8 +33,14 @@ export default function DealWorkspace({ reference }: { reference: string }) {
   const dec = useAsync(() => decision.latest(reference).catch(() => null), [reference]);
   const covs = useAsync(() => decision.covenants(reference), [reference]);
   const signals = useAsync(() => portfolio.scan(reference, actor).catch(() => [] as any[]), [reference]);
+  const facs = useAsync(() => origination.facilities(reference), [reference]);
+  const cols = useAsync(() => origination.collaterals(reference), [reference]);
+  const covTests = useAsync(() => decision.covenantTests(reference).catch(() => [] as any[]), [reference]);
+  const rarocHist = useAsync(() => portfolio.rarocHistory(reference).catch(() => [] as any[]), [reference]);
+  const proposalLatest = useAsync(() => decision.latestProposal(reference).catch(() => null as any), [reference]);
 
-  const reload = () => { app.reload(); analysis.reload(); docs.reload(); summary.reload(); dec.reload(); covs.reload(); };
+  const reload = () => { app.reload(); analysis.reload(); docs.reload(); summary.reload(); dec.reload(); covs.reload();
+    facs.reload(); cols.reload(); covTests.reload(); rarocHist.reload(); proposalLatest.reload(); };
   const run = async (fn: () => Promise<any>, ok: string) => {
     try { await fn(); notify(ok); reload(); } catch (e: any) { notify(e.message, true); }
   };
@@ -65,6 +71,20 @@ export default function DealWorkspace({ reference }: { reference: string }) {
           {steps.map((s) => <span key={s.k} className={`step ${s.done ? "done" : ""}`}>{s.done ? "✓ " : ""}{s.k}</span>)}
         </div>
         <Button kind="subtle" onClick={() => nav("deals")}>← Back to pipeline</Button>
+      </Card>
+
+      {/* Facilities proposed */}
+      <Card title="Facilities proposed"
+        sub="An application can propose multiple facilities (term + working capital + LC line). The primary is auto-created from the application; add more here."
+        right={<AddFacilityButton reference={reference} onAdded={facs.reload} />}>
+        <FacilitiesTable facs={facs.data || []} onChange={() => { facs.reload(); reload(); }} />
+      </Card>
+
+      {/* Collateral */}
+      <Card title="Collateral and security"
+        sub="First-class collateral items: type, market value, supervisory haircut, perfection status. Effective cover after haircut feeds the capital projection."
+        right={<AddCollateralButton reference={reference} facilities={facs.data || []} onAdded={cols.reload} />}>
+        <CollateralsTable cols={cols.data || []} onChange={() => { cols.reload(); reload(); }} />
       </Card>
 
       {/* Documents */}
@@ -184,7 +204,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
       </Card>
 
       {/* Capital */}
-      <Card title="Regulatory capital (RWA)" sub="Deterministic SA engine via the jurisdiction rule pack; every figure traces to inputs + rule version (PRD §6)."
+      <Card title="Capital projection (for RAROC)" sub="Internal projection used to drive RAROC pricing — the bank's capital engine remains the system of record. Deterministic, every figure traces to inputs + rule-pack version."
         right={<Button disabled={!rating} onClick={() => run(() => risk.capital(reference, actor), "Capital computed")}>{capital ? "Recompute" : "Compute capital"}</Button>}>
         {!capital ? <div className="muted">Rate the deal, then compute capital.</div> : <CapitalView reference={reference} capital={capital} />}
       </Card>
@@ -220,6 +240,54 @@ export default function DealWorkspace({ reference }: { reference: string }) {
             )}
           </>
         )}
+      </Card>
+
+      {/* Covenant testing history */}
+      <Card title="Covenant testing"
+        sub="Tests every active covenant against the latest spread ratios; observations persisted to history (PRD §7 sample covenant rule, §11 monitoring)."
+        right={<Button kind="subtle" disabled={!(covs.data || []).length}
+          onClick={() => run(() => decision.testCovenants(reference, actor), "Covenants tested")}>Run covenant tests</Button>}>
+        {(covTests.data || []).length === 0 ? <div className="muted">No tests yet — set up covenants and run a test.</div> : (
+          <table><thead><tr><th>When</th><th>Metric</th><th>Test</th><th className="num">Observed</th><th>Pass</th><th>Severity</th></tr></thead>
+            <tbody>{covTests.data!.slice(0, 12).map((t: any) => (
+              <tr key={t.id}>
+                <td className="mono" style={{ whiteSpace: "nowrap" }}>{new Date(t.testedAt).toLocaleString()}</td>
+                <td>{t.metric}</td><td className="mono">{t.operator} {t.threshold}</td>
+                <td className="num">{fmt.num(t.observed, 2)}</td>
+                <td>{t.passed ? <Badge kind="ok">pass</Badge> : <Badge kind="bad">breach</Badge>}</td>
+                <td><Badge kind={t.breachSeverity === "CRITICAL" ? "bad" : t.breachSeverity === "MAJOR" ? "warn" : "info"}>{t.breachSeverity}</Badge></td>
+              </tr>))}</tbody></table>
+        )}
+      </Card>
+
+      {/* Credit proposal */}
+      <Card title="Credit proposal"
+        sub="A formal committee memo grounded in this deal's data — every figure quoted from the engines, section-to-source citations stored (PRD §8 US-8.3, §13)."
+        right={<Button onClick={() => run(() => decision.generateProposal(reference, actor), "Proposal generated")}>{proposalLatest.data ? "Re-generate" : "Generate proposal"}</Button>}>
+        {!proposalLatest.data ? <div className="muted">No proposal yet.</div> : (
+          <>
+            <div className="btnrow" style={{ marginBottom: 10 }}>
+              <Badge kind="info">v{proposalLatest.data.version}</Badge>
+              <small className="prov">Generated {new Date(proposalLatest.data.generatedAt).toLocaleString()} by {proposalLatest.data.generatedBy}</small>
+            </div>
+            <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16, maxHeight: 460, overflow: "auto", fontSize: 13 }}
+              dangerouslySetInnerHTML={{ __html: proposalLatest.data.html }} />
+            <div style={{ marginTop: 10 }}>
+              <small className="prov">Citations:</small>
+              <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                {Object.entries(proposalLatest.data.citations || {}).map(([k, v]: any) => (
+                  <li key={k}><small className="prov"><span className="mono">{k}</span> — {String(v)}</small></li>
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* RAROC tracking */}
+      <Card title="Projected vs actual RAROC"
+        sub="The bank's capital engine remains the system of record; here we close the loop on pricing — projected at booking, actual recomputed from realised conduct, variance feeds model-fit governance (PRD §7, §11).">
+        <RarocBlock reference={reference} history={rarocHist.data || []} onChange={rarocHist.reload} />
       </Card>
 
       {/* Book & monitor */}
@@ -368,6 +436,135 @@ export default function DealWorkspace({ reference }: { reference: string }) {
                   <td><Badge kind={s.severity === "SEVERE" ? "bad" : s.severity === "HIGH" ? "warn" : "info"}>{s.severity}</Badge></td>
                   <td className="num">{fmt.num(s.score, 2)}</td></tr>
               ))}</tbody></table>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function AddFacilityButton({ reference, onAdded }: { reference: string; onAdded: () => void }) {
+    const [open, setOpen] = useState(false);
+    const [f, setF] = useState<any>({ facilityType: "WORKING_CAPITAL", amount: 100_000_000, currency: "INR", tenorMonths: 12, purpose: "" });
+    if (!open) return <Button kind="ghost" onClick={() => setOpen(true)}>+ Add facility</Button>;
+    return (
+      <span>
+        <select value={f.facilityType} onChange={(e) => setF({ ...f, facilityType: e.target.value })} style={{ width: 170, marginRight: 6 }}>
+          {["TERM_LOAN", "WORKING_CAPITAL", "REVOLVING_CREDIT", "PROJECT_LOAN", "GUARANTEE", "TRADE_LINE"].map((x) => <option key={x}>{x}</option>)}
+        </select>
+        <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: +e.target.value })} style={{ width: 130, marginRight: 6 }} />
+        <input type="number" value={f.tenorMonths} onChange={(e) => setF({ ...f, tenorMonths: +e.target.value })} style={{ width: 70, marginRight: 6 }} />
+        <Button onClick={() => { run(() => origination.addFacility(reference, f, actor), "Facility added").then(() => { setOpen(false); onAdded(); }); }}>Add</Button>
+        <Button kind="subtle" onClick={() => setOpen(false)}>Cancel</Button>
+      </span>
+    );
+  }
+
+  function FacilitiesTable({ facs, onChange }: { facs: any[]; onChange: () => void }) {
+    if (facs.length === 0) return <div className="muted">No facilities recorded.</div>;
+    return (
+      <table><thead><tr><th>#</th><th>Type</th><th>Reference</th><th className="num">Amount</th><th>Tenor</th><th>Indicative rate</th><th>Purpose</th><th></th></tr></thead>
+        <tbody>{facs.map((f: any) => (
+          <tr key={f.id}>
+            <td>{f.ordinal}{f.primary && <span title="primary"> ★</span>}</td>
+            <td><span className="mono">{f.facilityType}</span></td>
+            <td className="mono">{f.reference}</td>
+            <td className="num">{fmt.money(f.amount, f.currency)}</td>
+            <td>{f.tenorMonths}m</td>
+            <td>{f.indicativeRate == null ? "—" : fmt.pct(f.indicativeRate, 2)}</td>
+            <td>{f.purpose || "—"}</td>
+            <td>{!f.primary && <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+              onClick={() => run(() => origination.removeFacility(f.id, actor), "Facility removed").then(onChange)}>Remove</button>}</td>
+          </tr>))}</tbody></table>
+    );
+  }
+
+  function AddCollateralButton({ reference, facilities, onAdded }: { reference: string; facilities: any[]; onAdded: () => void }) {
+    const [open, setOpen] = useState(false);
+    const [c, setC] = useState<any>({
+      collateralType: "PROPERTY", description: "", marketValue: 100_000_000, haircut: 0.4,
+      perfectionStatus: "IN_PROGRESS", facilityId: null, owner: "",
+    });
+    if (!open) return <Button kind="ghost" onClick={() => setOpen(true)}>+ Add collateral</Button>;
+    return (
+      <span>
+        <select value={c.collateralType} onChange={(e) => setC({ ...c, collateralType: e.target.value })} style={{ width: 150, marginRight: 6 }}>
+          {["CASH", "GOVT_SECURITIES", "EQUITY_LISTED", "PROPERTY", "RECEIVABLES"].map((x) => <option key={x}>{x}</option>)}
+        </select>
+        <input placeholder="description" value={c.description} onChange={(e) => setC({ ...c, description: e.target.value })} style={{ width: 160, marginRight: 6 }} />
+        <input type="number" value={c.marketValue} onChange={(e) => setC({ ...c, marketValue: +e.target.value })} style={{ width: 120, marginRight: 6 }} />
+        <select value={c.facilityId || ""} onChange={(e) => setC({ ...c, facilityId: e.target.value ? +e.target.value : null })} style={{ width: 140, marginRight: 6 }}>
+          <option value="">(pooled to deal)</option>
+          {facilities.map((f) => <option key={f.id} value={f.id}>#{f.ordinal} {f.facilityType}</option>)}
+        </select>
+        <Button onClick={() => { run(() => origination.addCollateral(reference, c, actor), "Collateral added").then(() => { setOpen(false); onAdded(); }); }}>Add</Button>
+        <Button kind="subtle" onClick={() => setOpen(false)}>Cancel</Button>
+      </span>
+    );
+  }
+
+  function CollateralsTable({ cols, onChange }: { cols: any[]; onChange: () => void }) {
+    if (cols.length === 0) return <div className="muted">No collateral recorded.</div>;
+    const totalCover = cols.reduce((s, c) => s + (c.marketValue * (1 - c.haircut)), 0);
+    return (
+      <>
+        <table><thead><tr><th>Type</th><th>Description</th><th className="num">Market value</th><th>Haircut</th><th className="num">Effective</th><th>Perfection</th><th>Facility</th><th></th></tr></thead>
+          <tbody>{cols.map((c: any) => (
+            <tr key={c.id}>
+              <td><span className="mono">{c.collateralType}</span></td>
+              <td>{c.description || "—"}</td>
+              <td className="num">{fmt.money(c.marketValue, "")}</td>
+              <td>{fmt.pct(c.haircut, 0)}</td>
+              <td className="num">{fmt.money(c.marketValue * (1 - c.haircut), "")}</td>
+              <td><Badge kind={c.perfectionStatus === "PERFECTED" ? "ok" : c.perfectionStatus === "IN_PROGRESS" ? "warn" : "info"}>{c.perfectionStatus}</Badge></td>
+              <td>{c.facilityId ? <span className="mono">F#{c.facilityId}</span> : <span className="muted">pooled</span>}</td>
+              <td>{c.perfectionStatus !== "PERFECTED" &&
+                <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                  onClick={() => run(() => origination.perfectCollateral(c.id, actor), "Charge perfected").then(onChange)}>Perfect</button>}</td>
+            </tr>))}</tbody></table>
+        <div style={{ marginTop: 8 }}><b>Total effective coverage:</b> {fmt.money(totalCover, "")}</div>
+      </>
+    );
+  }
+
+  function RarocBlock({ reference, history, onChange }: { reference: string; history: any[]; onChange: () => void }) {
+    const [period, setPeriod] = useState("2026Q2");
+    const [delta, setDelta] = useState(0);
+    const origin = history.find((h) => h.origination);
+    const actuals = history.filter((h) => !h.origination);
+    return (
+      <div className="grid cols-2">
+        <div>
+          <div className="btnrow" style={{ marginBottom: 8 }}>
+            <Button kind="subtle" onClick={() => run(() => portfolio.rarocSnapshot(reference, actor), "Projected RAROC snapshotted").then(onChange)}>Snapshot projected</Button>
+          </div>
+          <div className="inline" style={{ gap: 8, marginBottom: 8 }}>
+            <Field label="Period"><input value={period} onChange={(e) => setPeriod(e.target.value)} style={{ width: 110 }} /></Field>
+            <Field label="Realised provision Δ"><input type="number" value={delta} onChange={(e) => setDelta(+e.target.value)} style={{ width: 140 }} /></Field>
+            <Button onClick={() => run(() => portfolio.rarocCompute(reference, period, delta, actor), "Actual RAROC computed").then(onChange)}>Compute actual</Button>
+          </div>
+          {origin && (
+            <div className="kv">
+              <div className="k">Projected RAROC (origination)</div><div className="v"><b>{fmt.pct(origin.projectedRaroc, 2)}</b></div>
+              <div className="k">Recommended rate</div><div className="v">{fmt.pct(origin.projectedRecommendedRate, 2)}</div>
+              <div className="k">Projected capital</div><div className="v">{fmt.money(origin.projectedCapitalCharge, "")}</div>
+            </div>
+          )}
+        </div>
+        <div>
+          <h4>Variance history</h4>
+          {actuals.length === 0 ? <div className="muted">No actual observations yet.</div> : (
+            <table><thead><tr><th>Period</th><th className="num">Projected</th><th className="num">Actual</th><th className="num">Δ</th><th>|Δ| / projected</th></tr></thead>
+              <tbody>{actuals.map((h: any) => {
+                const material = h.absVariancePct > 0.25;
+                return (
+                  <tr key={h.id}>
+                    <td>{h.periodLabel}</td>
+                    <td className="num">{fmt.pct(h.projectedRaroc, 2)}</td>
+                    <td className="num">{fmt.pct(h.actualRaroc, 2)}</td>
+                    <td className="num" style={{ color: h.variance < 0 ? "var(--bad)" : "var(--ok)" }}>{fmt.pct(h.variance, 2)}</td>
+                    <td>{material ? <Badge kind="bad">material miss</Badge> : <Badge kind="ok">within</Badge>}</td>
+                  </tr>);
+              })}</tbody></table>
           )}
         </div>
       </div>
