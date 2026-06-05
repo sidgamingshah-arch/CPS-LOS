@@ -14,15 +14,21 @@ import Cad from "./pages/Cad";
 import Monitoring from "./pages/Monitoring";
 import Limits from "./pages/Limits";
 import Masters from "./pages/Masters";
+import Structuring from "./pages/Structuring";
+import DocIntel from "./pages/DocIntel";
+import RiskLab from "./pages/RiskLab";
 
 const NAV = [
   { key: "dashboard", label: "Portfolio Dashboard" },
   { key: "deals", label: "Deals" },
+  { key: "structuring", label: "Deal Structuring" },
+  { key: "docintel", label: "Doc Intelligence" },
   { key: "counterparties", label: "Counterparties" },
   { key: "limits", label: "Limits" },
   { key: "cad", label: "CAD · Documentation" },
   { key: "monitoring", label: "Monitoring · MER" },
   { key: "customer360", label: "Customer-360" },
+  { key: "risklab", label: "Risk Lab" },
   { key: "mis", label: "MIS · Reports" },
   { key: "copilot", label: "Copilot" },
   { key: "rulepacks", label: "Jurisdictions & Rule Packs" },
@@ -33,11 +39,14 @@ const NAV = [
 const CRUMB: Record<string, string> = {
   dashboard: "Portfolio & book-level intelligence",
   deals: "Origination pipeline",
+  structuring: "Specialised CP variants · group · joint/dual-obligor · syndication · FI ICR · renewal copy",
+  docintel: "GenAI document intelligence · extraction (human-confirmed) · language · translation · checks",
   counterparties: "Onboarding · KYC/KYB · UBO",
   limits: "Multi-level limit tree · fungibility · View/Validation/Utilisation APIs",
   cad: "Credit Administration · checklist · waivers/deviations · limit release",
   monitoring: "Deferred docs · conditions subsequent · renewals · reminders · escalation · DMS feed",
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
+  risklab: "Advisory overlays · statistical RAG scoring · macro directional impact (non-binding)",
   mis: "Composition · RAROC variance · ECL · ageing · watchlist",
   copilot: "Scoped, grounded, non-binding assistant",
   rulepacks: "Regulatory abstraction layer",
@@ -91,11 +100,14 @@ export default function App() {
           <div className="content">
             {view === "dashboard" && <Dashboard />}
             {view === "deals" && <Deals />}
+            {view === "structuring" && <Structuring />}
+            {view === "docintel" && <DocIntel />}
             {view === "counterparties" && <Counterparties />}
             {view === "limits" && <Limits />}
             {view === "cad" && <Cad />}
             {view === "monitoring" && <Monitoring />}
             {view === "customer360" && <Customer360 />}
+            {view === "risklab" && <RiskLab />}
             {view === "mis" && <Mis />}
             {view === "copilot" && <Copilot />}
             {view === "rulepacks" && <RulePacks />}

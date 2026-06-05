@@ -670,6 +670,93 @@ st, runs = call("GET", "/limits/api/limits/eod/runs")
 check("EOD run history queryable (most recent first)",
       st == 200 and len(runs) >= 4 and runs[0]["id"] > runs[-1]["id"], f"{st} {len(runs) if runs else 0}")
 
+def fresh_app(purpose):
+    _, a = call("POST", "/origination/api/applications",
+                {"counterpartyId": cp["id"], "counterpartyRef": cp["reference"], "counterpartyName": cp["legalName"],
+                 "jurisdiction": "IN", "segment": "WHOLESALE", "facilityType": "TERM_LOAN",
+                 "requestedAmount": 100_000_000, "currency": "INR", "tenorMonths": 36, "purpose": purpose,
+                 "collateralType": "NONE", "collateralValue": 0, "secured": False}, actor="rm.user")
+    return a["reference"]
+
+print("== 35. Specialised deal structures (CP variants) ==")
+# Syndication on the main deal: lead + two participants, our 25% share.
+st, syn = call("POST", f"/origination/api/applications/{ref}/structure",
+               {"structureType": "SYNDICATION", "leadArranger": "Helix Bank",
+                "totalDealAmount": 1_000_000_000, "ourShareAmount": 250_000_000}, actor="rm.user")
+check("syndication structure set", st == 200 and syn["structure"]["structureType"] == "SYNDICATION", f"{st}")
+check("our share % derived from total", abs(syn["structure"]["ourSharePct"] - 25.0) < 0.1, str(syn["structure"].get("ourSharePct")))
+for (role, name, committed) in [("LEAD_BANK", "Helix Bank", 400_000_000),
+                                ("PARTICIPANT_LENDER", "Bank B", 300_000_000),
+                                ("PARTICIPANT_LENDER", "Bank C", 300_000_000)]:
+    call("POST", f"/origination/api/applications/{ref}/structure/participants",
+         {"role": role, "name": name, "committedAmount": committed}, actor="rm.user")
+st, synv = call("GET", f"/origination/api/applications/{ref}/structure")
+check("syndication validates (>=2 lenders, commitments tie to total)",
+      synv["valid"] and abs(synv["lenderCommittedSum"] - 1_000_000_000) < 1, f"valid={synv['valid']} sum={synv['lenderCommittedSum']}")
+
+# Dual-obligor (Islamic): requires exactly two obligors.
+ref_dual = fresh_app("Dual-obligor murabaha")
+call("POST", f"/origination/api/applications/{ref_dual}/structure",
+     {"structureType": "DUAL_OBLIGOR", "islamic": True}, actor="rm.user")
+call("POST", f"/origination/api/applications/{ref_dual}/structure/participants",
+     {"role": "PRIMARY_OBLIGOR", "name": "Obligor One", "sharePct": 50, "liabilityType": "JOINT_AND_SEVERAL"}, actor="rm.user")
+st, d1 = call("GET", f"/origination/api/applications/{ref_dual}/structure")
+check("dual-obligor with one obligor is invalid (ERROR finding)",
+      not d1["valid"] and any(f["level"] == "ERROR" for f in d1["findings"]), str(d1["findings"]))
+call("POST", f"/origination/api/applications/{ref_dual}/structure/participants",
+     {"role": "CO_OBLIGOR", "name": "Obligor Two", "sharePct": 50, "liabilityType": "JOINT_AND_SEVERAL"}, actor="rm.user")
+st, d2 = call("GET", f"/origination/api/applications/{ref_dual}/structure")
+check("dual-obligor with two obligors validates", d2["valid"], str(d2["findings"]))
+
+# Renewal/amendment: copy the structure into a fresh proposal.
+ref_renew = fresh_app("Renewal of syndicated TL")
+st, cpc = call("POST", f"/origination/api/applications/{ref_renew}/structure/copy-from/{ref}", actor="rm.user")
+check("copy-from clones structure for renewal", st == 200 and cpc["structure"]["copiedFromReference"] == ref, f"{st}")
+check("copied participants carried over", len(cpc["participants"]) == 3, str(len(cpc.get("participants", []))))
+
+print("== 36. GenAI document intelligence (extract → confirm gate · language · translate · checks) ==")
+st, fdoc = call("POST", f"/origination/api/applications/{ref}/documents",
+                {"fileName": "ACME_FY2025_financials.pdf", "declaredType": "FINANCIAL_STATEMENT"}, actor="analyst.user")
+doc_id = fdoc["id"]
+st, ext = call("POST", f"/origination/api/doc-intel/documents/{doc_id}/extract", actor="doc.intel")
+check("AI extraction produced suggested fields", st == 200 and ext["status"] == "SUGGESTED" and len(ext["fields"]) >= 3, f"{st}")
+check("extraction carries confidence (advisory, not auto-applied to figures)", ext["overallConfidence"] > 0, str(ext.get("overallConfidence")))
+st, conf = call("POST", f"/origination/api/doc-intel/extractions/{ext['id']}/confirm",
+                {"note": "tie-out vs source ok"}, actor="analyst.user")
+check("human confirms AI extraction", st == 200 and conf["status"] == "CONFIRMED" and conf["reviewedBy"] == "analyst.user", f"{st}")
+st, reconf = call("POST", f"/origination/api/doc-intel/extractions/{ext['id']}/confirm", {}, actor="analyst.user")
+check("re-confirm rejected (already decided, 409)", reconf is not None and st == 409, f"{st}")
+st, norm = call("POST", "/origination/api/doc-intel/normalise-language",
+                {"text": "we'll fund the deal asap and you'll repay", "target": "LEGAL"}, actor="analyst.user")
+check("casual→legal rewrite changes the text", st == 200 and norm["rewritten"] != norm["original"] and norm["advisory"], f"{st}")
+st, tr = call("POST", "/origination/api/doc-intel/translate",
+              {"text": "هذا مستند تجريبي", "targetLanguage": "en"}, actor="analyst.user")
+check("translation detects Arabic source", st == 200 and tr["sourceLanguage"] == "ar" and tr["targetLanguage"] == "en", f"{st} {tr.get('sourceLanguage')}")
+st, chk = call("GET", f"/origination/api/doc-intel/documents/{doc_id}/checks")
+check("document checks return advisory findings", st == 200 and chk["advisory"] and len(chk["findings"]) >= 1, f"{st}")
+
+print("== 37. Advisory RAG scoring + macro directional impact (non-binding overlays) ==")
+st, grade_before = call("GET", f"/risk/api/risk/{ref}/rating")
+g0 = grade_before["finalGrade"]
+st, rag = call("POST", f"/risk/api/risk/{ref}/rag", actor="risk.analyst")
+check("statistical RAG assessed", st == 200 and rag["band"] in ("RED", "AMBER", "GREEN") and 0 <= rag["score"] <= 100, f"{st} {rag.get('band')}")
+check("RAG is advisory and explains its factors", rag["advisory"] and "breakdown" in rag["factors"], str(list(rag.get("factors", {}).keys())))
+st, ragh = call("GET", f"/risk/api/risk/{ref}/rag")
+check("RAG history queryable", st == 200 and len(ragh) >= 1, f"{st}")
+st, down = call("POST", f"/risk/api/risk/{ref}/macro-impact",
+                {"scenarioName": "Stagflation", "interestRateBps": 200, "gdpGrowthDeltaPct": -2,
+                 "sectorOutlook": "DETERIORATING"}, actor="risk.analyst")
+check("adverse macro scenario raises PD (downgrade pressure)",
+      st == 200 and down["stressedPd"] > down["baselinePd"] and down["notchEstimate"] < 0, f"{st} {down.get('stressedPd')} vs {down.get('baselinePd')}")
+st, up = call("POST", f"/risk/api/risk/{ref}/macro-impact",
+              {"scenarioName": "Soft landing", "interestRateBps": -100, "gdpGrowthDeltaPct": 2,
+               "sectorOutlook": "IMPROVING"}, actor="risk.analyst")
+check("benign macro scenario lowers PD (upgrade headroom)",
+      st == 200 and up["stressedPd"] < up["baselinePd"] and up["notchEstimate"] > 0, f"{st} {up.get('stressedPd')} vs {up.get('baselinePd')}")
+check("macro overlays are advisory", down["advisory"] and up["advisory"])
+st, grade_after = call("GET", f"/risk/api/risk/{ref}/rating")
+check("authoritative rating UNCHANGED by advisory overlays", grade_after["finalGrade"] == g0, f"{g0} -> {grade_after.get('finalGrade')}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

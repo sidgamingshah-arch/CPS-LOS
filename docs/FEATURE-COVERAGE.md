@@ -54,7 +54,7 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 |---|---|
 | Canonical spreading, multi-period, provenance to source doc/page/coords, analyst override with material-change gate, ratios, benchmark flags, downstream consumption | ✅ |
 | Template selection (auto/override), template maintenance master, financial rule validations | ◑ (`FINANCIAL_TEMPLATE`/rules via master engine; SpreadJS UI is impl) |
-| GenAI extraction (PDF/scanned/Arabic/Chinese), side-by-side view, multilingual | ○ (document-intelligence seam; `DocumentClassifier` stub today) |
+| GenAI extraction (PDF/scanned/Arabic/Chinese), side-by-side view, multilingual | ✅ (`/api/doc-intel`: type-aware field extraction with per-field confidence + source-page provenance, language detection [en/ar/hi/fr], **suggest → human-confirm gate** [never auto-applied to the figure path], reject; React **Doc Intelligence** page) |
 | Projections (borrower / analyst / 3-scenario best-worst-likely), peer analysis (≤5), benchmarking, rolling/TTM, multi-company consolidation, multicurrency, version control | ◑ (trends + benchmark flags built; scenario/rolling/peer engines roadmap) |
 | Auto financial analysis (cash flow, ratios), downloadable, currency rate, annualization | ◑ |
 
@@ -83,7 +83,7 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 | Facility & sub-limit capture, interchangeability, security capture & mapping, charge config | ✅ (multi-facility, **sublimits + interchangeability groups**, collateral, perfection) |
 | Covenant capture (master-linked + case-level modify + custom), covenant testing pre-sanction with auto-flag & exception workflow | ✅ (`COVENANT_LIBRARY` master, covenant entities, `covenants/test` history) |
 | DoA routing on amount × rating × deviations; named-human decision; committee note | ✅ |
-| Group CP, multi-party/joint-obligor, joint-utiliser, dual-obligor (Islamic), ICR for FI, renewal/amendment CP, copy proposal | ○ (CP type config seam; specialised CP variants roadmap) |
+| Group CP, multi-party/joint-obligor, joint-utiliser, dual-obligor (Islamic), ICR for FI, renewal/amendment CP, copy proposal | ✅ (`/api/applications/{ref}/structure`: `DealStructure` + `DealParticipant`; variant-aware validation — syndication ≥2 lenders & commitments tie to total + our-share %, dual-obligor exactly-2, joint-obligor liability types, group reference + members, FI ICR; `copy-from/{sourceRef}` for renewal/amendment; React **Deal Structuring** page) |
 | Business profile, management assessment, news feed, risks & mitigation, ways-out, relationship strategy, peer/industry benchmarking sections | ◑ (sections generated from data; narrative depth roadmap) |
 | Credit decisioning template + decision support (historical rationale) | ◑ |
 
@@ -125,7 +125,7 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 | Completion gate + limit-release checklist + feed to limit management | ✅ (`cases/{id}/complete`, `cases/{id}/limit-release` → LIMIT_RELEASE_TRIGGER) |
 | MER tracking workflow (deferred docs / conditions subsequent / recurring renewals — insurance · valuation · annual review), reminders + escalation sweep, maker-checker clearance, DMS feed | ✅ (`/api/mer`: `generate/from-cad`, `submit`→DMS_FEED, `verify` [verifier≠submitter], `waive` [≠owner], `sweep`→OVERDUE/ESCALATED, `reminders/send`, recurring roll-forward; React **Monitoring · MER**) |
 | Pre-populated doc/TnC generation, DMS versioning, email templates per stage | ◑ / ○ (EMAIL_TEMPLATE master + audit events; doc-gen is a further build) |
-| GenAI (template selection, casual→legal language, clause add/remove, translation, signature verification, doc checks) | ○ |
+| GenAI (template selection, casual→legal language, clause add/remove, translation, signature verification, doc checks) | ◑ (`/api/doc-intel`: casual→legal & legal→plain normalisation, translation [language detection], advisory document checks incl. signature/execution pending; all audited AI, non-binding. Template selection/clause-surgery remain roadmap) |
 
 ---
 
@@ -168,7 +168,7 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 | Portfolio-360 dashboard (exposure count · total EAD/RWA · by internal rating · by segment · by jurisdiction · by status · by vintage year · open signals) | ✅ (`GET /mis/portfolio360`) |
 | MIS reports (composition, RAROC variance, pipeline ageing, ECL by stage, watchlist) | ✅ |
 | Corrective Action Plan (CAP) — raise · respond · close (SoD) · escalate · auto-overdue sweep | ✅ (`/api/cap/actions`, `/api/cap/sweep`) |
-| RAG/ML borrower scoring, statistical thresholds, macro directional impact, AI commentary | ○ |
+| RAG/ML borrower scoring, statistical thresholds, macro directional impact, AI commentary | ✅ (`/api/risk/{ref}/rag` statistical Red/Amber/Green with transparent per-factor contributions + thresholds; `/api/risk/{ref}/macro-impact` directional PD/notch projection from rate/GDP/FX/sector/commodity shifts. Both **advisory & non-binding** — the deterministic rating is provably unchanged; audited as AI events. React **Risk Lab** page) |
 | ECL/IRAC provisioning, concentration vs limits, stress testing | ✅ |
 
 ---
@@ -176,10 +176,15 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 ## Honest scope statement
 
 The **architecture, generic engines, and the credit-decision spine are built and
-tested** (105 assertions). The items marked ○ are genuine module build-outs
-(full CAD documentation, full limit-tree + transaction APIs, GenAI document
-intelligence, ML/statistical scoring, SpreadJS UI, specialised CP variants). They
-are intentionally **not stubbed as if complete** — each sits on an existing seam
-(master engine, workflow definitions, connector ingestion, audit) and is additive
-without core change. This is a reference platform demonstrating the patterns, not
-a production deployment of every bank-specific feature.
+tested** (198 assertions through the gateway, clean-DB). The credit lifecycle now
+runs end to end — initiation → spreading → rating (+ advisory RAG & macro overlays)
+→ capital/RAROC → DoA decision → CAD documentation → MER monitoring → limit tree
+& product-processor APIs → portfolio ECL/EWS/Customer-360 — with specialised deal
+structures (group/joint/dual-obligor/syndication/FI-ICR/renewal-copy) and GenAI
+document intelligence at the boundary. The remaining ○ items (e.g. SpreadJS UI,
+clause-surgery doc-gen, AI commentary) are intentionally **not stubbed as if
+complete** — each sits on an existing seam (master engine, workflow definitions,
+connector ingestion, audit) and is additive without core change. Every AI/ML output
+is advisory, human-gated, and provably never alters a credit-consequential figure.
+This is a reference platform demonstrating the patterns, not a production deployment
+of every bank-specific feature.

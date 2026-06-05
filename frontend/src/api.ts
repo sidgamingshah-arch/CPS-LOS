@@ -95,6 +95,34 @@ export const risk = {
   explainCapital: (ref: string) => call<any>(`/risk/api/risk/${ref}/capital/explain`, "GET"),
   pricing: (ref: string, actor: string) => call<any>(`/risk/api/risk/${ref}/pricing`, "POST", undefined, actor),
   overrideStats: (segment: string) => call<any>(`/risk/api/risk/override-stats?segment=${segment}`, "GET"),
+  // ---- advisory overlays (non-binding) ----
+  assessRag: (ref: string, actor: string) => call<any>(`/risk/api/risk/${ref}/rag`, "POST", undefined, actor),
+  ragHistory: (ref: string) => call<any[]>(`/risk/api/risk/${ref}/rag`, "GET"),
+  macroImpact: (ref: string, body: any, actor: string) => call<any>(`/risk/api/risk/${ref}/macro-impact`, "POST", body, actor),
+  macroHistory: (ref: string) => call<any[]>(`/risk/api/risk/${ref}/macro-impact`, "GET"),
+};
+
+// ---- specialised deal structures (CP variants) ----
+export const structure = {
+  get: (ref: string) => call<any>(`/origination/api/applications/${ref}/structure`, "GET"),
+  set: (ref: string, body: any, actor: string) => call<any>(`/origination/api/applications/${ref}/structure`, "POST", body, actor),
+  addParticipant: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/${ref}/structure/participants`, "POST", body, actor),
+  removeParticipant: (id: number, actor: string) =>
+    call<any>(`/origination/api/applications/structure/participants/${id}`, "DELETE", undefined, actor),
+  copyFrom: (ref: string, sourceRef: string, actor: string) =>
+    call<any>(`/origination/api/applications/${ref}/structure/copy-from/${sourceRef}`, "POST", undefined, actor),
+};
+
+// ---- GenAI document intelligence ----
+export const docIntel = {
+  extract: (docId: number, actor: string) => call<any>(`/origination/api/doc-intel/documents/${docId}/extract`, "POST", undefined, actor),
+  extractions: (docId: number) => call<any[]>(`/origination/api/doc-intel/documents/${docId}/extractions`, "GET"),
+  confirm: (id: number, body: any, actor: string) => call<any>(`/origination/api/doc-intel/extractions/${id}/confirm`, "POST", body, actor),
+  reject: (id: number, body: any, actor: string) => call<any>(`/origination/api/doc-intel/extractions/${id}/reject`, "POST", body, actor),
+  normalise: (body: any, actor: string) => call<any>("/origination/api/doc-intel/normalise-language", "POST", body, actor),
+  translate: (body: any, actor: string) => call<any>("/origination/api/doc-intel/translate", "POST", body, actor),
+  checks: (docId: number) => call<any>(`/origination/api/doc-intel/documents/${docId}/checks`, "GET"),
 };
 
 // ---- decision ----
