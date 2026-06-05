@@ -1,0 +1,72 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: true
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials
+      routes:
+        - id: config-service
+          uri: ${CONFIG_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/config/**
+          filters:
+            - StripPrefix=1
+        - id: counterparty-service
+          uri: ${COUNTERPARTY_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/counterparty/**
+          filters:
+            - StripPrefix=1
+        - id: origination-service
+          uri: ${ORIGINATION_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/origination/**
+          filters:
+            - StripPrefix=1
+        - id: risk-service
+          uri: ${RISK_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/risk/**
+          filters:
+            - StripPrefix=1
+        - id: decision-service
+          uri: ${DECISION_SERVICE_URL:http://localhost:8085}
+          predicates:
+            - Path=/decision/**
+          filters:
+            - StripPrefix=1
+        - id: portfolio-service
+          uri: ${PORTFOLIO_SERVICE_URL:http://localhost:8086}
+          predicates:
+            - Path=/portfolio/**
+          filters:
+            - StripPrefix=1
+        - id: copilot-service
+          uri: ${COPILOT_SERVICE_URL:http://localhost:8087}
+          predicates:
+            - Path=/copilot/**
+          filters:
+            - StripPrefix=1
+        - id: limit-service
+          uri: ${LIMIT_SERVICE_URL:http://localhost:8088}
+          predicates:
+            - Path=/limits/**
+          filters:
+            - StripPrefix=1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway

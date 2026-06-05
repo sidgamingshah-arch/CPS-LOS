@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Helix — Functional & Technical Spec</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root {
+    --bg:#0b1020; --panel:#141a33; --ink:#e2e8f0; --muted:#94a3b8; --line:#1f2747;
+    --brand:#818cf8; --brand2:#a78bfa; --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --ai:#c4b5fd;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font-size:15px;line-height:1.5}
+  .deck{height:100vh;display:flex;flex-direction:column}
+  .slide{flex:1;overflow:auto;padding:48px 64px;display:none}
+  .slide.active{display:block}
+  .head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:24px}
+  .head .kicker{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--brand);font-weight:700}
+  .head h1{font-size:30px;margin:6px 0 0;letter-spacing:-0.02em;font-weight:800}
+  .head .num{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+  h2{font-size:17px;margin:20px 0 10px;color:var(--brand2);letter-spacing:.02em;text-transform:uppercase;font-weight:700;font-size:11px}
+  p{margin:6px 0}
+  ul{margin:6px 0 8px 0;padding-left:20px}
+  li{margin:3px 0}
+  b{color:#fff}
+  .muted{color:var(--muted)}
+  .grid{display:grid;gap:14px}
+  .cols-2{grid-template-columns:1fr 1fr}
+  .cols-3{grid-template-columns:repeat(3,1fr)}
+  .cols-4{grid-template-columns:repeat(4,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .card h3{margin:0 0 6px;font-size:14px;color:#fff}
+  .card .sub{color:var(--muted);font-size:12px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid var(--line);background:#1a2245;color:var(--ink)}
+  .pill.brand{background:rgba(129,140,248,.15);color:var(--brand);border-color:rgba(129,140,248,.35)}
+  .pill.ai{background:rgba(196,181,253,.15);color:var(--ai);border-color:rgba(196,181,253,.35)}
+  .pill.ok{background:rgba(52,211,153,.15);color:var(--ok);border-color:rgba(52,211,153,.35)}
+  .pill.warn{background:rgba(251,191,36,.15);color:var(--warn);border-color:rgba(251,191,36,.35)}
+  .pill.bad{background:rgba(248,113,113,.15);color:var(--bad);border-color:rgba(248,113,113,.35)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;font-weight:700;padding:7px 8px;border-bottom:1px solid var(--line)}
+  td{padding:8px;border-bottom:1px solid #1a2040;vertical-align:top}
+  td.mono,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  .ascii{background:#080d1d;border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-family:ui-monospace,monospace;font-size:11.5px;color:#cbd5e1;white-space:pre;line-height:1.45;overflow:auto}
+  .stat{background:linear-gradient(180deg,#171f3e,#11172e);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .stat .v{font-size:24px;font-weight:800;letter-spacing:-0.02em;color:#fff}
+  .stat .l{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-top:2px}
+  .stat .d{font-size:11.5px;color:var(--muted);margin-top:4px}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+  .tag{font-size:11px;color:var(--muted)}
+  .footer{display:flex;justify-content:space-between;align-items:center;padding:12px 64px;border-top:1px solid var(--line);background:#0a0f1f;font-size:12px;color:var(--muted)}
+  .footer .nav button{background:transparent;border:1px solid var(--line);color:var(--ink);padding:5px 12px;border-radius:7px;cursor:pointer;font-size:12px;margin-left:6px}
+  .footer .nav button:hover{background:#161e3c}
+  .brandbar{height:4px;background:linear-gradient(90deg,var(--brand),var(--brand2),var(--ok))}
+  .title{display:flex;flex-direction:column;justify-content:center;height:100%}
+  .title h1{font-size:54px;letter-spacing:-0.03em;margin:0;font-weight:800}
+  .title h1 span{color:var(--brand)}
+  .title .sub{color:var(--muted);font-size:18px;margin-top:10px;max-width:780px}
+  .title .meta{margin-top:30px;display:flex;gap:10px;flex-wrap:wrap}
+  .arrow{position:absolute;top:50%;width:36px;height:36px;background:#141a33;border:1px solid var(--line);color:#fff;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;user-select:none}
+  .arrow:hover{background:#1a2245}
+  .arrow.left{left:14px}
+  .arrow.right{right:14px}
+  @media (max-width:900px){.slide{padding:28px 22px}.cols-2,.cols-3,.cols-4{grid-template-columns:1fr}.head h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="brandbar"></div>
+<div class="deck">
+
+<!-- ============================ SLIDE 1 ============================ -->
+<section class="slide active" data-title="Helix">
+  <div class="title">
+    <div class="kicker pill brand">PRODUCT BRIEF · JUNE 2026</div>
+    <h1 style="margin-top:14px">Heli<span>x</span></h1>
+    <div class="sub">An <b>AI-first wholesale loan origination &amp; lifecycle platform</b> for mid-corporate, SME, project, trade-finance and FI lending — built as a regime-agnostic core with versioned rule-pack overlays.</div>
+    <div class="meta">
+      <span class="pill">Java 21 · Spring Boot 3.3</span>
+      <span class="pill">SQLite-per-service</span>
+      <span class="pill">React 18 + Vite + TS</span>
+      <span class="pill">Spring Cloud Gateway</span>
+      <span class="pill ai">AI-executed · human-gated</span>
+      <span class="pill ok">55 / 55 e2e green</span>
+    </div>
+    <div style="margin-top:34px" class="grid cols-3">
+      <div class="stat"><div class="v">5–8 bd</div><div class="l">Target cycle time</div><div class="d">vs 18–25 bd baseline (mid-corp intake → sanction)</div></div>
+      <div class="stat"><div class="v">≤ 3 h</div><div class="l">Analyst hours per memo</div><div class="d">vs 8–16 h baseline</div></div>
+      <div class="stat"><div class="v">≥ 95 %</div><div class="l">Annual reviews on time</div><div class="d">vs 60–75 % baseline</div></div>
+    </div>
+    <div style="margin-top:22px;color:var(--muted);font-size:13px">
+      Three structural bets, made concrete in this build:
+      <b style="color:#fff">(1)</b> regulatory abstraction layer first —
+      <b style="color:#fff">(2)</b> governed AI by construction —
+      <b style="color:#fff">(3)</b> named human accountability at every credit-consequential gate.
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 2 ============================ -->
+<section class="slide" data-title="Functional spec">
+  <div class="head">
+    <div><div class="kicker pill brand">FUNCTIONAL SPEC</div><h1>The 13-stage lifecycle, AI-executed and human-gated</h1></div>
+    <div class="num">2 / 5</div>
+  </div>
+
+  <table>
+    <thead><tr><th>PRD stage</th><th>What Helix does today</th><th>AI</th><th>Human gate</th></tr></thead>
+    <tbody>
+      <tr><td><b>1. Onboarding · KYC/CDD</b></td><td>CDD tier from risk flags; UBO graph via path-multiplication (≥10% flagged, cycles detected); sanctions/PEP/adverse-media screening</td><td><span class="pill ai">A · C</span></td><td>CDD sign-off · disposition (no auto-clear ≥ SEVERE)</td></tr>
+      <tr><td><b>3. Application intake · documents</b></td><td>Dynamic intake; AI doc classification with confidence; low-conf → review queue</td><td><span class="pill ai">A</span></td><td>Accept low-confidence classifications</td></tr>
+      <tr><td><b>4. Financial spreading</b></td><td>Canonical chart with figure-level provenance (source doc/page/coords + confidence); ratios &amp; benchmarks; material override re-opens the confirm gate</td><td><span class="pill ai">C</span></td><td><b>Analyst confirms spread</b> before it feeds rating</td></tr>
+      <tr><td><b>5. Rating</b></td><td>Statistical scorecard (PD/LGD/EAD, factor contributions); <b>notch-limited</b> overrides (analyst 1 · officer 2 · committee ∞); overrides feed the <i>override-rate</i> model-fit signal</td><td><span class="pill ai">D</span></td><td>Approver confirms final grade</td></tr>
+      <tr><td><b>6. Regulatory capital (RWA)</b></td><td>Deterministic SA engine — ECRA mapping, slotting, CCF, CRM, DD uplift; full trace cites rule-pack versions</td><td><span class="pill">none in path</span></td><td>Rule-pack changes need dual sign-off</td></tr>
+      <tr><td><b>7. RAROC pricing</b></td><td>EL + capital + funding + opex → required rate &amp; RAROC vs hurdle; below-hurdle <b>flagged</b></td><td><span class="pill ai">D</span></td><td>Advisory only — RM/approver decision</td></tr>
+      <tr><td><b>8. Approval workflow</b></td><td>DoA routing on amount × rating × deviations; AI drafts the committee note, citing platform facts</td><td><span class="pill ai">C</span></td><td><b>Named human approval</b> · AI cannot approve</td></tr>
+      <tr><td><b>9. Documentation · CP/CS</b></td><td>Structured covenant objects (metric / op / threshold / freq / breach actions)</td><td><span class="pill ai">C</span></td><td>Legal review on deviations · CP waiver authority</td></tr>
+      <tr><td><b>10. Limit setup · booking</b></td><td>Exposure booked from rated/approved deal; core-banking ingestion with round-trip reconciliation</td><td><span class="pill ai">D</span></td><td>Drawdown auth · CP gate</td></tr>
+      <tr><td><b>11. Monitoring · EWS</b></td><td>Agentic scanner over covenant breach, leverage spike, DPD, weak-grade; <b>flags only</b></td><td><span class="pill ai">A → C</span></td><td>Staging / remediation are human-decided</td></tr>
+      <tr><td><b>12. Portfolio</b></td><td>IFRS 9 / Ind AS 109 ECL with parallel IRAC (reported = jurisdiction policy); concentration vs limits; stress (baseline / adverse / severe)</td><td><span class="pill">none in path</span></td><td>Staging overrides · assumptions · provisioning sign-off</td></tr>
+      <tr><td><b>13. Reporting · audit</b></td><td>Immutable per-service audit; HUMAN / AI / SYSTEM attribution; figure → source → version trace</td><td><span class="pill ai">D</span></td><td>Sign-off before any external submission</td></tr>
+      <tr><td><b>6.6 Conversational copilot</b></td><td>Persona-scoped (RBAC/ABAC), grounded with citations to source endpoints, refuses fabrications &amp; credit-consequential actions</td><td><span class="pill ai">C · D</span></td><td>Routes any “please do X” back to the gated workflow</td></tr>
+    </tbody>
+  </table>
+  <div class="legend">
+    <span class="tag"><span class="pill ai">A</span> autonomous (within bounds)</span>
+    <span class="tag"><span class="pill ai">C</span> copilot (human confirms)</span>
+    <span class="tag"><span class="pill ai">D</span> decision-support (advisory)</span>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 3 ============================ -->
+<section class="slide" data-title="Technical architecture">
+  <div class="head">
+    <div><div class="kicker pill brand">TECHNICAL SPEC · TOPOLOGY</div><h1>8 services · SQLite-per-service · API-first · governed</h1></div>
+    <div class="num">3 / 5</div>
+  </div>
+
+  <div class="ascii">                     ┌─────────────────────────────┐
+React + Vite ──▶     │  gateway-service  :8080      │   Spring Cloud Gateway · CORS · routing
+                     └────────────────┬─────────────┘
+   ┌──────────┬──────────┬───────────┼───────────┬──────────┬──────────┬──────────┐
+   ▼          ▼          ▼           ▼           ▼          ▼          ▼          ▼
+config    counter-    origi-      risk        decision   portfolio  copilot     (audit
+:8081     party       nation      :8084       :8085      :8086      :8087        per-svc)
+abstrac-  :8082       :8083       rating /    DoA route· ECL/IRAC·  persona-
+tion      KYC · CDD   intake ·    capital /   covenants  EWS ·      scoped Q&amp;A,
+layer ·   UBO graph · doc class · pricing                concentr·  grounded,
+rule      screening   spreading   (RAROC)                stress     non-binding
+packs
+   │          │          │           │           │          │          │
+   └── rule packs (CAPITAL_SA, ECRA, PD/LGD, DOA, PRICING, PROVISIONING, LIMITS…) ─────┘
+                                     │           │          │          │
+                                     │   credit  │  rating/ │  signals │   GET-only
+                                     └─ inputs ──┘  pricing─┘  covs ───┘   fan-out
+</div>
+
+  <div class="grid cols-2" style="margin-top:18px">
+    <div class="card">
+      <h2 style="margin-top:0">Service inventory</h2>
+      <table>
+        <tbody>
+          <tr><td class="mono">helix-common</td><td>Shared lib: canonical <b>Enums</b>, append-only audit (insert-only), JSON converters, web cross-cutting, <b>ingestion contracts</b>.</td></tr>
+          <tr><td class="mono">config :8081</td><td>Jurisdiction profiles + versioned, <b>dual-signed</b> rule packs (IN-RBI &amp; AE-CBUAE seeded).</td></tr>
+          <tr><td class="mono">counterparty :8082</td><td>CDD tiering, UBO graph (path-mult, cycles), screening, ingestion endpoint.</td></tr>
+          <tr><td class="mono">origination :8083</td><td>Applications, document classification, spreading w/ provenance.</td></tr>
+          <tr><td class="mono">risk :8084</td><td>Scorecard rating + SA capital + RAROC; consumes rule packs live.</td></tr>
+          <tr><td class="mono">decision :8085</td><td>DoA routing, named-human approval, covenants, committee note.</td></tr>
+          <tr><td class="mono">portfolio :8086</td><td>Exposures, ECL+IRAC, EWS, concentration, stress, conduct ingestion.</td></tr>
+          <tr><td class="mono">copilot :8087</td><td>Read-only Q&amp;A across all services; scoped, grounded, audited.</td></tr>
+          <tr><td class="mono">gateway :8080</td><td>Single entry point; CORS; <code>/{svc}/**</code> stripping.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">Canonical objects (jurisdiction-agnostic)</h2>
+      <ul>
+        <li><b>Counterparty</b> · identity · CDD tier · risk flags</li>
+        <li><b>UBO graph</b> · directed edges + effective ownership</li>
+        <li><b>Application</b> · terms · spread-confirmed gate</li>
+        <li><b>SpreadCell</b> · figure + source/page/coords + confidence + override</li>
+        <li><b>Rating</b> · model vs final grade · PD/LGD/EAD · notch override metadata</li>
+        <li><b>CapitalResult / EclResult</b> · figures + trace citing rule-pack versions</li>
+        <li><b>Decision</b> · outcome · authority · deviations · conditions · decider</li>
+        <li><b>Covenant</b> · structured rule (metric/op/threshold/freq/breach actions)</li>
+        <li><b>AuditEvent</b> · append-only · actorType ∈ {HUMAN, AI, SYSTEM}</li>
+      </ul>
+      <h2>Operational notes</h2>
+      <ul>
+        <li>SQLite is single-writer → Hikari pool size 1; audit joins the caller’s tx (no <code>REQUIRES_NEW</code>).</li>
+        <li>Inter-service calls degrade gracefully — config-service down ⇒ conservative built-in packs (v0, visible in trace).</li>
+        <li>All write endpoints accept <code>X-Actor</code>; recorded in the immutable trail.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 4 ============================ -->
+<section class="slide" data-title="The two control planes">
+  <div class="head">
+    <div><div class="kicker pill brand">TECHNICAL SPEC · CONTROL PLANES</div><h1>Abstraction layer in · connector layer out</h1></div>
+    <div class="num">4 / 5</div>
+  </div>
+
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>1 · Regulatory abstraction layer <span class="pill brand" style="float:right">PRD §10</span></h3>
+      <div class="sub">A new regime is overlay data, not a code branch.</div>
+      <h2>Composition</h2>
+      <ul>
+        <li><b>JurisdictionProfile</b> — capital approach, CVA approach, provisioning frameworks, reported-provision policy, residency, reporting pack.</li>
+        <li><b>RulePack</b> — <code>(code, type, jurisdiction, version)</code> + JSON payload + <b>dual sign-off</b> (policy + model risk) before activation.</li>
+      </ul>
+      <h2>Pack types consumed downstream</h2>
+      <p class="mono" style="color:var(--muted)">CAPITAL_SA · ECRA_MAPPING · RATING_PD_MAP · LGD_MAP · PROVISIONING · DOA_MATRIX · CDD_TIERS · EXPOSURE_LIMITS · PRICING</p>
+      <h2>Two regimes seeded</h2>
+      <ul>
+        <li><b>IN-RBI</b> — SA Directions 2026, IRAC, <code>max(ECL, IRAC)</code>, BA-CVA, DD-driven RW.</li>
+        <li><b>AE-CBUAE</b> — Basel III, IFRS-9 only, SA-CVA.</li>
+      </ul>
+      <p class="muted" style="font-size:12px">Same <code>CapitalEngine</code> / <code>EclEngine</code> — different numbers, purely from the active pack.</p>
+    </div>
+
+    <div class="card">
+      <h3>2 · Canonical connector ingestion <span class="pill brand" style="float:right">PRD §8</span></h3>
+      <div class="sub">Idempotent · provenance-stamped · failures surfaced.</div>
+      <div class="ascii" style="margin-top:8px">Envelope&lt;RAW&gt;          { source, vendor, idempotencyKey, payloadVersion, payload }
+         │
+         ▼
+Connector&lt;RAW, CANON&gt; validate(raw) → warnings ;  map(raw, provenance) → canonical
+         │
+         ▼
+IngestionGuard       (source, idempotencyKey) seen?  replay is a no-op
+         │
+         ▼
+domain persistence   canonical → entities · audited
+         │
+         ▼
+Ingestion.Result     accepted / duplicate · canonicalRef · warnings</div>
+
+      <h2>Canonical inbound schemas (helix-common.ingest)</h2>
+      <table>
+        <tbody>
+          <tr><td class="mono">CREDIT_BUREAU</td><td>score, model, inquiries, delinquencies, open tradelines</td></tr>
+          <tr><td class="mono">CORPORATE_REGISTRY</td><td>identity, directors, declared ownership edges</td></tr>
+          <tr><td class="mono">GST_TAX</td><td>GSTIN, turnover, filing status</td></tr>
+          <tr><td class="mono">SANCTIONS_SCREENING</td><td>hits: source, name, score, severity, matched attributes</td></tr>
+          <tr><td class="mono">CORE_BANKING</td><td>limit, drawn, undrawn, dpd, conduct, status</td></tr>
+          <tr><td class="mono">MARKET_DATA</td><td>instrument, asOf, value, unit</td></tr>
+        </tbody>
+      </table>
+      <h2>Wired reference adapters</h2>
+      <ul>
+        <li><b>Screening vendor → counterparty</b> · idempotent · severity normalisation · provenance.</li>
+        <li><b>Core-banking → exposure</b> · round-trip reconciliation against booked EAD; mismatches → warnings.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 5 ============================ -->
+<section class="slide" data-title="Governance & verification">
+  <div class="head">
+    <div><div class="kicker pill brand">GOVERNANCE · VERIFICATION · ROADMAP</div><h1>Governed AI, named humans, examiner-ready trace</h1></div>
+    <div class="num">5 / 5</div>
+  </div>
+
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>AI governance contract <span class="pill ai" style="float:right">PRD §6, §11</span></h3>
+      <ul>
+        <li><b>Autonomy levels</b> in code: <span class="pill ai">A</span> <span class="pill ai">C</span> <span class="pill ai">D</span>.</li>
+        <li><b>No GenAI in the deterministic path</b> (capital / ECL / RWA). AI <i>explains</i> a number, quoting engine values.</li>
+        <li><b>Confidence routing</b> on doc classification; low-conf → human queue.</li>
+        <li><b>Notch-limited rating overrides</b>; feed the override-rate model-fit signal (alert &gt; 25%).</li>
+        <li><b>EWS flags but never re-stages</b>; staging is a named human action.</li>
+        <li><b>Copilot refuses</b> credit-consequential imperatives; routes them to the gated workflow.</li>
+        <li><b>Immutable audit</b> · actorType ∈ {HUMAN, AI, SYSTEM} on every event.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Figure → source → version trace <span class="pill brand" style="float:right">PRD §13</span></h3>
+      <ul>
+        <li><b>SpreadCell</b> · sourceDocument / page / coordinates / confidence; override audited.</li>
+        <li><b>CapitalResult.trace</b> · CCF, base RW, DD uplift, applied RW, CRM, RWA, capital ratio + rule-pack code &amp; version.</li>
+        <li><b>EclResult.trace</b> · stage drivers, PD, LGD, overlay, IRAC class &amp; rate, reported-provision policy + pack version.</li>
+        <li><b>Decision</b> · routing rule applied, deviations, named decider, conditions.</li>
+        <li>One-click subject trace via <code>/api/audit/subject?type=Application&amp;id=…</code>.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid cols-4" style="margin-top:14px">
+    <div class="stat"><div class="v">9</div><div class="l">Maven modules</div><div class="d">8 services + helix-common</div></div>
+    <div class="stat"><div class="v">2</div><div class="l">Regimes seeded</div><div class="d">IN-RBI · AE-CBUAE</div></div>
+    <div class="stat"><div class="v">55 / 55</div><div class="l">End-to-end tests</div><div class="d">all 13 stages · through the gateway</div></div>
+    <div class="stat"><div class="v">100 %</div><div class="l">Figure traceability</div><div class="d">capital &amp; ECL on demand</div></div>
+  </div>
+
+  <div class="grid cols-2" style="margin-top:14px">
+    <div class="card">
+      <h3>Run it</h3>
+      <pre class="ascii" style="white-space:pre-wrap">mvn -DskipTests package        # build 9 modules
+bash scripts/run-all.sh        # 8 services, health-gated
+python3 scripts/e2e_smoke.py   # 55 / 55 lifecycle assertions
+cd frontend && npm run dev     # UI on :5173 (gateway on :8080)
+docker compose up --build      # full stack (UI :8088)</pre>
+    </div>
+    <div class="card">
+      <h3>Additive next steps (seams in place)</h3>
+      <ul>
+        <li><b>Real model gateway</b> behind copilot / classification / narrative.</li>
+        <li><b>Bureau + registry connectors</b> on the existing contract (enrich counterparty / scorecard).</li>
+        <li><b>SA-CCR / CVA</b> for FI counterparty exposures.</li>
+        <li><b>SICR notch-migration staging</b>, borrower portal, event streaming, RBAC/ABAC/SSO.</li>
+      </ul>
+      <p class="muted" style="font-size:12px">None require core changes — each extends an existing contract.</p>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<div class="footer">
+  <div>Helix · functional &amp; technical spec · v0.1</div>
+  <div class="nav">
+    <button id="prev">← Prev</button>
+    <span id="dot" class="mono" style="margin:0 8px">1 / 5</span>
+    <button id="next">Next →</button>
+  </div>
+</div>
+
+<div class="arrow left" onclick="go(-1)">‹</div>
+<div class="arrow right" onclick="go(1)">›</div>
+
+<script>
+  const slides = document.querySelectorAll(".slide");
+  let i = 0;
+  function show(n){
+    i = Math.max(0, Math.min(slides.length-1, n));
+    slides.forEach((s,k)=>s.classList.toggle("active", k===i));
+    document.getElementById("dot").textContent = (i+1)+" / "+slides.length;
+    location.hash = "s"+(i+1);
+  }
+  function go(d){ show(i+d); }
+  document.getElementById("prev").onclick = ()=>go(-1);
+  document.getElementById("next").onclick = ()=>go(1);
+  document.addEventListener("keydown", e=>{
+    if(["ArrowRight","PageDown"," "].includes(e.key)) go(1);
+    else if(["ArrowLeft","PageUp"].includes(e.key)) go(-1);
+    else if(e.key === "Home") show(0);
+    else if(e.key === "End") show(slides.length-1);
+  });
+  // deep link via #s3
+  const m = location.hash.match(/^#s(\d+)$/);
+  if(m) show(parseInt(m[1],10)-1); else show(0);
+</script>
+</body>
+</html>

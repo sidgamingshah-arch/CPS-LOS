@@ -1,0 +1,42 @@
+server:
+  port: ${SERVER_PORT:8087}
+
+spring:
+  application:
+    name: copilot-service
+  datasource:
+    url: jdbc:sqlite:${HELIX_DATA_DIR:./data}/copilot.db
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 1
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.community.dialect.SQLiteDialect
+    show-sql: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+helix:
+  config-service:
+    base-url: ${CONFIG_SERVICE_URL:http://localhost:8081}
+  counterparty-service:
+    base-url: ${COUNTERPARTY_SERVICE_URL:http://localhost:8082}
+  origination-service:
+    base-url: ${ORIGINATION_SERVICE_URL:http://localhost:8083}
+  risk-service:
+    base-url: ${RISK_SERVICE_URL:http://localhost:8084}
+  decision-service:
+    base-url: ${DECISION_SERVICE_URL:http://localhost:8085}
+  portfolio-service:
+    base-url: ${PORTFOLIO_SERVICE_URL:http://localhost:8086}
