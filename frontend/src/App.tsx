@@ -17,6 +17,9 @@ import Masters from "./pages/Masters";
 import Structuring from "./pages/Structuring";
 import DocIntel from "./pages/DocIntel";
 import RiskLab from "./pages/RiskLab";
+import DocGen from "./pages/DocGen";
+import Commentary from "./pages/Commentary";
+import PricingLab from "./pages/PricingLab";
 
 const NAV = [
   { key: "dashboard", label: "Portfolio Dashboard" },
@@ -26,6 +29,9 @@ const NAV = [
   { key: "counterparties", label: "Counterparties" },
   { key: "limits", label: "Limits" },
   { key: "cad", label: "CAD · Documentation" },
+  { key: "docgen", label: "Doc Generation" },
+  { key: "commentary", label: "AI Commentary" },
+  { key: "pricinglab", label: "Pricing Lab" },
   { key: "monitoring", label: "Monitoring · MER" },
   { key: "customer360", label: "Customer-360" },
   { key: "risklab", label: "Risk Lab" },
@@ -44,6 +50,9 @@ const CRUMB: Record<string, string> = {
   counterparties: "Onboarding · KYC/KYB · UBO",
   limits: "Multi-level limit tree · fungibility · View/Validation/Utilisation APIs",
   cad: "Credit Administration · checklist · waivers/deviations · limit release",
+  docgen: "Template-driven document generation · clause add/remove/edit · human-confirm gate",
+  commentary: "AI narrative commentary · grounded · advisory · human-confirm gate",
+  pricinglab: "Pricing scenario optimiser · goal-seek · advisory (authoritative pricing untouched)",
   monitoring: "Deferred docs · conditions subsequent · renewals · reminders · escalation · DMS feed",
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
   risklab: "Advisory overlays · statistical RAG scoring · macro directional impact (non-binding)",
@@ -105,6 +114,9 @@ export default function App() {
             {view === "counterparties" && <Counterparties />}
             {view === "limits" && <Limits />}
             {view === "cad" && <Cad />}
+            {view === "docgen" && <DocGen />}
+            {view === "commentary" && <Commentary />}
+            {view === "pricinglab" && <PricingLab />}
             {view === "monitoring" && <Monitoring />}
             {view === "customer360" && <Customer360 />}
             {view === "risklab" && <RiskLab />}

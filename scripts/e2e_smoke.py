@@ -757,6 +757,107 @@ check("macro overlays are advisory", down["advisory"] and up["advisory"])
 st, grade_after = call("GET", f"/risk/api/risk/{ref}/rating")
 check("authoritative rating UNCHANGED by advisory overlays", grade_after["finalGrade"] == g0, f"{g0} -> {grade_after.get('finalGrade')}")
 
+print("== 38. Document generation (template-driven · clause surgery · confirm gate) ==")
+st, tpls = call("GET", "/decision/api/docs/templates")
+check("templates listed from DOC_TEMPLATE_MASTER", st == 200 and any(t["recordKey"] == "FACILITY_AGREEMENT" for t in tpls), f"{st}")
+st, tncs = call("GET", "/decision/api/docs/tnc-clauses")
+check("TNC clauses listed from TNC_MASTER", st == 200 and len(tncs) >= 1, f"{st}")
+st, gendoc = call("POST", f"/decision/api/docs/applications/{ref}/generate",
+                  {"templateKey": "FACILITY_AGREEMENT", "variables": {}}, actor="cad.officer")
+check("document generated in DRAFT (AI suggestion)",
+      st == 200 and gendoc["status"] == "DRAFT" and gendoc["advisory"] and len(gendoc["clauseOrder"]) >= 5, f"{st}")
+check("generated HTML grounded with the borrower",
+      "Meridian Steel" in gendoc["html"] or cp["legalName"].split()[0] in gendoc["html"], "")
+doc_id = gendoc["id"]
+# Add a clause from the TNC master (REGISTERED_MORTGAGE is seeded)
+st, added = call("POST", f"/decision/api/docs/{doc_id}/clauses",
+                 {"clauseRef": "insurance", "tncRecordKey": "REGISTERED_MORTGAGE", "position": 4}, actor="cad.officer")
+check("clause added from TNC_MASTER", st == 200 and "insurance" in added["clauseOrder"], str(added.get("clauseOrder")))
+# Edit a clause
+st, edited = call("POST", f"/decision/api/docs/{doc_id}/clauses/covenants/edit",
+                  {"text": "Custom covenant text — Helix-edited."}, actor="cad.officer")
+check("clause edited (custom text)", st == 200 and "Helix-edited" in edited["html"], "")
+# Remove a clause
+st, removed = call("DELETE", f"/decision/api/docs/{doc_id}/clauses/governing_law", actor="cad.officer")
+# governing_law isn't in the seeded template; expect 404 from a clean clause removal
+st, removed2 = call("DELETE", f"/decision/api/docs/{doc_id}/clauses/insurance", actor="cad.officer")
+check("clause removed", st == 200 and "insurance" not in removed2["clauseOrder"], str(removed2.get("clauseOrder")))
+# Confirm (human gate)
+st, confd = call("POST", f"/decision/api/docs/{doc_id}/confirm", {"comment": "wording ok"}, actor="credit.officer")
+check("human-confirm gate transitions DRAFT -> CONFIRMED",
+      st == 200 and confd["status"] == "CONFIRMED" and confd["confirmedBy"] == "credit.officer", f"{st}")
+# Re-confirm conflicts
+st, reconf = call("POST", f"/decision/api/docs/{doc_id}/confirm", {}, actor="credit.officer")
+check("re-confirm rejected (already confirmed, 409)", reconf is not None and st == 409, f"{st}")
+# Edit-after-confirm rejected
+st, lock = call("POST", f"/decision/api/docs/{doc_id}/clauses/covenants/edit",
+                {"text": "should be blocked"}, actor="cad.officer")
+check("confirmed doc is locked from clause edits (409)", lock is not None and st == 409, f"{st}")
+
+print("== 39. AI narrative commentary (grounded · advisory · human-confirm) ==")
+sections = ["industry_outlook", "management_quality", "financial_commentary",
+            "structure_commentary", "risk_commentary"]
+drafted = []
+for s in sections:
+    st, d = call("POST", f"/decision/api/commentary/applications/{ref}/draft",
+                 {"section": s}, actor="analyst.user")
+    if st == 200:
+        drafted.append(d)
+check("all five commentary sections drafted",
+      len(drafted) == len(sections) and all(d["status"] == "DRAFT" and d["advisory"] for d in drafted),
+      str([d.get("section") for d in drafted]))
+fin = next(d for d in drafted if d["section"] == "financial_commentary")
+check("financial commentary cites real ratios", "DSCR" in fin["narrative"] or "leverage" in fin["narrative"].lower(),
+      fin["narrative"][:100])
+check("financial commentary carries source provenance", "ratios" in fin["sources"] or "grade" in fin["sources"],
+      str(list(fin["sources"].keys())))
+# Bad section name -> 400
+st, bad = call("POST", f"/decision/api/commentary/applications/{ref}/draft",
+               {"section": "made_up_section"}, actor="analyst.user")
+check("unknown section rejected (400)", bad is not None and st == 400, f"{st}")
+# Review (human gate)
+st, conf = call("POST", f"/decision/api/commentary/{fin['id']}/review",
+                {"approve": True, "note": "ok"}, actor="credit.officer")
+check("commentary confirmed -> CONFIRMED", st == 200 and conf["status"] == "CONFIRMED", f"{st}")
+# Edit-after-confirm rejected
+st, le = call("POST", f"/decision/api/commentary/{fin['id']}/edit", {"narrative": "x"}, actor="analyst.user")
+check("confirmed commentary locked from edits (409)", le is not None and st == 409, f"{st}")
+# Reject path on a different draft
+mgmt = next(d for d in drafted if d["section"] == "management_quality")
+st, rej = call("POST", f"/decision/api/commentary/{mgmt['id']}/review",
+               {"approve": False, "note": "rewrite"}, actor="credit.officer")
+check("commentary reject path -> REJECTED", st == 200 and rej["status"] == "REJECTED", f"{st}")
+st, listall = call("GET", f"/decision/api/commentary/applications/{ref}")
+check("commentary list queryable", st == 200 and len(listall) >= 5, f"{st}")
+
+print("== 40. Pricing scenario optimiser (goal-seek · advisory · authoritative pricing unchanged) ==")
+st, before_pricing = call("POST", f"/risk/api/risk/{ref}/pricing", actor="pricing.analyst")
+baseline_rate = before_pricing["recommendedRate"]
+# Achievable target (modestly above hurdle)
+st, opt_hi = call("POST", f"/risk/api/risk/{ref}/pricing/optimise",
+                  {"targetRaroc": 0.20, "rateCap": 0.15, "feeBpsCap": 200, "maxCollateralCover": 0.5},
+                  actor="pricing.analyst")
+check("optimiser returns 4 scenarios with breakdowns",
+      st == 200 and len(opt_hi["scenarios"]) == 4 and all("breakdown" in s for s in opt_hi["scenarios"]),
+      str(len(opt_hi.get("scenarios", []))))
+check("achievable target → recommended scenario meets it",
+      opt_hi["achievable"] and opt_hi["recommended"]["meetsTarget"]
+      and opt_hi["recommended"]["raroc"] >= opt_hi["targetRaroc"] - 1e-6, str(opt_hi.get("recommended")))
+check("baseline scenario reflects current pricing", abs(opt_hi["baselineRate"] - opt_hi["scenarios"][0]["rate"]) < 1e-4, "")
+# Unreachable target with tight caps
+st, opt_lo = call("POST", f"/risk/api/risk/{ref}/pricing/optimise",
+                  {"targetRaroc": 5.0, "rateCap": 0.10, "feeBpsCap": 25, "maxCollateralCover": 0.2},
+                  actor="pricing.analyst")
+check("infeasible target → not achievable, no scenario meets target",
+      not opt_lo["achievable"] and not opt_lo["recommended"]["meetsTarget"], str(opt_lo.get("achievable")))
+check("infeasible run still surfaces a recommended scenario (best-effort)",
+      opt_lo["recommended"] is not None, "")
+# Authoritative pricing must be untouched by the optimiser
+st, after_pricing = call("GET", f"/risk/api/risk/{ref}")
+check("authoritative recommended rate UNCHANGED by optimiser",
+      abs(after_pricing["pricing"]["recommendedRate"] - baseline_rate) < 1e-9,
+      f"{baseline_rate} -> {after_pricing.get('pricing', {}).get('recommendedRate')}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

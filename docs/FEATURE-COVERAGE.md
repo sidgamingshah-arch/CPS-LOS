@@ -84,7 +84,7 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 | Covenant capture (master-linked + case-level modify + custom), covenant testing pre-sanction with auto-flag & exception workflow | ✅ (`COVENANT_LIBRARY` master, covenant entities, `covenants/test` history) |
 | DoA routing on amount × rating × deviations; named-human decision; committee note | ✅ |
 | Group CP, multi-party/joint-obligor, joint-utiliser, dual-obligor (Islamic), ICR for FI, renewal/amendment CP, copy proposal | ✅ (`/api/applications/{ref}/structure`: `DealStructure` + `DealParticipant`; variant-aware validation — syndication ≥2 lenders & commitments tie to total + our-share %, dual-obligor exactly-2, joint-obligor liability types, group reference + members, FI ICR; `copy-from/{sourceRef}` for renewal/amendment; React **Deal Structuring** page) |
-| Business profile, management assessment, news feed, risks & mitigation, ways-out, relationship strategy, peer/industry benchmarking sections | ◑ (sections generated from data; narrative depth roadmap) |
+| Business profile, management assessment, news feed, risks & mitigation, ways-out, relationship strategy, peer/industry benchmarking sections | ✅ (`/api/commentary`: AI-drafted narratives for industry_outlook · management_quality · financial_commentary · structure_commentary · risk_commentary, each grounded with source provenance, advisory, human-confirm gate; React **AI Commentary** page) |
 | Credit decisioning template + decision support (historical rationale) | ◑ |
 
 ---
@@ -111,7 +111,7 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 | Initiate independently or from CP; capture facility/collateral/limit/guarantor/group/rating/repayment/price | ◑ (computed from deal; standalone RAROC workflow roadmap) |
 | Roll-ups (facility → transaction → CIF → group), output detailed/summary, projected vs existing | ◑ |
 | Periodic actual RAROC from source data, variance analysis, re-run on source change, approval workflow | ✅ (projected-vs-actual tracking + variance + material-miss governance; source-fed actuals via connector) |
-| Price recommendation engine (ML), scenario optimiser (goal-seek), pricing-approval sub-workflow, downstream ERM/Finance/CPR interface | ○ |
+| Price recommendation engine (ML), scenario optimiser (goal-seek), pricing-approval sub-workflow, downstream ERM/Finance/CPR interface | ✅ / ◑ (`/api/risk/{ref}/pricing/optimise` goal-seek — finds the rate / fee / collateral mix that clears a target RAROC subject to caps; advisory, the authoritative pricing is provably unchanged; React **Pricing Lab** page. Approval sub-workflow + downstream ERM/Finance interfaces remain roadmap.) |
 
 ---
 
@@ -125,7 +125,7 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 | Completion gate + limit-release checklist + feed to limit management | ✅ (`cases/{id}/complete`, `cases/{id}/limit-release` → LIMIT_RELEASE_TRIGGER) |
 | MER tracking workflow (deferred docs / conditions subsequent / recurring renewals — insurance · valuation · annual review), reminders + escalation sweep, maker-checker clearance, DMS feed | ✅ (`/api/mer`: `generate/from-cad`, `submit`→DMS_FEED, `verify` [verifier≠submitter], `waive` [≠owner], `sweep`→OVERDUE/ESCALATED, `reminders/send`, recurring roll-forward; React **Monitoring · MER**) |
 | Pre-populated doc/TnC generation, DMS versioning, email templates per stage | ◑ / ○ (EMAIL_TEMPLATE master + audit events; doc-gen is a further build) |
-| GenAI (template selection, casual→legal language, clause add/remove, translation, signature verification, doc checks) | ◑ (`/api/doc-intel`: casual→legal & legal→plain normalisation, translation [language detection], advisory document checks incl. signature/execution pending; all audited AI, non-binding. Template selection/clause-surgery remain roadmap) |
+| GenAI (template selection, casual→legal language, clause add/remove, translation, signature verification, doc checks) | ✅ (`/api/doc-intel` casual→legal & legal→plain normalisation, translation, advisory checks; `/api/docs` template-driven document generation from `DOC_TEMPLATE_MASTER` + `TNC_MASTER` with **clause add / remove / edit**, grounded variable interpolation, human-confirm gate (locks the document from further clause surgery), withdrawal. React **Doc Generation** + **Doc Intelligence** pages.) |
 
 ---
 
@@ -176,13 +176,14 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 ## Honest scope statement
 
 The **architecture, generic engines, and the credit-decision spine are built and
-tested** (198 assertions through the gateway, clean-DB). The credit lifecycle now
-runs end to end — initiation → spreading → rating (+ advisory RAG & macro overlays)
-→ capital/RAROC → DoA decision → CAD documentation → MER monitoring → limit tree
-& product-processor APIs → portfolio ECL/EWS/Customer-360 — with specialised deal
-structures (group/joint/dual-obligor/syndication/FI-ICR/renewal-copy) and GenAI
-document intelligence at the boundary. The remaining ○ items (e.g. SpreadJS UI,
-clause-surgery doc-gen, AI commentary) are intentionally **not stubbed as if
+tested** (222 assertions through the gateway, clean-DB). The credit lifecycle now
+runs end to end — initiation → spreading → rating (+ advisory RAG & macro overlays
+& goal-seek pricing optimiser) → capital/RAROC → DoA decision → CAD documentation
+→ document generation (clause-surgery, human-confirm gate) → AI narrative commentary
+→ MER monitoring → limit tree & product-processor APIs → portfolio ECL/EWS/
+Customer-360 — with specialised deal structures (group/joint/dual-obligor/
+syndication/FI-ICR/renewal-copy). The remaining ○ items (e.g. SpreadJS UI,
+pricing-approval sub-workflow, downstream ERM/Finance feeds) are intentionally **not stubbed as if
 complete** — each sits on an existing seam (master engine, workflow definitions,
 connector ingestion, audit) and is additive without core change. Every AI/ML output
 is advisory, human-gated, and provably never alters a credit-consequential figure.

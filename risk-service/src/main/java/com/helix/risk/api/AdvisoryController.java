@@ -1,9 +1,12 @@
 package com.helix.risk.api;
 
 import com.helix.risk.dto.AdvisoryDtos.MacroScenarioRequest;
+import com.helix.risk.dto.OptimiserDtos.OptimisationResult;
+import com.helix.risk.dto.OptimiserDtos.OptimiseRequest;
 import com.helix.risk.entity.MacroImpactAssessment;
 import com.helix.risk.entity.RagAssessment;
 import com.helix.risk.service.AdvisoryRiskService;
+import com.helix.risk.service.PricingOptimiser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,9 +26,11 @@ import java.util.List;
 public class AdvisoryController {
 
     private final AdvisoryRiskService advisory;
+    private final PricingOptimiser optimiser;
 
-    public AdvisoryController(AdvisoryRiskService advisory) {
+    public AdvisoryController(AdvisoryRiskService advisory, PricingOptimiser optimiser) {
         this.advisory = advisory;
+        this.optimiser = optimiser;
     }
 
     @PostMapping("/{reference}/rag")
@@ -49,5 +54,11 @@ public class AdvisoryController {
     @GetMapping("/{reference}/macro-impact")
     public List<MacroImpactAssessment> macroHistory(@PathVariable String reference) {
         return advisory.macroHistory(reference);
+    }
+
+    @PostMapping("/{reference}/pricing/optimise")
+    public OptimisationResult optimise(@PathVariable String reference, @RequestBody OptimiseRequest req,
+                                       @RequestHeader(value = "X-Actor", defaultValue = "pricing.analyst") String actor) {
+        return optimiser.optimise(reference, req, actor);
     }
 }

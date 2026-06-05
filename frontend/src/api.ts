@@ -114,6 +114,44 @@ export const structure = {
     call<any>(`/origination/api/applications/${ref}/structure/copy-from/${sourceRef}`, "POST", undefined, actor),
 };
 
+// ---- document generation (templates · clause surgery · confirm) ----
+export const docs = {
+  templates: () => call<any[]>("/decision/api/docs/templates", "GET"),
+  tncClauses: () => call<any[]>("/decision/api/docs/tnc-clauses", "GET"),
+  generate: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/docs/applications/${ref}/generate`, "POST", body, actor),
+  list: (ref: string) => call<any[]>(`/decision/api/docs/applications/${ref}`, "GET"),
+  get: (id: number) => call<any>(`/decision/api/docs/${id}`, "GET"),
+  addClause: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/docs/${id}/clauses`, "POST", body, actor),
+  removeClause: (id: number, clauseRef: string, actor: string) =>
+    call<any>(`/decision/api/docs/${id}/clauses/${encodeURIComponent(clauseRef)}`, "DELETE", undefined, actor),
+  editClause: (id: number, clauseRef: string, body: any, actor: string) =>
+    call<any>(`/decision/api/docs/${id}/clauses/${encodeURIComponent(clauseRef)}/edit`, "POST", body, actor),
+  confirm: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/docs/${id}/confirm`, "POST", body, actor),
+  withdraw: (id: number, actor: string) =>
+    call<any>(`/decision/api/docs/${id}/withdraw`, "POST", undefined, actor),
+};
+
+// ---- AI narrative commentary ----
+export const commentary = {
+  draft: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/commentary/applications/${ref}/draft`, "POST", body, actor),
+  list: (ref: string, section?: string) =>
+    call<any[]>(`/decision/api/commentary/applications/${ref}${section ? `?section=${section}` : ""}`, "GET"),
+  review: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/commentary/${id}/review`, "POST", body, actor),
+  edit: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/commentary/${id}/edit`, "POST", body, actor),
+};
+
+// ---- pricing optimiser (goal-seek) ----
+export const optimiser = {
+  optimise: (ref: string, body: any, actor: string) =>
+    call<any>(`/risk/api/risk/${ref}/pricing/optimise`, "POST", body, actor),
+};
+
 // ---- GenAI document intelligence ----
 export const docIntel = {
   extract: (docId: number, actor: string) => call<any>(`/origination/api/doc-intel/documents/${docId}/extract`, "POST", undefined, actor),
