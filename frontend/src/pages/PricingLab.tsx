@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { origination, risk, optimiser, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, Stat, useAsync } from "../ui";
+import { Badge, Button, Card, Field, Stat, Unchanged, useAsync } from "../ui";
 
 interface PricingException {
   id: number;
@@ -177,20 +177,22 @@ export default function PricingLab() {
 
   return (
     <div className="grid">
-      {/* AI advisory banner */}
-      <Card
-        title="Pricing Lab"
-        sub="Goal-seek RAROC scenarios against rate/fee/collateral constraints. All outputs are ADVISORY and NON-BINDING — authoritative pricing in the risk engine is never modified."
-        right={<Badge kind="ai">AI · advisory</Badge>}
-      >
-        <div className="muted" style={{ fontSize: 13 }}>
-          Select a priced deal, configure constraints, and run the optimiser. Scenarios
-          are directional inputs only; final pricing decisions remain with a named human.
+      {/* Governance banner */}
+      <div className="gov-banner">
+        <h3>Optimise freely. The price of record stays preserved.</h3>
+        <div className="gb-sub">
+          The goal-seek optimiser explores rate, fee and collateral mixes; concessions route through a
+          maker-checker authority workflow. Through all of it, the <b>authoritative pricing is never overwritten</b>.
         </div>
-      </Card>
+        <div className="gb-chips">
+          <span className="gb-chip"><b>AI</b> · scenario optimiser</span>
+          <span className="gb-chip"><b>Human</b> · concession approval (SoD, 1–2 levels)</span>
+          <span className="gb-chip"><b>Deterministic</b> · RAROC engine</span>
+        </div>
+      </div>
 
       {/* Deal selector + authoritative pricing stats */}
-      <Card title="Deal selector">
+      <Card title="Deal selector" right={pricing ? <Unchanged label="PRICING OF RECORD · PRESERVED" /> : undefined}>
         <Field label="Application">
           <select
             value={ref}

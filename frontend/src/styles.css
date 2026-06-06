@@ -123,3 +123,60 @@ label.field .lbl { font-size: 12px; color: var(--muted); margin-bottom: 4px; dis
 .right { text-align: right; }
 .flexbetween { display:flex; justify-content: space-between; align-items: center; gap: 12px; }
 small.prov { color: var(--muted); font-size: 11px; }
+
+/* ---- governance design language ---- */
+:root { --ai: #7c3aed; --ai-soft: #ede9fe; --human: #15803d; --human-soft: #dcfce7; --det: #0369a1; --det-soft: #e0f2fe; }
+
+.gov-badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; border: 1px solid transparent; white-space: nowrap;
+}
+.gov-badge .gdot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; box-shadow: 0 0 0 3px rgba(0,0,0,.04); }
+.gov-badge.ai { background: var(--ai-soft); color: #5b21b6; border-color: #ddd6fe; }
+.gov-badge.human { background: var(--human-soft); color: #166534; border-color: #bbf7d0; }
+.gov-badge.det { background: var(--det-soft); color: #075985; border-color: #bae6fd; }
+.unchanged {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: #166534; background: transparent; border: 1px dashed #86efac;
+}
+.unchanged .gdot { width: 7px; height: 7px; border-radius: 999px; background: var(--human); }
+
+/* three-part promise strip (app shell, under the topbar) */
+.gov-strip {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 28px; background: linear-gradient(90deg, #faf5ff, #f0f9ff 55%, #f0fdf4);
+  border-bottom: 1px solid var(--line); font-size: 12px; color: #475569;
+}
+.gov-strip b { color: #1e293b; font-weight: 750; }
+.gov-strip .gsep { width: 4px; height: 4px; border-radius: 999px; background: #cbd5e1; }
+
+/* topbar governance chip cluster */
+.gov-chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+/* AI → human flow indicator */
+.gov-flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gov-flow-arrow { color: #94a3b8; font-weight: 800; }
+.gov-flow-note { color: var(--muted); font-size: 12px; margin-left: 2px; }
+
+/* the AI-advisory ↔ authoritative-unchanged frame */
+.gov-split { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: stretch; }
+@media (max-width: 760px) { .gov-split { grid-template-columns: 1fr; } .gov-arrow { display: none; } }
+.gov-pane { border-radius: 12px; padding: 14px 16px; border: 1px solid var(--line); background: #fff; }
+.gov-pane.ai { background: linear-gradient(180deg, #faf5ff, #fff); border-color: #e9d5ff; }
+.gov-pane.auth { background: linear-gradient(180deg, #f0fdf4, #fff); border-color: #bbf7d0; }
+.gov-pane-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 8px; flex-wrap: wrap; }
+.gov-pane-body { font-size: 13px; }
+.gov-auth-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; }
+.gov-arrow { display: flex; align-items: center; color: #94a3b8; font-size: 22px; font-weight: 700; }
+
+/* page-level governance banner (hero pages) */
+.gov-banner {
+  border-radius: 14px; padding: 16px 18px; color: #ede9fe;
+  background: radial-gradient(1200px 200px at 0% 0%, rgba(124,58,237,.55), transparent), linear-gradient(120deg, #2e1065, #0b1020 60%, #082f49);
+  border: 1px solid rgba(124,58,237,.35); box-shadow: var(--shadow);
+}
+.gov-banner h3 { color: #fff; font-size: 18px; margin: 0 0 4px; letter-spacing: -0.01em; }
+.gov-banner .gb-sub { color: #c4b5fd; font-size: 12.5px; }
+.gov-banner .gb-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.gov-banner .gb-chip { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16); color: #e0e7ff; padding: 5px 11px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.gov-banner .gb-chip b { color: #fff; }

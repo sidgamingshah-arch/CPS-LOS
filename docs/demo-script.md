@@ -1,199 +1,86 @@
-# Helix — Live Pitch Demo Script (5 min 30 s)
+# Helix — Pitch Demo Script · "Governed AI for Wholesale Credit"
 
-A timed, screen-by-screen narration that maps to **`docs/helix-pitch-demo.html`**
-(the auto-advancing viewer in this repo). Each beat lists what's on screen, the
-exact talking points, and how long to dwell. Total runtime: **5:30**.
+Two cuts, one story. The viewer (`docs/helix-pitch-demo.html`, or the single-file
+`helix-pitch-demo-standalone.html`) ships **both** — toggle **Executive · 2:30** or
+**Product Deep-Dive · 5:30** in the top bar; it auto-advances on its own clock.
 
-> Voice direction: confident, even pace, ~150 words/minute. Pause briefly between
-> beats. Phrases in **bold** are the headline ideas; emphasise them.
+> **The thesis (say it, then prove it):**
+> **AI where it helps. Humans where regulation demands. Deterministic figures throughout.**
+> The differentiator is not loan origination — it's *governed* AI for wholesale credit.
 
----
-
-## Beat 1 — Title & thesis · 0:00 → 0:20 · (20s)
-
-**Screen:** Title card.
-
-> "Helix — an **AI-first wholesale loan origination and lifecycle platform**.
-> Java microservices, SQLite-per-service, React front-end. **Nine services, 239
-> end-to-end assertions, zero failures.** Built around three structural bets:
-> a regulatory abstraction layer, governed AI strictly at the boundaries, and a
-> deterministic figure path that AI provably never touches."
+> **Voiceover tone:** Bloomberg / Moody's / S&P — calm, authoritative, measured,
+> compliance-aware. Your buyer is a CRO or Head of Credit, not a tech enthusiast.
+> ~150 wpm. Let the AI/Human/Deterministic badges do the subconscious work.
 
 ---
 
-## Beat 2 — Dashboard · 0:20 → 0:40 · (20s)
+## Version 1 — Executive / Buyer cut (2:30)
 
-**Screen:** Portfolio Dashboard.
+Audience: CRO · Head of Credit · COO · CIO · transformation leaders.
+Use for: meetings, conference talks, LinkedIn, outreach. **This is the primary asset.**
 
-> "Walking in cold — portfolio dashboard. **Composition, RAROC variance, ECL by
-> stage, watchlist** — all computed from live exposure data. Notice the sidebar:
-> the full credit lifecycle is one product, not seven."
-
----
-
-## Beat 3 — Deals pipeline · 0:40 → 0:55 · (15s)
-
-**Screen:** Deals list.
-
-> "Deals pipeline — every application visible by stage, status, segment.
-> Let's open a live one — Meridian Steel, ₹95 crore term loan, approved."
+| # | Screen | Time | Message & narration |
+|---|---|---|---|
+| 1 | Hook (black) | 0:00–0:16 | *"Banks want AI. Regulators want accountability. Most platforms force a choice. **Helix doesn't.**"* (let each line land) |
+| 2 | Title | 0:16–0:30 | *"Helix — **governed AI for wholesale credit**. AI where it helps. Humans where regulation demands. Deterministic figures throughout. 239 end-to-end safety assertions."* |
+| 3 | Deal Workspace | 0:30–0:54 | **One lifecycle, one workspace.** *"The whole wholesale-credit lifecycle is one product — intake to decision — every step an audited action with a named accountable human."* |
+| 4 | Risk Lab | 0:54–1:26 | **AI assists, humans approve.** *"Statistical RAG scoring — explainable, every factor attributed. Advisory. And right beside it, the authoritative rating — AA — marked **unchanged**. AI recommends; the figure of record never moves."* (This single frame is the whole pitch.) |
+| 5 | Pricing Lab | 1:26–1:56 | **Better decisions, preserved controls.** *"Goal-seek optimisation finds the rate, fee or collateral mix to clear target RAROC. Concessions route through a maker-checker authority workflow. The authoritative pricing stays **preserved**."* |
+| 6 | Audit & Compliance | 1:56–2:18 | **Examiner-ready.** *"Every action — human, AI or system — stamped with a named user on an immutable trail. This is what a regulator asks for, by construction."* |
+| 7 | Close | 2:18–2:30 | *"Governed AI. Deterministic figures. End-to-end wholesale credit. **Helix — AI you can defend to regulators.**"* |
 
 ---
 
-## Beat 4 — Deal workspace · 0:55 → 1:15 · (20s)
+## Version 2 — Product Deep-Dive (5:30)
 
-**Screen:** Deal Workspace.
+Audience: Credit Operations · Risk teams · product evaluators · RFP responses.
+16 beats following the credit lifecycle. Narration is embedded in the viewer panel
+verbatim; the timings below match the deck.
 
-> "One deal, one workspace. **Intake → documents → spread → confirmed → rated
-> → capital → priced → decided** — each step is an audited human action with a
-> named accountable user. The badge in the top right is the AI autonomy marker —
-> this is AI-executed, **human-gated**."
-
----
-
-## Beat 5 — Financial spreading grid · 1:15 → 1:45 · (30s)
-
-**Screen:** Financial Spreading.
-
-> "Financial spreading. **SpreadJS-style grid** — line items down, periods across.
-> Each cell shows its **confidence** as a green dot, and hovering reveals **source
-> document and page**. Editing a cell beyond the material threshold triggers the
-> server-enforced **override-with-reason gate** — the deal flips back to DRAFT;
-> material changes can't sneak through. Derived rows in grey are read-only.
-> Ratios and benchmark flags compute per period."
-
----
-
-## Beat 6 — Doc Intelligence · 1:45 → 2:05 · (20s)
-
-**Screen:** Doc Intelligence.
-
-> "GenAI document intelligence at the boundary. **Multilingual extraction** —
-> English, Arabic, Hindi, French. Each extracted field carries its own confidence;
-> low-confidence items are routed to a human reviewer. **Suggest → human-confirm
-> gate.** Confirmed extractions record review accountability — they are never
-> auto-applied to the figures."
+| # | Screen | Time | Beat |
+|---|---|---|---|
+| 1 | Hook | 0:00 | Banks want AI / regulators want accountability / Helix doesn't force a choice |
+| 2 | Title | 0:16 | Governed AI for Wholesale Credit + the three promises + metrics |
+| 3 | Dashboard | 0:32 | One lifecycle, one workspace — composition · RAROC · ECL · watchlist |
+| 4 | Deal Workspace | 0:50 | AI-executed, human-gated, end to end; named accountable user |
+| 5 | Financial Spreading | 1:10 | Cell **provenance**; **override-with-reason gate**; per-period ratios |
+| 6 | Doc Intelligence | 1:36 | **AI extracts → human confirms**; multilingual; never auto-applied to figures |
+| 7 | Risk Lab | 1:58 | AI recommends, humans decide, rating **UNCHANGED**; RAG 86.2/100, explainable |
+| 8 | Pricing Lab | 2:28 | Goal-seek optimiser; authoritative pricing **PRESERVED** |
+| 9 | Concession Workflow | 2:54 | Authority tiers · SoD 1–2 levels · −522 bps → L1 ✓ L2 ✓ |
+| 10 | Deal Structuring | 3:16 | Syndication · dual-obligor (Islamic) · copy-from renewal |
+| 11 | Doc Generation | 3:38 | Grounded drafts · clause add/remove · confirm locks |
+| 12 | AI Commentary | 3:58 | AI drafts, human approves; source provenance |
+| 13 | CAD + Monitoring | 4:16 | 2-level SoD · limit-release trigger · MER renewals + DMS |
+| 14 | Limits + EOD | 4:38 | Fungibility · FX revaluation · ledger reconciliation |
+| 15 | Downstream + Audit | 4:58 | ERM/Finance/CPR feeds · 239 assertions · HUMAN/AI/SYSTEM stamped |
+| 16 | Close | 5:20–5:30 | Governed AI · Deterministic Figures · "AI You Can Defend To Regulators" |
 
 ---
 
-## Beat 7 — Risk Lab · 2:05 → 2:35 · (30s)
+## The visual language (now built into the product, not just the film)
 
-**Screen:** Risk Lab.
+The UI itself carries the governance story, so the demo simply records it:
 
-> "Risk Lab — the advisory overlays. **Statistical RAG scoring** — Green, 86.2
-> out of 100 — with the per-factor contribution breakdown, so a credit officer
-> sees exactly why a name is flagged. The **macro overlay** projects PD direction
-> from rate, GDP, FX, sector and commodity shocks — there, the soft-landing
-> scenario moves PD down by 1 basis point with 0.6 notch of upgrade headroom.
-> Both are advisory. The authoritative AA rating, **provably unchanged**."
+- **Three governance chips** sit in the top bar on every screen — `AI · ADVISORY`
+  (purple), `HUMAN-GATED` (green), `DETERMINISTIC FIGURES` (blue) — above a slim
+  promise strip: *AI where it helps · Humans where regulation demands · Deterministic
+  figures throughout.*
+- **Risk Lab** opens with a dark governance banner and a signature split panel:
+  **AI · ADVISORY** (RAG band + score) → **AUTHORITATIVE · UNCHANGED** (the AA grade).
+  One glance = "AI recommends, humans decide."
+- **Pricing Lab** carries a "price of record · **PRESERVED**" tag beside the
+  authoritative pricing.
+- **Doc Intelligence / Doc Generation / AI Commentary** each show an
+  **AI DRAFTS/EXTRACTS → HUMAN CONFIRMS/APPROVES** flow badge.
 
----
+So whichever cut you record — or if you screen-record the live app directly — the
+AI-vs-human governance model reads in the chrome itself.
 
-## Beat 8 — Pricing Lab + concession workflow · 2:35 → 3:15 · (40s)
-
-**Screen:** Pricing Lab → scroll to concessions.
-
-> "Pricing Lab. The authoritative pricing — 8.71% rate, 15% RAROC, exactly at
-> hurdle. The **goal-seek optimiser** finds the rate, fee, or collateral mix that
-> hits any target RAROC, subject to caps you set.
->
-> Below, the **concession-approval sub-workflow**. An RM proposes a rate below
-> the recommended rate. The concession is **routed to an authority tier sized to
-> its magnitude and any hurdle breach** — relationship head, credit officer,
-> credit head, or credit committee. Maker-checker, segregation of duties, one or
-> two levels. The deep 522-bps concession here required L1 + L2 sign-off.
-> Through all of this, the authoritative pricing **does not move**."
-
----
-
-## Beat 9 — Deal Structuring · 3:15 → 3:40 · (25s)
-
-**Screen:** Deal Structuring.
-
-> "Specialised CP variants. **Group, joint-obligor, dual-obligor for Islamic,
-> syndication, FI ICR.** Live validation per variant — this syndication needs at
-> least two lenders, commitments tying to the total, our 25% share visible.
-> Renewal? **Copy-from** clones the structure and participants into a fresh
-> proposal — no re-keying."
-
----
-
-## Beat 10 — Document generation · 3:40 → 4:00 · (20s)
-
-**Screen:** Doc Generation.
-
-> "Document generation from the master library. Templates and T&C clauses live
-> in the **master-data engine** with maker-checker. The doc is **grounded** in
-> the live deal — borrower, amount, rate, tenor all pulled from the source of
-> record. **Clause add, remove, edit**. Human-confirm gate locks the document."
-
----
-
-## Beat 11 — AI commentary · 4:00 → 4:20 · (20s)
-
-**Screen:** AI Commentary.
-
-> "AI narrative commentary for the credit proposal — industry, management,
-> financials, structure, risk. Every paragraph is **grounded in real ratios and
-> the live structure** — DSCR 2.3, leverage 4.5, AA grade — with source
-> provenance the reviewer can drill into. Draft, edit, approve or reject —
-> human-gated, advisory."
-
----
-
-## Beat 12 — CAD + MER monitoring · 4:20 → 4:45 · (25s)
-
-**Screen:** CAD then Monitoring · MER.
-
-> "Post-sanction. **Credit Administration** — checklist driven by the master,
-> two-level deviation approvals with SoD, the limit-release trigger that feeds
-> limit management. Then **Monitoring of Exceptions and Renewals** — deferred
-> documents, conditions subsequent, insurance and annual review renewals — with
-> reminders, escalation sweep, and a DMS feed event on every submission."
-
----
-
-## Beat 13 — Limits + EOD batch · 4:45 → 5:05 · (20s)
-
-**Screen:** Limits → EOD panel.
-
-> "Multi-level limit tree, fungibility pools, product-processor APIs for
-> Utilise / Release / Reserve / Reversal. The **EOD batch** marks limits to
-> today's FX and reconciles the ledger leaf-by-leaf and parent-by-children —
-> any variance gets surfaced for the ops desk."
-
----
-
-## Beat 14 — Downstream exports + audit close · 5:05 → 5:30 · (25s)
-
-**Screen:** Downstream Exports → Audit Trail.
-
-> "And canonical outbound feeds — **ERM, Finance / GL, CPR** — the symmetric
-> counterpart to connector ingestion. Idempotent batches, full envelope,
-> examiner-retrievable.
->
-> Underneath it all, the **audit trail** — every action stamped HUMAN, AI or
-> SYSTEM with a named user. **239 assertions through the gateway** prove the
-> safety invariants. Helix — governed AI, deterministic figures, end-to-end
-> wholesale credit."
-
----
-
-## Cheat sheet
-
-| Beat | Screen | Time |
-|---|---|---|
-| 1 | Title | 0:00 |
-| 2 | Dashboard | 0:20 |
-| 3 | Deals | 0:40 |
-| 4 | Workspace | 0:55 |
-| 5 | Spreading | 1:15 |
-| 6 | Doc Intelligence | 1:45 |
-| 7 | Risk Lab | 2:05 |
-| 8 | Pricing Lab + concessions | 2:35 |
-| 9 | Structuring | 3:15 |
-| 10 | Doc Generation | 3:40 |
-| 11 | AI Commentary | 4:00 |
-| 12 | CAD + MER | 4:20 |
-| 13 | Limits + EOD | 4:45 |
-| 14 | Exports + Audit | 5:05 → 5:30 |
+## Producing an actual video
+- Open the viewer, pick the cut, press **Play**, screen-record the window (OBS /
+  QuickTime). Read the narration over it in the Bloomberg/Moody's register above.
+- Or narrate over `helix-live-demo.webm` (the real UI screen capture) using the
+  same beats.
+- Shortcuts in the viewer: `Space` play/pause · `←/→` step · `R` restart · click any
+  segment to jump · top-bar toggle to switch cuts.

@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { origination, risk, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, GradeBadge, Stat, useAsync } from "../ui";
+import { Badge, Button, Card, Field, GradeBadge, GovSplit, Stat, useAsync } from "../ui";
 
 const SECTOR_OUTLOOKS = ["IMPROVING", "STABLE", "DETERIORATING"] as const;
 type SectorOutlook = (typeof SECTOR_OUTLOOKS)[number];
@@ -130,17 +130,20 @@ export default function RiskLab() {
 
   return (
     <div className="grid">
-      {/* Banner */}
-      <Card
-        title="Risk Lab"
-        sub="Statistical overlays for qualitative sense-checking. All outputs are ADVISORY and NON-BINDING — they never alter the authoritative deterministic rating produced by the risk engine."
-        right={<Badge kind="ai">AI · advisory</Badge>}
-      >
-        <div className="muted" style={{ fontSize: 13 }}>
-          Select a deal to run RAG scoring and macro stress overlays. These are
-          directional signals only; credit decisions remain with named humans.
+      {/* Governance banner */}
+      <div className="gov-banner">
+        <h3>AI recommends. Humans decide. The rating of record never moves.</h3>
+        <div className="gb-sub">
+          Risk Lab runs statistical RAG scoring and macro stress overlays as <b>advisory, non-binding</b> signals.
+          They read the same ratios the deterministic scorecard reads — but they never rewrite the authoritative rating.
         </div>
-      </Card>
+        <div className="gb-chips">
+          <span className="gb-chip"><b>AI</b> · advisory overlays</span>
+          <span className="gb-chip"><b>Human</b> · credit decision</span>
+          <span className="gb-chip"><b>Deterministic</b> · PD / LGD / EAD</span>
+          <span className="gb-chip">Every output <b>audited</b> as an AI event</span>
+        </div>
+      </div>
 
       {/* Deal selector */}
       <Card title="Deal selector">
@@ -178,6 +181,30 @@ export default function RiskLab() {
           </div>
         )}
       </Card>
+
+      {/* Signature governance frame: AI advisory ↔ authoritative rating UNCHANGED */}
+      {ref && rating && (
+        <Card title="Governance view" sub="One glance: the AI overlay on the left, the figure of record on the right — untouched.">
+          <GovSplit
+            advisoryLabel="Statistical RAG (advisory)"
+            advisory={
+              latestRag ? (
+                <div className="inline" style={{ gap: 14 }}>
+                  <Badge kind={ragBandKind(latestRag.band)}>{latestRag.band}</Badge>
+                  <span style={{ fontSize: 22, fontWeight: 750 }}>{latestRag.score}<span className="muted" style={{ fontSize: 13, fontWeight: 500 }}> / 100</span></span>
+                </div>
+              ) : <span className="muted">Run “Assess RAG” to generate the advisory band.</span>
+            }
+            authLabel="Authoritative rating"
+            auth={
+              <div className="inline" style={{ gap: 12 }}>
+                <GradeBadge grade={rating.finalGrade} />
+                <span className="muted" style={{ fontSize: 13 }}>PD {fmt.pct(rating.pd, 2)}</span>
+              </div>
+            }
+          />
+        </Card>
+      )}
 
       {/* RAG card */}
       <Card

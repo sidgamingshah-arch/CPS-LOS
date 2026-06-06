@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { origination, docs } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, useAsync } from "../ui";
+import { Badge, Button, Card, Field, GovFlow, useAsync } from "../ui";
 
 /** Shape of a generated document as returned by docs.list / docs.generate */
 type GeneratedDocument = {
@@ -166,7 +166,8 @@ export default function DocGen() {
     <div className="grid">
 
       {/* ── Deal selector ── */}
-      <Card title="Document Generation" sub="Select a deal to manage its generated documents.">
+      <Card title="Document Generation" sub="Select a deal to manage its generated documents."
+        right={<GovFlow ai="AI DRAFTS" human="HUMAN CONFIRMS" note="confirmation locks the document" />}>
         <Field label="Deal reference">
           <select
             value={ref}

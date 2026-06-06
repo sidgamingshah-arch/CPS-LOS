@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { origination, commentary, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, Stat, useAsync } from "../ui";
+import { Badge, Button, Card, Field, GovFlow, Stat, useAsync } from "../ui";
 
 // ── types ──────────────────────────────────────────────────────────────────
 
@@ -231,7 +231,7 @@ export default function Commentary() {
       <Card
         title="AI Narrative Commentary"
         sub="Advisory, grounded, non-binding. The deterministic figure path (rating, capital, ECL, RAROC) is never modified by this module."
-        right={<Badge kind="ai">AI · advisory</Badge>}
+        right={<GovFlow ai="AI DRAFTS" human="HUMAN APPROVES" />}
       >
         <div className="muted" style={{ fontSize: 13, lineHeight: 1.65 }}>
           Commentary is drafted by an AI copilot grounded on deal data retrieved live from the

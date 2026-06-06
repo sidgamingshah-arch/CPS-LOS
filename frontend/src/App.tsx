@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { AppContext, ACTORS } from "./app-context";
-import { Toast } from "./ui";
+import { Toast, AiBadge, HumanBadge, DeterministicBadge, GovernanceStrip } from "./ui";
 import Dashboard from "./pages/Dashboard";
 import RulePacks from "./pages/RulePacks";
 import Counterparties from "./pages/Counterparties";
@@ -87,7 +87,7 @@ export default function App() {
         <aside className="sidebar">
           <div className="brand">
             <div className="logo">Heli<span>x</span></div>
-            <div className="tag">AI-First Wholesale Loan Origination</div>
+            <div className="tag">Governed AI for Wholesale Credit</div>
           </div>
           <nav className="nav">
             {NAV.map((n) => (
@@ -110,8 +110,13 @@ export default function App() {
               <div className="crumb">{CRUMB[view] || ""}</div>
               <h2 style={{ margin: 0 }}>{NAV.find((n) => n.key === view)?.label || "Deal Workspace"}</h2>
             </div>
-            <div className="badge ai">AI-executed · human-gated</div>
+            <div className="gov-chips">
+              <AiBadge />
+              <HumanBadge />
+              <DeterministicBadge label="DETERMINISTIC FIGURES" />
+            </div>
           </div>
+          <GovernanceStrip />
           <div className="content">
             {view === "dashboard" && <Dashboard />}
             {view === "deals" && <Deals />}

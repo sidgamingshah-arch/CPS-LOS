@@ -31,7 +31,7 @@
 import { useState } from "react";
 import { origination, docIntel, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, useAsync } from "../ui";
+import { Badge, Button, Card, Field, GovFlow, useAsync } from "../ui";
 
 const DECLARED_TYPES = [
   "FINANCIAL_STATEMENT",
@@ -247,7 +247,8 @@ export default function DocIntel() {
     <div className="grid">
 
       {/* ── Deal selector ── */}
-      <Card title="Document Intelligence" sub="Select a deal to browse and analyse its documents. AI extraction is advisory — it never auto-applies to the figure path; a human analyst must confirm.">
+      <Card title="Document Intelligence" sub="Select a deal to browse and analyse its documents. AI extraction is advisory — it never auto-applies to the figure path; a human analyst must confirm."
+        right={<GovFlow ai="AI EXTRACTS" human="HUMAN CONFIRMS" note="figures stay human-spread" />}>
         <Field label="Deal">
           <select value={selectedRef} onChange={(e) => handleSelectRef(e.target.value)}>
             <option value="">— select deal —</option>
