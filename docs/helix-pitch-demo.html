@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Helix — Live Pitch Demo</title>
+<style>
+  :root {
+    --bg:#0b1020; --ink:#0f172a; --panel:#ffffff; --muted:#94a3b8;
+    --brand:#7c3aed; --brand-soft:#a78bfa; --accent:#38bdf8;
+    --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+    --soft:#1e293b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;background:var(--bg);color:#e2e8f0;overflow:hidden}
+  .stage{position:relative;width:100vw;height:100vh;display:flex;flex-direction:column}
+  /* top bar */
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 18px;background:rgba(0,0,0,.35);border-bottom:1px solid rgba(255,255,255,.08);font-size:13px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.4px}
+  .brand .logo{font-size:20px;color:var(--brand-soft)}
+  .brand .logo b{color:#fff}
+  .clock{font-variant-numeric:tabular-nums;color:var(--brand-soft);font-weight:700;font-size:14px}
+  /* slide area */
+  .frame{flex:1;display:flex;align-items:center;justify-content:center;padding:18px 18px 14px;position:relative;overflow:hidden}
+  .slide{width:100%;height:100%;display:none;grid-template-columns:1.45fr .9fr;gap:18px;align-items:stretch;animation:fade .55s ease}
+  .slide.active{display:grid}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .slide.title{grid-template-columns:1fr}
+  .shotwrap{background:#0f172a;border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+  .shotwrap img{max-width:100%;max-height:100%;display:block}
+  .panel{background:linear-gradient(160deg,#161e3a,#0f172a);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:22px 22px 18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+  .tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--brand-soft);font-weight:700}
+  .tag::before{content:"";width:6px;height:6px;border-radius:999px;background:var(--brand-soft)}
+  h1.title{font-size:34px;line-height:1.15;margin:0;color:#fff;font-weight:800;letter-spacing:-.4px}
+  h2.headline{font-size:22px;line-height:1.2;margin:0;color:#fff;font-weight:700;letter-spacing:-.2px}
+  p.narration{font-size:15.5px;line-height:1.55;color:#e2e8f0;margin:0}
+  p.narration b{color:#fff;font-weight:700}
+  .bullets{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+  .bullets li{font-size:13px;color:#cbd5e1;padding-left:18px;position:relative}
+  .bullets li::before{content:"▸";position:absolute;left:0;color:var(--brand-soft)}
+  /* title slide */
+  .titleblock{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;width:100%;padding:40px}
+  .titleblock h1{font-size:60px;line-height:1;letter-spacing:-1.5px;background:linear-gradient(135deg,#fff,#a78bfa 60%,#38bdf8);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .titleblock .sub{font-size:18px;color:#cbd5e1;margin-top:16px;max-width:820px}
+  .titleblock .pills{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:24px}
+  .pill{padding:6px 14px;border-radius:999px;border:1px solid rgba(167,139,250,.4);background:rgba(124,58,237,.15);font-size:12.5px;color:#ddd;font-weight:600}
+  .pill b{color:#a78bfa}
+  /* bottom controls */
+  .bottombar{display:flex;align-items:center;gap:12px;padding:10px 18px;background:rgba(0,0,0,.35);border-top:1px solid rgba(255,255,255,.08)}
+  .progress{flex:1;height:5px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;position:relative}
+  .progress > span{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--brand-soft),var(--accent));transition:width .25s linear}
+  .btn{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff;padding:7px 14px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;transition:background .12s ease}
+  .btn:hover{background:rgba(255,255,255,.14)}
+  .btn.primary{background:var(--brand);border-color:var(--brand)}
+  .btn.primary:hover{background:#6d28d9}
+  .beatnum{font-size:12px;color:var(--muted);min-width:84px;text-align:center;font-variant-numeric:tabular-nums}
+  /* segment dots */
+  .segments{display:flex;gap:3px;flex:1;margin:0 8px}
+  .segments .seg{flex:1;height:5px;border-radius:99px;background:rgba(255,255,255,.08);position:relative;overflow:hidden;cursor:pointer}
+  .segments .seg .fill{position:absolute;inset:0;width:0%;background:linear-gradient(90deg,var(--brand-soft),var(--accent));transition:width .12s linear}
+  .segments .seg.done .fill{width:100%}
+  .segments .seg.active{box-shadow:0 0 0 1px rgba(167,139,250,.45)}
+  @media (max-width: 1100px){
+    .slide{grid-template-columns:1fr;grid-template-rows:1.2fr .8fr}
+    .titleblock h1{font-size:40px}
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="topbar">
+    <div class="brand"><div class="logo">Heli<b>x</b></div><span>AI-First Wholesale Loan Origination — Live Pitch (5:30)</span></div>
+    <div><span class="clock" id="clock">0:00 / 5:30</span></div>
+  </div>
+
+  <div class="frame" id="frame">
+    <!-- slides injected by JS -->
+  </div>
+
+  <div class="bottombar">
+    <button class="btn" id="prev" title="Previous (←)">◀</button>
+    <button class="btn primary" id="play" title="Play / Pause (Space)">▶  Play</button>
+    <button class="btn" id="next" title="Next (→)">▶</button>
+    <span class="beatnum" id="beatnum">Beat 1 of 14</span>
+    <div class="segments" id="segments"></div>
+    <button class="btn" id="restart" title="Restart (R)">↺</button>
+  </div>
+</div>
+
+<script>
+const ASSETS = "./demo-assets/";
+const SLIDES = [
+  {kind:"title", dur:20, headline:"Helix",
+    sub:"An AI-first wholesale loan origination & lifecycle platform — Java microservices, regulatory abstraction layer, governed AI strictly at the boundaries, deterministic figure path.",
+    pills:["9 services","helix-common shared","239 e2e assertions","SQLite-per-service","React + Vite + TS","Spring Cloud Gateway"],
+    speak:"Helix — an AI-first wholesale loan origination and lifecycle platform. Java microservices, SQLite-per-service, React front-end. Nine services, 239 end-to-end assertions, zero failures. Built around three structural bets: a regulatory abstraction layer, governed AI strictly at the boundaries, and a deterministic figure path that AI provably never touches."},
+
+  {kind:"shot", dur:20, img:"01-dashboard.png", tag:"Portfolio Dashboard",
+    headline:"The book at a glance",
+    speak:"Walking in cold — portfolio dashboard. Composition, RAROC variance, ECL by stage, watchlist — all computed from live exposure data. The full credit lifecycle is one product, not seven.",
+    bullets:["Composition by segment, grade, jurisdiction","Projected vs actual RAROC variance","ECL by IFRS9 stage","Open EWS watchlist & disposition"]},
+
+  {kind:"shot", dur:15, img:"02-deals.png", tag:"Deals pipeline",
+    headline:"Every deal, every stage",
+    speak:"Deals pipeline — every application visible by stage, status, segment. Let's open a live one — Meridian Steel, 95 crore term loan, approved.",
+    bullets:["Click to drill into the workspace","Status reflects lifecycle position","Per-deal owner + accountable user"]},
+
+  {kind:"shot", dur:20, img:"03-workspace.png", tag:"Deal Workspace",
+    headline:"One deal · one workspace · human-gated",
+    speak:"One deal, one workspace. Intake, documents, spread, confirmed, rated, capital, priced, decided — each step is an audited human action with a named accountable user. The badge top-right is the AI autonomy marker — AI-executed, human-gated.",
+    bullets:["Lifecycle pill bar shows progress","X-Actor header on every write","Audit trail attributable to named user"]},
+
+  {kind:"shot", dur:30, img:"04-spreading.png", tag:"Financial Spreading",
+    headline:"SpreadJS-style grid with cell provenance + override gate",
+    speak:"Financial spreading. SpreadJS-style grid — line items down, periods across. Each cell shows its confidence as a green dot, and hovering reveals source document and page. Editing a cell beyond the material threshold triggers the server-enforced override-with-reason gate — the deal flips back to DRAFT; material changes can't sneak through. Derived rows in grey are read-only. Ratios and benchmark flags compute per period.",
+    bullets:["Cell-level provenance: doc · page · confidence","Material override resets confirmation","Derived rows read-only","Per-period ratios + trends + benchmarks"]},
+
+  {kind:"shot", dur:20, img:"05-docintel.png", tag:"Doc Intelligence",
+    headline:"Multilingual extraction · suggest → human-confirm",
+    speak:"GenAI document intelligence at the boundary. Multilingual extraction — English, Arabic, Hindi, French. Each extracted field carries its own confidence; low-confidence items are routed to a human reviewer. Suggest then human-confirm gate. Confirmed extractions record review accountability — they are never auto-applied to the figures.",
+    bullets:["Per-field confidence + source page","Low-confidence rows flagged for review","AI never writes into the figure path","Casual→legal language tools, translation"]},
+
+  {kind:"shot", dur:30, img:"06-risklab.png", tag:"Risk Lab",
+    headline:"Statistical RAG + macro overlay — advisory, non-binding",
+    speak:"Risk Lab — the advisory overlays. Statistical RAG scoring — Green, 86.2 out of 100 — with the per-factor contribution breakdown, so a credit officer sees exactly why a name is flagged. The macro overlay projects PD direction from rate, GDP, FX, sector and commodity shocks — the soft-landing scenario moves PD down by 1 basis point with 0.6 notches of upgrade headroom. Both are advisory. The authoritative AA rating, provably unchanged.",
+    bullets:["Transparent per-factor contributions","Macro projects PD direction + notch","Rating provably unchanged (e2e)","Every output audited as AI event"]},
+
+  {kind:"shot", dur:40, img:"07-pricinglab.png", tag:"Pricing Lab",
+    headline:"Goal-seek optimiser → concession-approval sub-workflow",
+    speak:"Pricing Lab. The authoritative pricing — 8.71% rate, 15% RAROC, exactly at hurdle. The goal-seek optimiser finds the rate, fee, or collateral mix that hits any target RAROC, subject to caps you set. Below, the concession-approval sub-workflow. An RM proposes a rate below the recommended rate. The concession is routed to an authority tier sized to its magnitude and any hurdle breach — relationship head, credit officer, credit head, or credit committee. Maker-checker, segregation of duties, one or two levels. Through all of this, the authoritative pricing does not move.",
+    bullets:["Four scenarios: baseline / rate-only / fee / collateral","Concession routed by size + hurdle breach","SoD: proposer≠approver, L1≠L2","Authoritative PricingResult provably unchanged"]},
+
+  {kind:"shot", dur:25, img:"09-structuring.png", tag:"Deal Structuring",
+    headline:"Specialised CP variants + renewal copy",
+    speak:"Specialised CP variants. Group, joint-obligor, dual-obligor for Islamic, syndication, FI ICR. Live validation per variant — this syndication needs at least two lenders, commitments tying to the total, our 25% share visible. Renewal? Copy-from clones the structure and participants into a fresh proposal — no re-keying.",
+    bullets:["Group · Joint · Dual-obligor (Islamic)","Syndication: lead + participants, share %","FI ICR variant","Copy-from for renewals/amendments"]},
+
+  {kind:"shot", dur:20, img:"10-docgen.png", tag:"Doc Generation",
+    headline:"Template-driven · clause add/remove/edit · confirm gate",
+    speak:"Document generation from the master library. Templates and T&C clauses live in the master-data engine with maker-checker. The doc is grounded in the live deal — borrower, amount, rate, tenor all pulled from the source of record. Clause add, remove, edit. Human-confirm gate locks the document.",
+    bullets:["Templates from DOC_TEMPLATE_MASTER","Clauses from TNC_MASTER + custom","Live grounding: borrower / rate / tenor","Confirmed docs locked from edits"]},
+
+  {kind:"shot", dur:20, img:"11-commentary.png", tag:"AI Commentary",
+    headline:"Grounded narrative · source provenance · human-confirm",
+    speak:"AI narrative commentary for the credit proposal — industry, management, financials, structure, risk. Every paragraph is grounded in real ratios and the live structure — DSCR 2.3, leverage 4.5, AA grade — with source provenance the reviewer can drill into. Draft, edit, approve or reject — human-gated, advisory.",
+    bullets:["Five sections, grounded in live data","Provenance: every claim cites a source","Draft → confirm or reject","Advisory; figures stay human-spread"]},
+
+  {kind:"shot", dur:25, img:"12-cad.png", tag:"CAD + Monitoring",
+    headline:"Documentation → Limit Release → MER monitoring",
+    speak:"Post-sanction. Credit Administration — checklist driven by the master, two-level deviation approvals with segregation of duties, the limit-release trigger that feeds limit management. Then Monitoring of Exceptions and Renewals — deferred documents, conditions subsequent, insurance and annual review renewals — with reminders, escalation sweep, and a DMS feed event on every submission.",
+    bullets:["Checklist from CHECKLIST_MASTER","2-level deviation SoD (raiser≠L1≠L2)","Limit-release trigger → limit-service","MER recurring roll-forward + escalation"]},
+
+  {kind:"shot", dur:20, img:"14-limits.png", tag:"Limits + EOD",
+    headline:"Multi-level tree · product-processor APIs · EOD batch",
+    speak:"Multi-level limit tree, fungibility pools, product-processor APIs for Utilise, Release, Reserve, Reversal. The EOD batch marks limits to today's FX and reconciles the ledger leaf-by-leaf and parent-by-children — any variance gets surfaced for the ops desk.",
+    bullets:["5-level tree · interchangeability","Validation + Utilisation APIs","EOD: FX revaluation + reconciliation","Per-run history, variance detection"]},
+
+  {kind:"shot", dur:25, img:"16-exports.png", tag:"Downstream + Audit",
+    headline:"Canonical export feeds → ERM · Finance/GL · CPR · Audit Trail",
+    speak:"And canonical outbound feeds — ERM, Finance GL, CPR — the symmetric counterpart to connector ingestion. Idempotent batches, full envelope, examiner-retrievable. Underneath it all, the audit trail — every action stamped HUMAN, AI or SYSTEM with a named user. 239 assertions through the gateway prove the safety invariants. Helix — governed AI, deterministic figures, end-to-end wholesale credit.",
+    bullets:["ERM obligor-risk · Finance/GL provisions · CPR composition","Idempotent per as-of day","Audit trail: HUMAN / AI / SYSTEM stamping","239/239 e2e assertions passing"]},
+];
+
+const TOTAL = SLIDES.reduce((s, x) => s + x.dur, 0); // 330s
+const frame = document.getElementById('frame');
+const segments = document.getElementById('segments');
+const clockEl = document.getElementById('clock');
+const beatNumEl = document.getElementById('beatnum');
+const playBtn = document.getElementById('play');
+
+function fmtTime(s){ const m = Math.floor(s/60), x = Math.floor(s%60); return `${m}:${String(x).padStart(2,'0')}`; }
+function totalStr(){ return fmtTime(TOTAL); }
+
+// Build slide DOM
+SLIDES.forEach((s, i) => {
+  const el = document.createElement('div');
+  el.className = 'slide ' + s.kind + (i === 0 ? ' active' : '');
+  if (s.kind === 'title') {
+    el.innerHTML = `
+      <div class="titleblock">
+        <h1>${s.headline}</h1>
+        <div class="sub">${s.sub}</div>
+        <div class="pills">${(s.pills||[]).map(p=>`<span class="pill"><b>•</b> ${p}</span>`).join('')}</div>
+      </div>`;
+  } else {
+    el.innerHTML = `
+      <div class="shotwrap"><img alt="${s.tag}" src="${ASSETS}${s.img}" /></div>
+      <div class="panel">
+        <div class="tag">${s.tag}</div>
+        <h2 class="headline">${s.headline}</h2>
+        <p class="narration">${s.speak}</p>
+        <ul class="bullets">${(s.bullets||[]).map(b=>`<li>${b}</li>`).join('')}</ul>
+      </div>`;
+  }
+  frame.appendChild(el);
+  const seg = document.createElement('div');
+  seg.className = 'seg' + (i === 0 ? ' active' : '');
+  seg.innerHTML = '<div class="fill"></div>';
+  seg.title = `Beat ${i+1}: ${s.tag || 'Title'}`;
+  seg.addEventListener('click', () => jumpTo(i));
+  segments.appendChild(seg);
+});
+
+let current = 0;
+let elapsedInSlide = 0;
+let totalElapsed = 0;
+let playing = false;
+let lastTick = 0;
+let rafId = 0;
+
+function render() {
+  document.querySelectorAll('.slide').forEach((el, i) => el.classList.toggle('active', i === current));
+  document.querySelectorAll('#segments .seg').forEach((el, i) => {
+    el.classList.toggle('active', i === current);
+    el.classList.toggle('done', i < current);
+    const fill = el.querySelector('.fill');
+    if (i < current) fill.style.width = '100%';
+    else if (i > current) fill.style.width = '0%';
+    else fill.style.width = (elapsedInSlide / SLIDES[i].dur * 100) + '%';
+  });
+  clockEl.textContent = `${fmtTime(totalElapsed)} / ${totalStr()}`;
+  beatNumEl.textContent = `Beat ${current+1} of ${SLIDES.length}`;
+}
+
+function loop(ts) {
+  if (!playing) return;
+  if (!lastTick) lastTick = ts;
+  const dt = (ts - lastTick) / 1000;
+  lastTick = ts;
+  elapsedInSlide += dt;
+  totalElapsed = SLIDES.slice(0, current).reduce((s,x)=>s+x.dur,0) + elapsedInSlide;
+  if (elapsedInSlide >= SLIDES[current].dur) {
+    if (current < SLIDES.length - 1) {
+      current++;
+      elapsedInSlide = 0;
+    } else {
+      playing = false;
+      playBtn.textContent = '↺ Replay';
+    }
+  }
+  render();
+  if (playing) rafId = requestAnimationFrame(loop);
+}
+
+function play() { if (current >= SLIDES.length - 1 && elapsedInSlide >= SLIDES[current].dur) { current = 0; elapsedInSlide = 0; totalElapsed = 0; }
+  playing = true; lastTick = 0; playBtn.textContent = '⏸  Pause'; rafId = requestAnimationFrame(loop); }
+function pause() { playing = false; cancelAnimationFrame(rafId); playBtn.textContent = '▶  Play'; }
+function jumpTo(i) { current = Math.max(0, Math.min(SLIDES.length - 1, i)); elapsedInSlide = 0;
+  totalElapsed = SLIDES.slice(0, current).reduce((s,x)=>s+x.dur,0); render(); }
+function next() { jumpTo(current + 1); }
+function prev() { jumpTo(current - 1); }
+function restart() { jumpTo(0); }
+
+playBtn.addEventListener('click', () => playing ? pause() : play());
+document.getElementById('next').addEventListener('click', next);
+document.getElementById('prev').addEventListener('click', prev);
+document.getElementById('restart').addEventListener('click', restart);
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+  else if (e.code === 'ArrowRight') next();
+  else if (e.code === 'ArrowLeft') prev();
+  else if (e.code === 'KeyR') restart();
+});
+render();
+</script>
+</body>
+</html>
