@@ -76,6 +76,77 @@
   .seg.done .fill{width:100%}
   .seg.active{box-shadow:0 0 0 1px rgba(167,139,250,.5)}
   @media (max-width:1100px){.slide.shot.active{grid-template-columns:1fr;grid-template-rows:1.1fr .9fr}.bigtitle{font-size:46px}.hook-line{font-size:24px}}
+
+  /* ---- motion polish ---- */
+  /* every shot beat zooms in slowly (Ken Burns) while a soft spotlight sweeps */
+  .slide.shot.active .shotwrap img{ animation: kenburns 12s ease-out both; transform-origin: 50% 38%; }
+  @keyframes kenburns{ from{transform:scale(1.0)} to{transform:scale(1.05)} }
+  .shotwrap{ position:relative }
+  .spotlight{ position:absolute; inset:0; pointer-events:none;
+    background: radial-gradient(circle at var(--sx,50%) var(--sy,42%), transparent 0, transparent 18%, rgba(8,12,28,.18) 42%, rgba(8,12,28,.42) 100%);
+    opacity:0; transition: opacity .8s ease; }
+  .slide.shot.active .spotlight{ opacity:1; animation: spot 9s ease-in-out infinite; }
+  @keyframes spot{
+    0%   { --sx:30%; --sy:38%; }
+    50%  { --sx:72%; --sy:50%; }
+    100% { --sx:30%; --sy:38%; }
+  }
+  /* one-by-one panel reveal */
+  .panel > *{ opacity:0; transform: translateY(6px); animation: rise .55s ease forwards }
+  .panel > *:nth-child(1){ animation-delay: .05s }
+  .panel > *:nth-child(2){ animation-delay: .20s }
+  .panel > *:nth-child(3){ animation-delay: .35s }
+  .panel > *:nth-child(4){ animation-delay: .50s }
+  .panel > *:nth-child(5){ animation-delay: .65s }
+  @keyframes rise{ to{ opacity:1; transform:none } }
+
+  /* Risk Lab signature-split full-bleed slide */
+  .slide.split{ display:none; align-items:center; justify-content:center; height:100%; padding:24px 32px; }
+  .slide.split.active{ display:flex; }
+  .split-wrap{ display:grid; grid-template-columns:1fr auto 1fr; gap:24px; align-items:center; width:100%; max-width:1320px }
+  .split-pane{ border-radius:18px; padding:30px 32px; min-height:340px; display:flex; flex-direction:column; gap:14px; box-shadow:0 30px 80px rgba(0,0,0,.45) }
+  .split-pane.ai{ background:linear-gradient(160deg,#3b0764,#1a0b3e); border:1px solid rgba(167,139,250,.45) }
+  .split-pane.auth{ background:linear-gradient(160deg,#052e16,#0c1426); border:1px solid rgba(74,222,128,.45) }
+  .split-pane .label{ font-size:11.5px; letter-spacing:.16em; text-transform:uppercase; font-weight:800; color:#c4b5fd }
+  .split-pane.auth .label{ color:#86efac }
+  .split-pane h4{ margin:0; font-size:18px; font-weight:700; color:#fff }
+  .split-pane .big{ font-size:64px; font-weight:850; letter-spacing:-2px; color:#fff; line-height:1 }
+  .split-pane.auth .big{ background:linear-gradient(140deg,#fff,#86efac);-webkit-background-clip:text;background-clip:text;color:transparent }
+  .split-pane.ai .big{ background:linear-gradient(140deg,#fff,#a78bfa);-webkit-background-clip:text;background-clip:text;color:transparent }
+  .split-pane .sub{ color:#cbd5e1; font-size:13.5px; line-height:1.5 }
+  .split-pane.auth .pulse{ display:inline-flex; align-items:center; gap:8px; padding:6px 14px; border-radius:99px; border:1px dashed #86efac; font-size:11.5px; font-weight:800; letter-spacing:.1em; color:#86efac; align-self:flex-start; animation: pulseRing 2.4s ease-in-out infinite }
+  .split-pane.auth .pulse::before{ content:""; width:8px;height:8px;border-radius:99px;background:#22c55e; box-shadow:0 0 0 0 rgba(34,197,94,.7); animation: ringPulse 2.4s infinite }
+  @keyframes ringPulse{ 0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)} 70%{box-shadow:0 0 0 12px rgba(34,197,94,0)} 100%{box-shadow:0 0 0 0 rgba(34,197,94,0)} }
+  @keyframes pulseRing{ 50%{ border-color:#22c55e } }
+  .split-arrow{ font-size:34px; font-weight:900; color:#94a3b8 }
+  .split-bottom{ position:absolute; bottom:46px; left:0; right:0; text-align:center; color:#94a3b8; font-size:13.5px; letter-spacing:.04em }
+  .split-bottom b{ color:#a78bfa }
+
+  /* Pricing value-chain reveal */
+  .slide.valuechain{ display:none; align-items:center; justify-content:center; height:100% }
+  .slide.valuechain.active{ display:flex; }
+  .vc-wrap{ display:flex; flex-direction:column; align-items:center; gap:8px; max-width:560px; width:100% }
+  .vc-step{ padding:14px 22px; border-radius:14px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); min-width:340px; text-align:center; opacity:0; transform:translateY(10px) }
+  .vc-step .lbl{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#94a3b8; font-weight:700 }
+  .vc-step .val{ font-size:24px; font-weight:800; color:#fff; letter-spacing:-.5px; margin-top:2px }
+  .vc-step.tick .val{ color:#86efac }
+  .vc-step.preserved{ background:linear-gradient(140deg,rgba(22,163,74,.18),rgba(56,189,248,.10)); border-color:#22c55e; }
+  .vc-step.preserved .val{ background:linear-gradient(120deg,#fff,#86efac);-webkit-background-clip:text;background-clip:text;color:transparent }
+  .vc-arrow{ color:#7c3aed; font-size:18px; font-weight:800; opacity:0; transform:translateY(4px); height:18px }
+  .slide.valuechain.active .vc-step,.slide.valuechain.active .vc-arrow{ animation: vcShow .55s ease forwards }
+  .slide.valuechain.active .vc-step:nth-child(1){ animation-delay:.10s }
+  .slide.valuechain.active .vc-arrow:nth-child(2){ animation-delay:.50s }
+  .slide.valuechain.active .vc-step:nth-child(3){ animation-delay:.90s }
+  .slide.valuechain.active .vc-arrow:nth-child(4){ animation-delay:1.30s }
+  .slide.valuechain.active .vc-step:nth-child(5){ animation-delay:1.70s }
+  .slide.valuechain.active .vc-arrow:nth-child(6){ animation-delay:2.10s }
+  .slide.valuechain.active .vc-step:nth-child(7){ animation-delay:2.50s }
+  .slide.valuechain.active .vc-arrow:nth-child(8){ animation-delay:2.90s }
+  .slide.valuechain.active .vc-step:nth-child(9){ animation-delay:3.30s }
+  @keyframes vcShow{ to{ opacity:1; transform:none } }
+  .vc-headline{ font-size:22px;font-weight:800;color:#fff;margin-bottom:12px;text-align:center;letter-spacing:-.3px }
+  .vc-foot{ margin-top:14px; color:#94a3b8; font-size:13px; text-align:center }
+  .vc-foot b{ color:#86efac }
 </style>
 </head>
 <body>
@@ -160,37 +231,66 @@ const B = {
   audit:{kind:"shot", img:"17-audit.png", tag:"Audit & Compliance", headline:"Every action attributable. Examiner-ready.",
     badges:["human","det"], callouts:["HUMAN / AI / SYSTEM","Named accountable user","<b>239</b> safety assertions"],
     speak:"Every action — human, AI or system — is stamped with a named accountable user on an immutable trail. This is what a regulator asks for, and it's there by construction. AI you can defend."},
+  copilot:{kind:"shot", img:"19-copilot.png", tag:"Conversational Copilot", headline:"Ask anything. Answers cite. Actions refuse.",
+    badges:["ai","human"], callouts:["<b>8</b> personas","Grounded · cited","Refuses credit-consequential actions"],
+    speak:"A persona-scoped, grounded-and-cited, non-binding conversational layer fans out read-only across all nine services. Every answer cites the service and the endpoint. Ask it to approve a deal and it refuses, routing you to the gated workflow."},
+
+  // ---- motion-rich centerpiece slides ----
+  splitRisk:{kind:"split", tag:"Risk Lab · governance frame", dur:18,
+    aiHead:"Statistical RAG",   aiBig:"GREEN · 86.2",  aiSub:"Explainable factor attribution. Macro overlays project PD direction. Advisory only — never alters figures.",
+    authHead:"Authoritative rating", authBig:"AA",     authSub:"PD 0.05% · deterministic scorecard. The rating of record. Unchanged by every overlay above.",
+    foot:"<b>AI recommends. Humans decide. The figure of record never moves.</b>",
+    speak:"This is the whole pitch in one frame. On the left, AI advisory: a statistical RAG band of GREEN 86 out of 100, with every factor attributed. On the right, the authoritative rating — AA — marked unchanged. AI recommends; the figure of record never moves."},
+  pricingChain:{kind:"valuechain", tag:"Pricing governance · the chain", dur:18,
+    headline:"Optimise freely. The price of record stays preserved.",
+    steps:[
+      {lbl:"Target RAROC",       val:"20%"},
+      {lbl:"Optimiser",          val:"8.71%  (rate · fee · collateral)"},
+      {lbl:"Concession requested", val:"−522 bps"},
+      {lbl:"L1 approval (SoD)",  val:"✓ Credit Head",   tick:true},
+      {lbl:"L2 approval (SoD)",  val:"✓ Credit Committee", tick:true},
+      {lbl:"Authoritative pricing", val:"● PRESERVED", preserved:true},
+    ],
+    foot:"Concessions <b>routed to the right authority</b>. Authoritative pricing <b>never overwritten</b>.",
+    speak:"Watch the pricing governance chain. Target RAROC. The optimiser proposes a rate. A concession of 522 basis points is requested. Level one and level two approvers sign off — segregation of duties. And the authoritative pricing — preserved. AI explored, humans approved, the price of record never moved."},
 };
 
 // ---- decks ----
 function deckExec(){
   return [
-    {...HOOK, dur:16},
-    {...TITLE, dur:14},
-    {...B.workspace, dur:24},
-    {...B.risklab, dur:32},
-    {...B.pricinglab, dur:30},
-    {...B.audit, dur:22},
-    {...CLOSE, dur:12},
+    {...HOOK, dur:14},
+    {...TITLE, dur:12},
+    {...B.workspace, dur:18},
+    {...B.risklab, dur:14},
+    {...B.splitRisk, dur:16},
+    {...B.pricinglab, dur:12},
+    {...B.pricingChain, dur:18},
+    {...B.copilot, dur:16},
+    {...B.audit, dur:16},
+    {...CLOSE, dur:14},
   ];
 }
 function deckDeep(){
   return [
-    {...HOOK, dur:16},
-    {...TITLE, dur:16},
-    {...B.dashboard, dur:18},
-    {...B.workspace, dur:20},
-    {...B.spreading, dur:26},
-    {...B.docintel, dur:22},
-    {...B.risklab, dur:30},
-    {...B.pricinglab, dur:26},
-    {...B.exceptions, dur:22},
-    {...B.structuring, dur:22},
-    {...B.docgen, dur:20},
-    {...B.commentary, dur:18},
-    {...B.cad, dur:22},
-    {...B.limits, dur:20},
-    {...B.exports, dur:22},
+    {...HOOK, dur:14},
+    {...TITLE, dur:14},
+    {...B.dashboard, dur:16},
+    {...B.workspace, dur:18},
+    {...B.spreading, dur:22},
+    {...B.docintel, dur:18},
+    {...B.risklab, dur:18},
+    {...B.splitRisk, dur:16},
+    {...B.pricinglab, dur:14},
+    {...B.pricingChain, dur:18},
+    {...B.exceptions, dur:18},
+    {...B.structuring, dur:18},
+    {...B.docgen, dur:16},
+    {...B.commentary, dur:14},
+    {...B.copilot, dur:18},
+    {...B.cad, dur:18},
+    {...B.limits, dur:16},
+    {...B.exports, dur:18},
+    {...B.audit, dur:14},
     {...CLOSE, dur:10},
   ];
 }
@@ -222,8 +322,38 @@ function slideHTML(s){
       <div class="closesub">AI You Can Defend To Regulators</div>
     </div>`;
   }
+  if(s.kind==="split"){
+    return `<div class="split-wrap">
+      <div class="split-pane ai">
+        <div class="label">AI · ADVISORY</div>
+        <h4>${s.aiHead}</h4>
+        <div class="big">${s.aiBig}</div>
+        <div class="sub">${s.aiSub}</div>
+      </div>
+      <div class="split-arrow">→</div>
+      <div class="split-pane auth">
+        <div class="pulse">● UNCHANGED</div>
+        <div class="label">AUTHORITATIVE · OF RECORD</div>
+        <h4>${s.authHead}</h4>
+        <div class="big">${s.authBig}</div>
+        <div class="sub">${s.authSub}</div>
+      </div>
+    </div>
+    <div class="split-bottom">${s.foot || ''}</div>`;
+  }
+  if(s.kind==="valuechain"){
+    return `<div class="vc-wrap">
+      <div class="vc-headline">${s.headline}</div>
+      ${s.steps.map((st,i)=>{
+        const arrow = i<s.steps.length-1 ? '<div class="vc-arrow">↓</div>' : '';
+        const cls = st.preserved?'vc-step preserved':(st.tick?'vc-step tick':'vc-step');
+        return `<div class="${cls}"><div class="lbl">${st.lbl}</div><div class="val">${st.val}</div></div>${arrow}`;
+      }).join('')}
+      <div class="vc-foot">${s.foot}</div>
+    </div>`;
+  }
   // shot
-  return `<div class="shotwrap"><img alt="${s.tag}" src="${ASSETS}${s.img}" /></div>
+  return `<div class="shotwrap"><img alt="${s.tag}" src="${ASSETS}${s.img}" /><div class="spotlight"></div></div>
     <div class="panel">
       <div class="tag">${s.tag}</div>
       <h2 class="headline">${s.headline}</h2>
