@@ -20,10 +20,13 @@ import RiskLab from "./pages/RiskLab";
 import DocGen from "./pages/DocGen";
 import Commentary from "./pages/Commentary";
 import PricingLab from "./pages/PricingLab";
+import Spreading from "./pages/Spreading";
+import Exports from "./pages/Exports";
 
 const NAV = [
   { key: "dashboard", label: "Portfolio Dashboard" },
   { key: "deals", label: "Deals" },
+  { key: "spreading", label: "Financial Spreading" },
   { key: "structuring", label: "Deal Structuring" },
   { key: "docintel", label: "Doc Intelligence" },
   { key: "counterparties", label: "Counterparties" },
@@ -36,6 +39,7 @@ const NAV = [
   { key: "customer360", label: "Customer-360" },
   { key: "risklab", label: "Risk Lab" },
   { key: "mis", label: "MIS · Reports" },
+  { key: "exports", label: "Downstream Exports" },
   { key: "copilot", label: "Copilot" },
   { key: "rulepacks", label: "Jurisdictions & Rule Packs" },
   { key: "masters", label: "Master Data" },
@@ -45,6 +49,7 @@ const NAV = [
 const CRUMB: Record<string, string> = {
   dashboard: "Portfolio & book-level intelligence",
   deals: "Origination pipeline",
+  spreading: "SpreadJS-style grid · multi-period · cell provenance · override-with-reason gate · ratios",
   structuring: "Specialised CP variants · group · joint/dual-obligor · syndication · FI ICR · renewal copy",
   docintel: "GenAI document intelligence · extraction (human-confirmed) · language · translation · checks",
   counterparties: "Onboarding · KYC/KYB · UBO",
@@ -57,6 +62,7 @@ const CRUMB: Record<string, string> = {
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
   risklab: "Advisory overlays · statistical RAG scoring · macro directional impact (non-binding)",
   mis: "Composition · RAROC variance · ECL · ageing · watchlist",
+  exports: "Canonical outbound feeds · ERM · Finance/GL · CPR · idempotent batches",
   copilot: "Scoped, grounded, non-binding assistant",
   rulepacks: "Regulatory abstraction layer",
   masters: "Generic Master-Data engine · maker-checker SoD · 22 master types",
@@ -109,6 +115,7 @@ export default function App() {
           <div className="content">
             {view === "dashboard" && <Dashboard />}
             {view === "deals" && <Deals />}
+            {view === "spreading" && <Spreading />}
             {view === "structuring" && <Structuring />}
             {view === "docintel" && <DocIntel />}
             {view === "counterparties" && <Counterparties />}
@@ -121,6 +128,7 @@ export default function App() {
             {view === "customer360" && <Customer360 />}
             {view === "risklab" && <RiskLab />}
             {view === "mis" && <Mis />}
+            {view === "exports" && <Exports />}
             {view === "copilot" && <Copilot />}
             {view === "rulepacks" && <RulePacks />}
             {view === "masters" && <Masters />}

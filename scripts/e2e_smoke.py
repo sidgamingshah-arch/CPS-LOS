@@ -858,6 +858,73 @@ check("authoritative recommended rate UNCHANGED by optimiser",
       abs(after_pricing["pricing"]["recommendedRate"] - baseline_rate) < 1e-9,
       f"{baseline_rate} -> {after_pricing.get('pricing', {}).get('recommendedRate')}")
 
+print("== 41. Pricing-exception (concession) approval sub-workflow ==")
+st, rs = call("GET", f"/risk/api/risk/{ref}")
+rec_rate = rs["pricing"]["recommendedRate"]
+# Modest concession -> single level
+small = round(rec_rate - 0.003, 6)
+st, ex1 = call("POST", f"/risk/api/risk/{ref}/pricing/exception",
+               {"proposedRate": small, "reason": "Relationship pricing — strategic client"}, actor="rm.user")
+check("modest concession routed single-level (PENDING_L1)",
+      st == 200 and ex1["status"] == "PENDING_L1" and ex1["requiredLevels"] == 1 and ex1["concessionBps"] > 0,
+      f"{st} levels={ex1.get('requiredLevels')} bps={ex1.get('concessionBps')}")
+# SoD: proposer cannot approve own
+st, sod = call("POST", f"/risk/api/risk/pricing/exception/{ex1['id']}/decision",
+               {"approve": True, "comment": "self"}, actor="rm.user")
+check("proposer cannot approve own exception (403)", st == 403, f"{st}")
+st, ap1 = call("POST", f"/risk/api/risk/pricing/exception/{ex1['id']}/decision",
+               {"approve": True, "comment": "approved"}, actor="credit.officer")
+check("single-level concession approved", st == 200 and ap1["status"] == "APPROVED", f"{st}")
+# Deep concession -> two-level + below hurdle
+deep = round(rec_rate * 0.4, 6)
+st, ex2 = call("POST", f"/risk/api/risk/{ref}/pricing/exception",
+               {"proposedRate": deep, "reason": "Competitive must-win"}, actor="rm.user")
+check("deep concession routes two-level + below hurdle",
+      st == 200 and ex2["requiredLevels"] == 2 and ex2["belowHurdle"] and ex2["status"] == "PENDING_L1",
+      f"{st} levels={ex2.get('requiredLevels')} below={ex2.get('belowHurdle')}")
+st, l1 = call("POST", f"/risk/api/risk/pricing/exception/{ex2['id']}/decision",
+              {"approve": True, "comment": "L1 ok"}, actor="credit.head")
+check("L1 approves -> PENDING_L2", st == 200 and l1["status"] == "PENDING_L2", f"{st}")
+# SoD: L2 must differ from L1
+st, sod2 = call("POST", f"/risk/api/risk/pricing/exception/{ex2['id']}/decision",
+                {"approve": True}, actor="credit.head")
+check("L2 must differ from L1 (403)", st == 403, f"{st}")
+st, l2 = call("POST", f"/risk/api/risk/pricing/exception/{ex2['id']}/decision",
+              {"approve": True, "comment": "committee ok"}, actor="credit.committee")
+check("L2 approves -> APPROVED", st == 200 and l2["status"] == "APPROVED", f"{st}")
+# Premium (no concession) auto-approves
+st, ex3 = call("POST", f"/risk/api/risk/{ref}/pricing/exception",
+               {"proposedRate": round(rec_rate + 0.01, 6), "reason": "Premium pricing"}, actor="rm.user")
+check("premium (no concession) auto-approved, zero levels",
+      st == 200 and ex3["status"] == "APPROVED" and ex3["requiredLevels"] == 0, f"{st} {ex3.get('requiredLevels')}")
+# Authoritative pricing unchanged
+st, rs2 = call("GET", f"/risk/api/risk/{ref}")
+check("authoritative recommended rate UNCHANGED by exception workflow",
+      abs(rs2["pricing"]["recommendedRate"] - rec_rate) < 1e-9, f"{rec_rate} -> {rs2['pricing']['recommendedRate']}")
+st, lst = call("GET", f"/risk/api/risk/{ref}/pricing/exception")
+check("exceptions queryable by deal", st == 200 and len(lst) >= 3, f"{st}")
+
+print("== 42. Downstream canonical export feeds (ERM · Finance/GL · CPR) ==")
+st, erm = call("POST", "/portfolio/api/exports/erm", actor="export.batch")
+check("ERM feed generated with obligor risk records",
+      st == 200 and erm["destination"] == "ERM" and erm["recordCount"] >= 1, f"{st} {erm.get('recordCount')}")
+check("ERM envelope carries typed records + payload version",
+      "records" in erm["envelope"] and erm["envelope"]["payloadVersion"] == "1.0", str(list(erm.get("envelope", {}).keys())))
+# Idempotent within the as-of day
+st, erm2 = call("POST", "/portfolio/api/exports/erm", actor="export.batch")
+check("ERM feed idempotent per as-of day (same batch id)", erm2["id"] == erm["id"], f"{erm['id']} vs {erm2.get('id')}")
+st, gl = call("POST", "/portfolio/api/exports/finance-gl", actor="export.batch")
+check("Finance/GL provisioning feed generated", st == 200 and gl["destination"] == "FINANCE_GL", f"{st}")
+st, cprf = call("POST", "/portfolio/api/exports/cpr", actor="export.batch")
+check("CPR portfolio-composition feed generated with lines",
+      st == 200 and cprf["destination"] == "CPR" and cprf["recordCount"] >= 1, f"{st} {cprf.get('recordCount')}")
+st, batches = call("GET", "/portfolio/api/exports/batches")
+check("export batches queryable", st == 200 and len(batches) >= 3, f"{st}")
+st, detail = call("GET", f"/portfolio/api/exports/batches/{erm['id']}")
+check("batch detail returns the full canonical envelope",
+      st == 200 and detail["envelope"]["destination"] == "ERM"
+      and len(detail["envelope"]["records"]) == erm["recordCount"], f"{st}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

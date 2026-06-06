@@ -24,4 +24,11 @@ public final class OptimiserDtos {
                                      double targetRaroc, double hurdleRaroc, boolean achievable, Scenario recommended,
                                      List<Scenario> scenarios, boolean advisory) {
     }
+
+    /** Propose a rate below the recommended rate (a concession) for approval routing. */
+    public record PricingExceptionRequest(Double proposedRate, String reason) {
+    }
+
+    public record PricingExceptionDecision(boolean approve, String comment) {
+    }
 }

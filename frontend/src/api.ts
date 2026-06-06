@@ -146,10 +146,26 @@ export const commentary = {
     call<any>(`/decision/api/commentary/${id}/edit`, "POST", body, actor),
 };
 
-// ---- pricing optimiser (goal-seek) ----
+// ---- pricing optimiser (goal-seek) + concession-exception approval ----
 export const optimiser = {
   optimise: (ref: string, body: any, actor: string) =>
     call<any>(`/risk/api/risk/${ref}/pricing/optimise`, "POST", body, actor),
+  proposeException: (ref: string, body: any, actor: string) =>
+    call<any>(`/risk/api/risk/${ref}/pricing/exception`, "POST", body, actor),
+  listExceptions: (ref: string) => call<any[]>(`/risk/api/risk/${ref}/pricing/exception`, "GET"),
+  pendingExceptions: () => call<any[]>("/risk/api/risk/pricing/exception/pending", "GET"),
+  decideException: (id: number, body: any, actor: string) =>
+    call<any>(`/risk/api/risk/pricing/exception/${id}/decision`, "POST", body, actor),
+};
+
+// ---- downstream export feeds (ERM · Finance/GL · CPR) ----
+export const exports = {
+  erm: (actor: string) => call<any>("/portfolio/api/exports/erm", "POST", undefined, actor),
+  financeGl: (actor: string) => call<any>("/portfolio/api/exports/finance-gl", "POST", undefined, actor),
+  cpr: (actor: string) => call<any>("/portfolio/api/exports/cpr", "POST", undefined, actor),
+  batches: (destination?: string) =>
+    call<any[]>("/portfolio/api/exports/batches" + (destination ? `?destination=${destination}` : ""), "GET"),
+  batch: (id: number) => call<any>(`/portfolio/api/exports/batches/${id}`, "GET"),
 };
 
 // ---- GenAI document intelligence ----
