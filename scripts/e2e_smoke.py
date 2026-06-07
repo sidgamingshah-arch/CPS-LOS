@@ -925,6 +925,107 @@ check("batch detail returns the full canonical envelope",
       st == 200 and detail["envelope"]["destination"] == "ERM"
       and len(detail["envelope"]["records"]) == erm["recordCount"], f"{st}")
 
+print("== 43. Group closure: auto group identification · group insights · combined CP ==")
+# 43a. Create two prospects that share identifier prefix + name tokens with the Helix Demo group
+st, sib_a = call("POST", "/counterparty/api/initiation/prospects", {
+    "legalName": "Helix Demo Logistics Pvt Ltd", "legalForm": "PRIVATE_LTD",
+    "registrationNo": "UDEDUP456", "jurisdiction": "IN-RBI", "segment": "MID_CORPORATE",
+    "sector": "MANUFACTURING", "country": "IN", "borrowerType": "NTB"}, actor="rm.alice")
+check("sibling prospect A created", st == 200, f"{st}")
+st, sib_b = call("POST", "/counterparty/api/initiation/prospects", {
+    "legalName": "Helix Demo Power Pvt Ltd", "legalForm": "PRIVATE_LTD",
+    "registrationNo": "UDEDUP789", "jurisdiction": "IN-RBI", "segment": "MID_CORPORATE",
+    "sector": "MANUFACTURING", "country": "IN", "borrowerType": "NTB"}, actor="rm.alice")
+check("sibling prospect B created", st == 200, f"{st}")
+
+# 43b. AI advisory group identification — should match `grp` via p1 (Helix Demo Steel, already a member)
+st, sugg = call("POST", f"/counterparty/api/initiation/counterparties/{sib_a['id']}/group/suggest",
+                actor="rm.alice")
+check("group suggestion returned as advisory",
+      st == 200 and sugg.get("advisory") is True and sugg.get("recommendation") is not None, f"{st}")
+check("group suggestion matches the existing Helix Demo Group via name overlap",
+      any(g["reference"] == grp["reference"] for g in (sugg.get("groupMatches") or [])),
+      f"matches={[g['reference'] for g in (sugg.get('groupMatches') or [])]}")
+check("group suggestion lists sib_b as ungrouped sibling",
+      any(s["reference"] == sib_b["reference"] for s in (sugg.get("ungroupedSiblings") or [])),
+      f"siblings={[s['reference'] for s in (sugg.get('ungroupedSiblings') or [])]}")
+check("group suggestion exposes per-candidate reasoning signals",
+      all(len(g.get("signals") or []) >= 1 for g in (sugg.get("groupMatches") or [])),
+      f"signals={[g.get('signals') for g in (sugg.get('groupMatches') or [])]}")
+st, ca = call("GET", f"/counterparty/api/audit/subject?type=Counterparty&id={sib_a['reference']}")
+check("group identification stamped as an AI event",
+      st == 200 and any(e.get("eventType") == "GROUP_SUGGESTED" for e in (ca or [])), f"{st}")
+
+# 43c. Human still tags — bring Meridian (cp_id, has live application) and the two siblings into grp
+call("POST", f"/counterparty/api/initiation/counterparties/{cp_id}/group/{grp['id']}", actor="rm.alice")
+call("POST", f"/counterparty/api/initiation/counterparties/{sib_a['id']}/group/{grp['id']}", actor="rm.alice")
+call("POST", f"/counterparty/api/initiation/counterparties/{sib_b['id']}/group/{grp['id']}", actor="rm.alice")
+
+# 43d. Snapshot member-level authoritative figures BEFORE the group rollup — for the invariant
+st, before_rs = call("GET", f"/risk/api/risk/{ref}")
+before_grade = before_rs["rating"]["finalGrade"]
+before_rate = before_rs["pricing"]["recommendedRate"]
+
+# 43e. Group insights (advisory)
+st, gi = call("GET", f"/decision/api/decisions/groups/{grp['reference']}/insights",
+              actor="credit.head")
+check("group insights rollup returned (advisory)",
+      st == 200 and gi.get("advisory") is True and gi["groupReference"] == grp["reference"], f"{st}")
+check("group insights enumerates every tagged member",
+      gi["memberCount"] >= 3 and len(gi["members"]) == gi["memberCount"],
+      f"memberCount={gi.get('memberCount')} listed={len(gi.get('members', []))}")
+check("group insights resolves Meridian's live application via origination",
+      gi["membersWithApplication"] >= 1
+      and any(m.get("counterpartyRef") == cp["reference"]
+              and m.get("latestApplicationReference") is not None
+              for m in gi["members"]),
+      f"withApp={gi.get('membersWithApplication')} "
+      f"meridian={[m for m in gi.get('members', []) if m.get('counterpartyRef') == cp['reference']]}")
+check("group insights drafts narrative + risk callouts",
+      gi.get("narrative") and "group" in gi["narrative"].lower(), "")
+
+# 43f. Combined credit proposal (advisory; uses CreditProposal repo with GRP:<ref> key)
+st, gcp = call("POST",
+               f"/decision/api/decisions/groups/{grp['reference']}/combined-proposal/generate",
+               actor="analyst.user")
+check("combined group proposal generated (v1)",
+      st == 200 and gcp["version"] == 1 and gcp["applicationReference"] == f"GRP:{grp['reference']}",
+      f"{st} v={gcp.get('version')} ref={gcp.get('applicationReference')}")
+check("combined proposal cites group + member endpoints (grounded)",
+      "group" in (gcp.get("citations") or {}) and "members" in (gcp.get("citations") or {}), "")
+check("combined proposal renders the per-member breakdown",
+      "Per-member breakdown" in gcp["markdown"] and cp["legalName"] in gcp["markdown"],
+      "missing member section")
+check("combined proposal sections include rollup + provenance",
+      "Group summary" in (gcp.get("sections") or [])
+      and "Provenance" in (gcp.get("sections") or []), "")
+
+# 43g. Versioned just like an application-level proposal
+st, gcp2 = call("POST",
+                f"/decision/api/decisions/groups/{grp['reference']}/combined-proposal/generate",
+                actor="analyst.user")
+check("combined group proposal versioned (v2)",
+      gcp2["version"] == 2, f"v={gcp2.get('version')}")
+st, vers = call("GET",
+                f"/decision/api/decisions/groups/{grp['reference']}/combined-proposal/versions")
+check("combined proposal version history exposed", st == 200 and len(vers) >= 2, f"{st}")
+
+# 43h. INVARIANT — authoritative member figures must be untouched by group rollup
+st, after_rs = call("GET", f"/risk/api/risk/{ref}")
+check("AUTHORITATIVE rating + pricing UNCHANGED by group insights / combined CP",
+      after_rs["rating"]["finalGrade"] == before_grade
+      and abs(after_rs["pricing"]["recommendedRate"] - before_rate) < 1e-9,
+      f"{before_grade}/{before_rate} -> "
+      f"{after_rs['rating']['finalGrade']}/{after_rs['pricing']['recommendedRate']}")
+
+# 43i. Audit — group-level AI events stamped
+st, gaudit = call("GET", f"/decision/api/audit/subject?type=Group&id={grp['reference']}")
+check("group insights + combined proposal stamped as AI events",
+      st == 200
+      and any(e.get("eventType") == "GROUP_INSIGHTS_GENERATED" for e in (gaudit or []))
+      and any(e.get("eventType") == "GROUP_CREDIT_PROPOSAL_GENERATED" for e in (gaudit or [])),
+      f"{st} types={[e.get('eventType') for e in (gaudit or [])]}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

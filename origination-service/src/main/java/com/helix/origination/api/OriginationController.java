@@ -53,6 +53,11 @@ public class OriginationController {
         return origination.list();
     }
 
+    @GetMapping("/by-counterparty/{counterpartyRef}")
+    public List<LoanApplication> listByCounterparty(@PathVariable String counterpartyRef) {
+        return origination.listByCounterparty(counterpartyRef);
+    }
+
     @GetMapping("/{reference}")
     public LoanApplication get(@PathVariable String reference) {
         return origination.get(reference);

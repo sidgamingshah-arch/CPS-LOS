@@ -30,6 +30,8 @@ management:
 helix:
   config-service:
     base-url: ${CONFIG_SERVICE_URL:http://localhost:8081}
+  counterparty-service:
+    base-url: ${COUNTERPARTY_SERVICE_URL:http://localhost:8082}
   origination-service:
     base-url: ${ORIGINATION_SERVICE_URL:http://localhost:8083}
   risk-service:

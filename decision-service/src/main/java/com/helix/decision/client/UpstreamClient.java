@@ -22,13 +22,16 @@ public class UpstreamClient {
     private static final Logger log = LoggerFactory.getLogger(UpstreamClient.class);
 
     private final RestClient config;
+    private final RestClient counterparty;
     private final RestClient origination;
     private final RestClient risk;
 
     public UpstreamClient(@Value("${helix.config-service.base-url}") String configUrl,
+                          @Value("${helix.counterparty-service.base-url}") String counterpartyUrl,
                           @Value("${helix.origination-service.base-url}") String originationUrl,
                           @Value("${helix.risk-service.base-url}") String riskUrl) {
         this.config = RestClient.builder().baseUrl(configUrl).build();
+        this.counterparty = RestClient.builder().baseUrl(counterpartyUrl).build();
         this.origination = RestClient.builder().baseUrl(originationUrl).build();
         this.risk = RestClient.builder().baseUrl(riskUrl).build();
     }
@@ -142,6 +145,81 @@ public class UpstreamClient {
             return risk.get().uri("/api/risk/{ref}", reference).retrieve().body(RiskSummaryDto.class);
         } catch (Exception e) {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "risk-service unavailable: " + e.getMessage());
+        }
+    }
+
+    public RiskSummaryDto riskSummaryOrNull(String reference) {
+        try {
+            return risk.get().uri("/api/risk/{ref}", reference).retrieve().body(RiskSummaryDto.class);
+        } catch (Exception e) {
+            log.warn("risk-service summary unavailable for {} ({})", reference, e.getMessage());
+            return null;
+        }
+    }
+
+    public DealEnvelopeDto envelopeOrNull(String reference) {
+        try {
+            return origination.get().uri("/api/applications/{ref}/envelope", reference)
+                    .retrieve().body(DealEnvelopeDto.class);
+        } catch (Exception e) {
+            log.warn("origination-service envelope unavailable for {} ({})", reference, e.getMessage());
+            return null;
+        }
+    }
+
+    // ---- group / counterparty / per-counterparty applications lookup ----
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record CounterpartyGroupDto(Long id, String reference, String name, String groupRmId,
+                                       String country, boolean multiCountry) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GroupMemberDto(String reference, String name, String recordType,
+                                 String segment, String rm) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GroupExposureDto(CounterpartyGroupDto group, int memberCount, int obligorCount,
+                                   List<GroupMemberDto> members, Map<String, Object> riskFlags) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record LoanApplicationRefDto(String reference, String counterpartyRef,
+                                        String counterpartyName, String status) {
+    }
+
+    public CounterpartyGroupDto groupByReference(String groupReference) {
+        try {
+            return counterparty.get().uri("/api/initiation/groups/by-reference/{r}", groupReference)
+                    .retrieve().body(CounterpartyGroupDto.class);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "counterparty-service unavailable for group " + groupReference + ": " + e.getMessage());
+        }
+    }
+
+    public GroupExposureDto groupExposure(String groupReference) {
+        try {
+            return counterparty.get()
+                    .uri("/api/initiation/groups/by-reference/{r}/exposure", groupReference)
+                    .retrieve().body(GroupExposureDto.class);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "counterparty-service group exposure unavailable: " + e.getMessage());
+        }
+    }
+
+    public List<LoanApplicationRefDto> applicationsForCounterparty(String counterpartyRef) {
+        try {
+            LoanApplicationRefDto[] arr = origination.get()
+                    .uri("/api/applications/by-counterparty/{r}", counterpartyRef)
+                    .retrieve().body(LoanApplicationRefDto[].class);
+            return arr == null ? List.of() : List.of(arr);
+        } catch (Exception e) {
+            log.warn("origination-service applications-by-counterparty unavailable for {} ({})",
+                    counterpartyRef, e.getMessage());
+            return List.of();
         }
     }
 

@@ -7,14 +7,18 @@ import com.helix.counterparty.dto.InitiationDtos.CreationSummary;
 import com.helix.counterparty.dto.InitiationDtos.DecisionRequest;
 import com.helix.counterparty.dto.InitiationDtos.DedupResult;
 import com.helix.counterparty.dto.InitiationDtos.FetchCheckRequest;
+import com.helix.counterparty.dto.InitiationDtos.GroupSuggestionResult;
 import com.helix.counterparty.dto.InitiationDtos.NegativeResult;
 import com.helix.counterparty.entity.Counterparty;
 import com.helix.counterparty.entity.CounterpartyGroup;
 import com.helix.counterparty.entity.ExternalCheck;
 import com.helix.counterparty.entity.OwnershipAssignment;
+import com.helix.counterparty.repo.CounterpartyGroupRepository;
 import com.helix.counterparty.service.ExternalCheckService;
+import com.helix.counterparty.service.GroupIdentificationService;
 import com.helix.counterparty.service.InitiationService;
 import com.helix.counterparty.service.RelationshipService;
+import com.helix.common.web.ApiException;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,12 +39,18 @@ public class InitiationController {
     private final InitiationService initiation;
     private final ExternalCheckService externalChecks;
     private final RelationshipService relationship;
+    private final GroupIdentificationService groupIdentification;
+    private final CounterpartyGroupRepository groupRepository;
 
     public InitiationController(InitiationService initiation, ExternalCheckService externalChecks,
-                                RelationshipService relationship) {
+                                RelationshipService relationship,
+                                GroupIdentificationService groupIdentification,
+                                CounterpartyGroupRepository groupRepository) {
         this.initiation = initiation;
         this.externalChecks = externalChecks;
         this.relationship = relationship;
+        this.groupIdentification = groupIdentification;
+        this.groupRepository = groupRepository;
     }
 
     // ---- prospect lifecycle ----
@@ -129,6 +139,11 @@ public class InitiationController {
         return relationship.createGroup(req, actor);
     }
 
+    @GetMapping("/groups")
+    public List<CounterpartyGroup> listGroups() {
+        return groupRepository.findAll();
+    }
+
     @PostMapping("/counterparties/{id}/group/{groupId}")
     public Counterparty tagGroup(@PathVariable Long id, @PathVariable Long groupId,
                                  @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
@@ -138,5 +153,26 @@ public class InitiationController {
     @GetMapping("/groups/{groupId}/exposure")
     public Map<String, Object> groupExposure(@PathVariable Long groupId) {
         return relationship.groupExposureSummary(groupId);
+    }
+
+    @GetMapping("/groups/by-reference/{reference}")
+    public CounterpartyGroup groupByReference(@PathVariable String reference) {
+        return groupRepository.findByReference(reference)
+                .orElseThrow(() -> ApiException.notFound("No group: " + reference));
+    }
+
+    @GetMapping("/groups/by-reference/{reference}/exposure")
+    public Map<String, Object> groupExposureByReference(@PathVariable String reference) {
+        CounterpartyGroup g = groupRepository.findByReference(reference)
+                .orElseThrow(() -> ApiException.notFound("No group: " + reference));
+        return relationship.groupExposureSummary(g.getId());
+    }
+
+    // ---- advisory group identification (AI-assisted; human still tags) ----
+
+    @PostMapping("/counterparties/{id}/group/suggest")
+    public GroupSuggestionResult suggestGroup(@PathVariable Long id,
+                                              @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
+        return groupIdentification.suggest(id, actor);
     }
 }

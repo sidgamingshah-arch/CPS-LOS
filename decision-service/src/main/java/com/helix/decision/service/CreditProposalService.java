@@ -3,8 +3,14 @@ package com.helix.decision.service;
 import com.helix.common.audit.AuditService;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
+import com.helix.decision.client.UpstreamClient.CounterpartyGroupDto;
 import com.helix.decision.client.UpstreamClient.DealEnvelopeDto;
+import com.helix.decision.client.UpstreamClient.GroupExposureDto;
+import com.helix.decision.client.UpstreamClient.GroupMemberDto;
+import com.helix.decision.client.UpstreamClient.LoanApplicationRefDto;
 import com.helix.decision.client.UpstreamClient.RiskSummaryDto;
+import com.helix.decision.dto.GroupDtos.GroupInsights;
+import com.helix.decision.dto.GroupDtos.GroupMemberInsight;
 import com.helix.decision.entity.Covenant;
 import com.helix.decision.entity.CreditDecision;
 import com.helix.decision.entity.CreditProposal;
@@ -33,14 +39,17 @@ public class CreditProposalService {
     private final CovenantRepository covenants;
     private final CreditDecisionRepository decisions;
     private final UpstreamClient upstream;
+    private final GroupInsightsService groupInsights;
     private final AuditService audit;
 
     public CreditProposalService(CreditProposalRepository proposals, CovenantRepository covenants,
-                                 CreditDecisionRepository decisions, UpstreamClient upstream, AuditService audit) {
+                                 CreditDecisionRepository decisions, UpstreamClient upstream,
+                                 GroupInsightsService groupInsights, AuditService audit) {
         this.proposals = proposals;
         this.covenants = covenants;
         this.decisions = decisions;
         this.upstream = upstream;
+        this.groupInsights = groupInsights;
         this.audit = audit;
     }
 
@@ -240,6 +249,161 @@ public class CreditProposalService {
     @Transactional(readOnly = true)
     public List<CreditProposal> versions(String reference) {
         return proposals.findByApplicationReferenceOrderByVersionDesc(reference);
+    }
+
+    /**
+     * Combined credit proposal across every member of a borrower group (PRD §8,
+     * "combining credit proposal of group companies"). Stored as a normal
+     * {@link CreditProposal} with {@code applicationReference = "GRP:" + groupRef}
+     * so versioning/history reuse the existing repository, and the figures are
+     * <em>quoted</em> from each member's upstream services — never invented and
+     * never mutated. Stamped {@code audit.ai("proposal-generator", ...)}.
+     */
+    @Transactional
+    public CreditProposal generateForGroup(String groupReference, String actor) {
+        GroupInsights insights = groupInsights.insights(groupReference, actor);
+        CounterpartyGroupDto group = upstream.groupByReference(groupReference);
+        GroupExposureDto exposure = upstream.groupExposure(groupReference);
+
+        Md md = new Md();
+        md.h1("Combined credit proposal · " + group.name() + " (" + group.reference() + ")");
+        md.muted("Group-level rollup of every tagged member's authoritative figures. Advisory, grounded, "
+                + "human-gated. No figure below is computed by the model — they are quoted verbatim from the "
+                + "rating / capital / pricing / origination services.");
+        md.spacer();
+
+        // 1) Group summary
+        md.h2("1. Group summary");
+        md.bullets(
+                bullet("Group reference", group.reference()),
+                bullet("Group RM", String.valueOf(group.groupRmId())),
+                bullet("Country", String.valueOf(group.country())),
+                bullet("Multi-country", String.valueOf(group.multiCountry())),
+                bullet("Members tagged", String.valueOf(insights.memberCount())),
+                bullet("Active obligors", String.valueOf(insights.obligorCount())),
+                bullet("Members with live application", String.valueOf(insights.membersWithApplication())),
+                bullet("Members below RAROC hurdle (advisory)", String.valueOf(insights.membersBelowHurdle())),
+                bullet("Members with rating override", String.valueOf(insights.membersOverridden())));
+
+        // 2) Group-level aggregates
+        md.h2("2. Group-level aggregates (deterministic, unchanged)");
+        Map<String, String> rollup = new LinkedHashMap<>();
+        insights.totalExposureByCurrency().forEach((ccy, amt) ->
+                rollup.put("Proposed exposure · " + ccy, String.format(Locale.UK, "%,.0f", amt)));
+        if (insights.weightedAveragePd() != null) {
+            rollup.put("Weighted-average PD", pct(insights.weightedAveragePd()));
+        }
+        if (insights.weightedAverageRaroc() != null) {
+            rollup.put("Weighted-average RAROC", pct(insights.weightedAverageRaroc()));
+        }
+        if (insights.lowestGrade() != null) {
+            rollup.put("Grade band (best → weakest)",
+                    insights.highestGrade() + " → " + insights.lowestGrade());
+        }
+        md.kvBlock(rollup);
+
+        if (!insights.concentrations().isEmpty()) {
+            md.h2("3. Concentrations (advisory)");
+            for (String c : insights.concentrations()) {
+                md.line("- " + c);
+            }
+        }
+        if (!insights.riskCallouts().isEmpty()) {
+            md.h2("4. Risk callouts (advisory)");
+            for (String c : insights.riskCallouts()) {
+                md.line("- " + c);
+            }
+        }
+
+        // 5) Per-member sections — each pulls the member's deterministic figures verbatim.
+        md.h2("5. Per-member breakdown");
+        for (GroupMemberInsight m : insights.members()) {
+            md.line("**" + m.counterpartyName() + "** · " + m.counterpartyRef()
+                    + " · " + nv(m.segment()) + " · " + nv(m.recordType())
+                    + " · RM " + nv(m.rm()));
+            if (m.latestApplicationReference() == null) {
+                md.line("_No live application on file._");
+                continue;
+            }
+            Map<String, String> mv = new LinkedHashMap<>();
+            mv.put("Latest application", m.latestApplicationReference()
+                    + " · " + nv(m.applicationStatus()));
+            if (m.finalGrade() != null) {
+                mv.put("Rating (model → final)",
+                        nv(m.modelGrade()) + " → " + m.finalGrade()
+                                + (m.ratingConfirmed() ? " ✓" : " · unconfirmed")
+                                + (m.ratingOverridden() ? " · OVERRIDDEN" : ""));
+            }
+            if (m.pd() != null) mv.put("PD", pct(m.pd()));
+            if (m.exposure() != null) mv.put("Proposed exposure",
+                    String.format(Locale.UK, "%,.0f", m.exposure()) + " " + nv(m.currency()));
+            mv.put("Facilities", String.valueOf(m.facilityCount()));
+            mv.put("Covenants", String.valueOf(m.covenantCount()));
+            if (m.recommendedRate() != null) {
+                mv.put("Pricing (advisory)",
+                        "rate " + pct(m.recommendedRate())
+                                + " · RAROC " + (m.raroc() == null ? "—" : pct(m.raroc()))
+                                + " vs hurdle " + (m.hurdleRaroc() == null ? "—" : pct(m.hurdleRaroc()))
+                                + (m.belowHurdle() ? " · BELOW HURDLE" : ""));
+            }
+            md.kvBlock(mv);
+        }
+
+        // 6) Narrative
+        md.h2("6. Advisory narrative");
+        md.line(insights.narrative());
+
+        // 7) Provenance
+        md.h2("7. Provenance and governance");
+        md.bullets(
+                bullet("Generated by", "Helix · proposal-generator (AI-assisted; human signs)"),
+                bullet("Grounding",
+                        "Every figure above is quoted verbatim from a platform service — none are invented or "
+                                + "recomputed by this report"),
+                bullet("Approval",
+                        "AI cannot approve. A named human at the required group-level authority must sign each "
+                                + "member proposal AND this combined rollup."),
+                bullet("Member proposals",
+                        "Linkages to per-member credit proposals remain authoritative; this rollup never "
+                                + "supersedes them."));
+
+        // Citations: one upstream lookup per member + the group endpoints.
+        Map<String, Object> citations = new LinkedHashMap<>();
+        citations.put("group",
+                "counterparty-service GET /api/initiation/groups/by-reference/" + groupReference);
+        citations.put("groupExposure",
+                "counterparty-service GET /api/initiation/groups/by-reference/" + groupReference + "/exposure");
+        Map<String, Object> memberCitations = new LinkedHashMap<>();
+        for (GroupMemberDto m : exposure.members()) {
+            memberCitations.put(m.reference(),
+                    "origination-service GET /api/applications/by-counterparty/" + m.reference());
+        }
+        citations.put("members", memberCitations);
+
+        String groupKey = "GRP:" + groupReference;
+        int version = proposals.findFirstByApplicationReferenceOrderByVersionDesc(groupKey)
+                .map(p -> p.getVersion() + 1).orElse(1);
+
+        CreditProposal p = new CreditProposal();
+        p.setApplicationReference(groupKey);
+        p.setVersion(version);
+        p.setMarkdown(md.markdown());
+        p.setHtml(md.html());
+        p.setCitations(citations);
+        p.setSections(List.of(
+                "Group summary", "Group-level aggregates", "Concentrations", "Risk callouts",
+                "Per-member breakdown", "Advisory narrative", "Provenance"));
+        p.setGeneratedBy(actor);
+        CreditProposal saved = proposals.save(p);
+        audit.ai("proposal-generator", "GROUP_CREDIT_PROPOSAL_GENERATED", "Group", group.reference(),
+                "Generated combined group proposal v%d for %s — %d member(s), %d with application"
+                        .formatted(version, group.name(), insights.memberCount(), insights.membersWithApplication()),
+                Map.of("version", version,
+                        "memberCount", insights.memberCount(),
+                        "membersWithApplication", insights.membersWithApplication(),
+                        "membersBelowHurdle", insights.membersBelowHurdle(),
+                        "advisory", true));
+        return saved;
     }
 
     // ----------------------------------------------------------- helpers

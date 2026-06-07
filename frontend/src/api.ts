@@ -342,6 +342,31 @@ export const initiation = {
   fetchCheck: (id: number, body: any, actor: string) => call<any>(`/counterparty/api/initiation/prospects/${id}/checks/fetch`, "POST", body, actor),
   refreshCheck: (checkId: number, actor: string) => call<any>(`/counterparty/api/initiation/checks/${checkId}/refresh`, "POST", undefined, actor),
   checks: (id: number) => call<any[]>(`/counterparty/api/initiation/prospects/${id}/checks`, "GET"),
+  suggestGroup: (id: number, actor: string) =>
+    call<any>(`/counterparty/api/initiation/counterparties/${id}/group/suggest`, "POST", undefined, actor),
+  createGroup: (body: any, actor: string) =>
+    call<any>("/counterparty/api/initiation/groups", "POST", body, actor),
+  tagToGroup: (counterpartyId: number, groupId: number, actor: string) =>
+    call<any>(`/counterparty/api/initiation/counterparties/${counterpartyId}/group/${groupId}`,
+              "POST", undefined, actor),
+  listGroups: () => call<any[]>("/counterparty/api/initiation/groups", "GET").catch(() => []),
+};
+
+// ---- groups · decisioning (advisory rollup + combined CP) ----
+export const groups = {
+  byReference: (ref: string) =>
+    call<any>(`/counterparty/api/initiation/groups/by-reference/${ref}`, "GET"),
+  exposureByReference: (ref: string) =>
+    call<any>(`/counterparty/api/initiation/groups/by-reference/${ref}/exposure`, "GET"),
+  insights: (ref: string, actor: string) =>
+    call<any>(`/decision/api/decisions/groups/${ref}/insights`, "GET", undefined, actor),
+  generateCombinedProposal: (ref: string, actor: string) =>
+    call<any>(`/decision/api/decisions/groups/${ref}/combined-proposal/generate`,
+              "POST", undefined, actor),
+  combinedProposal: (ref: string) =>
+    call<any>(`/decision/api/decisions/groups/${ref}/combined-proposal`, "GET"),
+  combinedVersions: (ref: string) =>
+    call<any[]>(`/decision/api/decisions/groups/${ref}/combined-proposal/versions`, "GET"),
 };
 
 // ---- master data (generic, maker-checker) ----
