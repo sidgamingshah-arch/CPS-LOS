@@ -193,6 +193,22 @@ export const decision = {
   testCovenants: (ref: string, actor: string) =>
     call<any[]>(`/decision/api/decisions/${ref}/covenants/test`, "POST", undefined, actor),
   covenantTests: (ref: string) => call<any[]>(`/decision/api/decisions/${ref}/covenants/tests`, "GET"),
+  // covenant intelligence (advisory extraction + certificate assessment)
+  covExtract: (ref: string, text: string, actor: string) =>
+    call<any[]>(`/decision/api/covenants/intel/${ref}/extract`, "POST", { text }, actor),
+  covExtractions: (ref: string) => call<any[]>(`/decision/api/covenants/intel/${ref}/extractions`, "GET"),
+  covConfirmExtraction: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/intel/extractions/${id}/confirm`, "POST", body, actor),
+  covRejectExtraction: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/intel/extractions/${id}/reject`, "POST", body, actor),
+  certAssess: (ref: string, text: string, actor: string) =>
+    call<any[]>(`/decision/api/covenants/intel/${ref}/certificate/assess`, "POST", { text }, actor),
+  certAssessments: (ref: string) =>
+    call<any[]>(`/decision/api/covenants/intel/${ref}/certificate/assessments`, "GET"),
+  certConfirm: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/intel/certificate/assessments/${id}/confirm`, "POST", body, actor),
+  certReject: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/intel/certificate/assessments/${id}/reject`, "POST", body, actor),
   generateProposal: (ref: string, actor: string) =>
     call<any>(`/decision/api/decisions/${ref}/credit-proposal/generate`, "POST", undefined, actor),
   latestProposal: (ref: string) => call<any>(`/decision/api/decisions/${ref}/credit-proposal`, "GET"),

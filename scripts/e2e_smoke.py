@@ -1026,6 +1026,102 @@ check("group insights + combined proposal stamped as AI events",
       and any(e.get("eventType") == "GROUP_CREDIT_PROPOSAL_GENERATED" for e in (gaudit or [])),
       f"{st} types={[e.get('eventType') for e in (gaudit or [])]}")
 
+print("== 44. Covenant intelligence: extract-from-CP · certificate assessment (advisory) ==")
+# 44a. Extract covenant candidates from credit-proposal free text
+cp_clauses = (
+    "The Borrower shall maintain a DSCR of at least 1.40x tested quarterly.\n"
+    "Net leverage (Net Debt to EBITDA) shall not exceed 2.5x at all times.\n"
+    "Interest coverage to be no less than 3.0 times, tested annually.\n"
+    "The Borrower shall provide audited financial statements within 120 days of year-end."
+)
+st, ext = call("POST", f"/decision/api/covenants/intel/{ref}/extract", {"text": cp_clauses}, actor="analyst.user")
+check("covenant extraction returns ≥3 financial candidates (info-only clause ignored)",
+      st == 200 and len(ext) >= 3, f"{st} {len(ext) if ext else 0}")
+by_metric = {e["metric"]: e for e in (ext or [])}
+check("DSCR candidate parsed (>=, 1.40, advisory DRAFT)",
+      "DSCR" in by_metric and by_metric["DSCR"]["operator"] == ">="
+      and abs(by_metric["DSCR"]["threshold"] - 1.40) < 1e-6
+      and by_metric["DSCR"]["advisory"] and by_metric["DSCR"]["status"] == "DRAFT",
+      str(by_metric.get("DSCR")))
+check("NET_LEVERAGE candidate parsed (<=, 2.5) from 'shall not exceed'",
+      "NET_LEVERAGE" in by_metric and by_metric["NET_LEVERAGE"]["operator"] == "<="
+      and abs(by_metric["NET_LEVERAGE"]["threshold"] - 2.5) < 1e-6,
+      str(by_metric.get("NET_LEVERAGE")))
+check("INTEREST_COVERAGE candidate parsed (>=, 3.0)",
+      "INTEREST_COVERAGE" in by_metric and by_metric["INTEREST_COVERAGE"]["operator"] == ">="
+      and abs(by_metric["INTEREST_COVERAGE"]["threshold"] - 3.0) < 1e-6,
+      str(by_metric.get("INTEREST_COVERAGE")))
+check("each candidate carries reasoning signals", all(len(e.get("signals") or []) >= 1 for e in ext))
+st, exaud = call("GET", f"/decision/api/audit/subject?type=Application&id={ref}")
+check("extraction stamped as AI event",
+      any(e.get("eventType") == "COVENANT_EXTRACTED" for e in (exaud or [])), f"{st}")
+
+# 44b. Human gate: confirm NET_LEVERAGE with an edited (deliberately tight) threshold; reject INTEREST_COVERAGE
+nl_id = by_metric["NET_LEVERAGE"]["id"]
+st, made = call("POST", f"/decision/api/covenants/intel/extractions/{nl_id}/confirm",
+                {"threshold": 0.10, "note": "tightened for test"}, actor="analyst.user")
+check("confirm materialises a real covenant (NET_LEVERAGE <= 0.10)",
+      st == 200 and made["metric"] == "NET_LEVERAGE" and abs(made["threshold"] - 0.10) < 1e-6, f"{st}")
+st, reconf = call("POST", f"/decision/api/covenants/intel/extractions/{nl_id}/confirm", {}, actor="analyst.user")
+check("re-confirm rejected (already CONFIRMED, 409)", st == 409, f"{st}")
+ic_id = by_metric["INTEREST_COVERAGE"]["id"]
+st, rej = call("POST", f"/decision/api/covenants/intel/extractions/{ic_id}/reject",
+               {"note": "duplicate of existing"}, actor="analyst.user")
+check("reject path -> REJECTED", st == 200 and rej["status"] == "REJECTED", f"{st}")
+st, covs_now = call("GET", f"/decision/api/decisions/{ref}/covenants")
+check("confirmed extraction appears in the covenant list",
+      any(c["metric"] == "NET_LEVERAGE" for c in covs_now), "")
+
+# 44c. Snapshot authoritative rating before the certificate run (for the invariant)
+st, pre = call("GET", f"/risk/api/risk/{ref}")
+pre_grade = pre["rating"]["finalGrade"]
+
+# 44d. Assess a borrower compliance certificate — taxonomy mismatch + disagreement detection
+cert = (
+    "Covenant compliance certificate for the quarter ended 31-Mar:\n"
+    "1. DSCR for the period stood at 2.00x — Complied.\n"
+    "2. Debt/EBITDA reported at 2.10x — Complied.\n"
+    "3. Insurance over secured assets maintained in full."
+)
+st, ass = call("POST", f"/decision/api/covenants/intel/{ref}/certificate/assess", {"text": cert}, actor="analyst.user")
+check("certificate assessment parses the two metric lines (free-text line ignored)",
+      st == 200 and len(ass) == 2, f"{st} {len(ass) if ass else 0}")
+by_sys = {a["systemMetric"]: a for a in (ass or [])}
+check("DSCR line maps to covenant, recomputes PASS, AGREES with borrower 'Complied'",
+      "DSCR" in by_sys and by_sys["DSCR"]["reportedStatus"] == "COMPLIED"
+      and by_sys["DSCR"]["covenantId"] is not None
+      and by_sys["DSCR"]["recomputedPassed"] is True
+      and by_sys["DSCR"]["agreement"] is True
+      and by_sys["DSCR"]["taxonomyMismatch"] is False,
+      str(by_sys.get("DSCR")))
+check("'Debt/EBITDA' flagged as TAXONOMY MISMATCH vs canonical NET_LEVERAGE",
+      "NET_LEVERAGE" in by_sys and by_sys["NET_LEVERAGE"]["taxonomyMismatch"] is True
+      and by_sys["NET_LEVERAGE"]["reportedLabel"] == "debt/ebitda",
+      str(by_sys.get("NET_LEVERAGE")))
+check("borrower 'Complied' DISAGREES with deterministic recompute (NET_LEVERAGE <= 0.10 fails)",
+      "NET_LEVERAGE" in by_sys and by_sys["NET_LEVERAGE"]["reportedStatus"] == "COMPLIED"
+      and by_sys["NET_LEVERAGE"]["recomputedPassed"] is False
+      and by_sys["NET_LEVERAGE"]["agreement"] is False,
+      str(by_sys.get("NET_LEVERAGE")))
+st, assaud = call("GET", f"/decision/api/audit/subject?type=Application&id={ref}")
+check("certificate assessment stamped as AI event",
+      any(e.get("eventType") == "CERTIFICATE_ASSESSED" for e in (assaud or [])), "")
+
+# 44e. Human gate on an assessment
+dscr_assess_id = by_sys["DSCR"]["id"]
+st, confa = call("POST", f"/decision/api/covenants/intel/certificate/assessments/{dscr_assess_id}/confirm",
+                 {"note": "agrees with spreading"}, actor="analyst.user")
+check("certificate assessment confirmed -> CONFIRMED", st == 200 and confa["status"] == "CONFIRMED", f"{st}")
+st, reconfa = call("POST", f"/decision/api/covenants/intel/certificate/assessments/{dscr_assess_id}/confirm",
+                   {}, actor="analyst.user")
+check("re-confirm assessment rejected (409)", st == 409, f"{st}")
+
+# 44f. INVARIANT — authoritative rating untouched by extraction/assessment
+st, post = call("GET", f"/risk/api/risk/{ref}")
+check("AUTHORITATIVE rating UNCHANGED by covenant extraction + certificate assessment",
+      post["rating"]["finalGrade"] == pre_grade,
+      f"{pre_grade} -> {post['rating']['finalGrade']}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")

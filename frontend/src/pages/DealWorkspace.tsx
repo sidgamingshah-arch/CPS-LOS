@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { decision, origination, portfolio, risk, tracking as covTracking, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, GradeBadge, statusTone, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, Field, GovFlow, GradeBadge, statusTone, useAsync } from "../ui";
 import CopilotPanel from "../CopilotPanel";
 
 const REASON_CODES = ["POST_BALANCE_SHEET_EVENT", "MANAGEMENT_QUALITY", "GROUP_SUPPORT", "SECTOR_OUTLOOK", "DATA_QUALITY", "COLLATERAL_STRENGTH", "OTHER"];
@@ -259,6 +259,9 @@ export default function DealWorkspace({ reference }: { reference: string }) {
               </tr>))}</tbody></table>
         )}
       </Card>
+
+      {/* Covenant intelligence: extract from CP free text + assess compliance certificate */}
+      <CovenantIntelBlock reference={reference} onConfirmed={() => covs.reload()} />
 
       {/* Covenant tracking workflow */}
       <CovenantTrackingBlock reference={reference} />
@@ -722,4 +725,110 @@ export default function DealWorkspace({ reference }: { reference: string }) {
       </Card>
     );
   }
+}
+
+// ── Covenant intelligence: AI extraction from CP free text + certificate assessment ──
+function CovenantIntelBlock({ reference, onConfirmed }: { reference: string; onConfirmed: () => void }) {
+  const { actor, notify } = useApp();
+  const extractions = useAsync(() => decision.covExtractions(reference).catch(() => [] as any[]), [reference]);
+  const assessments = useAsync(() => decision.certAssessments(reference).catch(() => [] as any[]), [reference]);
+
+  const [clauseText, setClauseText] = useState(
+    "The Borrower shall maintain a DSCR of at least 1.40x tested quarterly.\n" +
+    "Net leverage (Net Debt to EBITDA) shall not exceed 2.5x at all times.\n" +
+    "Interest coverage to be no less than 3.0 times, tested annually.",
+  );
+  const [certText, setCertText] = useState(
+    "Covenant compliance certificate for the quarter:\n" +
+    "1. DSCR for the period stood at 2.00x — Complied.\n" +
+    "2. Debt/EBITDA reported at 2.10x — Complied.",
+  );
+  const [busy, setBusy] = useState(false);
+
+  const go = async (fn: () => Promise<any>, ok: string) => {
+    setBusy(true);
+    try { await fn(); notify(ok); }
+    catch (e: any) { notify(e.message, true); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Card title="Covenant intelligence"
+      sub="AI extracts covenant definitions + thresholds from CP free text, and reads compliance certificates — flagging taxonomy mismatches and disagreements vs the deterministic spread recompute. Advisory; a human confirms each."
+      right={<GovFlow ai="AI EXTRACTS / READS" human="HUMAN CONFIRMS" note="never auto-applied to figures" />}>
+
+      {/* Extraction from CP free text */}
+      <div className="grid cols-2" style={{ alignItems: "start" }}>
+        <div>
+          <Field label="Covenant clauses (free text from the CP)">
+            <textarea rows={5} value={clauseText} onChange={(e) => setClauseText(e.target.value)} />
+          </Field>
+          <Button busy={busy} disabled={!clauseText.trim()}
+            onClick={() => go(async () => { await decision.covExtract(reference, clauseText, actor); extractions.reload(); }, "Covenants extracted — review below")}>
+            Extract covenants
+          </Button>
+        </div>
+        <div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Extracted candidates</div>
+          {(extractions.data || []).length === 0 ? <div className="muted">None yet.</div> : (
+            <table><thead><tr><th>Metric</th><th>Test</th><th className="num">Conf.</th><th>Status</th><th></th></tr></thead>
+              <tbody>{extractions.data!.map((e: any) => (
+                <tr key={e.id}>
+                  <td>{e.metric}<div className="prov" style={{ fontSize: 11 }}>“{e.reportedLabel}”</div></td>
+                  <td className="mono">{e.operator} {e.threshold ?? "—"}</td>
+                  <td className="num">{Math.round((e.confidence || 0) * 100)}%</td>
+                  <td><Badge kind={e.status === "CONFIRMED" ? "ok" : e.status === "REJECTED" ? "bad" : "ai"}>{e.status}</Badge></td>
+                  <td>{e.status === "DRAFT" && (
+                    <div className="btnrow">
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await decision.covConfirmExtraction(e.id, {}, actor); extractions.reload(); onConfirmed(); }, "Covenant created")}>Confirm</button>
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await decision.covRejectExtraction(e.id, { note: "rejected" }, actor); extractions.reload(); }, "Rejected")}>Reject</button>
+                    </div>
+                  )}</td>
+                </tr>))}</tbody></table>
+          )}
+        </div>
+      </div>
+
+      <div className="hr" style={{ margin: "16px 0", borderTop: "1px solid var(--line)" }} />
+
+      {/* Certificate assessment */}
+      <div className="grid cols-2" style={{ alignItems: "start" }}>
+        <div>
+          <Field label="Compliance certificate (borrower-submitted)">
+            <textarea rows={4} value={certText} onChange={(e) => setCertText(e.target.value)} />
+          </Field>
+          <Button busy={busy} disabled={!certText.trim()}
+            onClick={() => go(async () => { await decision.certAssess(reference, certText, actor); assessments.reload(); }, "Certificate assessed — review below")}>
+            Assess certificate
+          </Button>
+        </div>
+        <div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Assessment vs deterministic recompute</div>
+          {(assessments.data || []).length === 0 ? <div className="muted">None yet.</div> : (
+            <table><thead><tr><th>Metric</th><th>Reported</th><th>Recompute</th><th>Verdict</th></tr></thead>
+              <tbody>{assessments.data!.map((a: any) => (
+                <tr key={a.id}>
+                  <td>
+                    {a.systemMetric}
+                    {a.taxonomyMismatch && <div><Badge kind="warn">taxonomy mismatch</Badge></div>}
+                    <div className="prov" style={{ fontSize: 11 }}>“{a.reportedLabel}”</div>
+                  </td>
+                  <td><Badge kind={a.reportedStatus === "COMPLIED" ? "ok" : a.reportedStatus === "NOT_COMPLIED" ? "bad" : "info"}>{a.reportedStatus}</Badge></td>
+                  <td className="mono">{a.recomputedObserved == null ? "—" : `${fmt.num(a.recomputedObserved, 2)} ${a.operator} ${a.threshold}`}<br/>
+                    {a.recomputedPassed == null ? "" : a.recomputedPassed ? <Badge kind="ok">pass</Badge> : <Badge kind="bad">breach</Badge>}</td>
+                  <td>{a.agreement == null ? <span className="muted">—</span>
+                    : a.agreement ? <Badge kind="ok">agrees</Badge> : <Badge kind="bad">DISAGREES</Badge>}</td>
+                </tr>))}</tbody></table>
+          )}
+          {(assessments.data || []).some((a: any) => a.agreement === false) && (
+            <div className="alert err" style={{ marginTop: 8 }}>
+              <AiBadge label="AI · advisory" /> One or more borrower-reported statuses disagree with the deterministic recompute — analyst review required.
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
 }
