@@ -81,6 +81,23 @@ export const origination = {
     call<any>(`/origination/api/applications/${ref}/collaterals`, "POST", body, actor),
   perfectCollateral: (id: number, actor: string) =>
     call<any>(`/origination/api/applications/collaterals/${id}/perfect`, "POST", undefined, actor),
+  // collateral intelligence: extraction + LTV revaluation + charge-Excel
+  colExtract: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/collateral-intel/${ref}/extract`, "POST", body, actor),
+  colExtractions: (ref: string) =>
+    call<any[]>(`/origination/api/collateral-intel/${ref}/extractions`, "GET"),
+  colConfirm: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/collateral-intel/extractions/${id}/confirm`, "POST", body, actor),
+  colReject: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/collateral-intel/extractions/${id}/reject`, "POST", body, actor),
+  colRevalue: (collateralId: number, body: any, actor: string) =>
+    call<any>(`/origination/api/collateral-intel/collaterals/${collateralId}/revalue`, "POST", body, actor),
+  colReviewRevaluation: (revaluationId: number, body: any, actor: string) =>
+    call<any>(`/origination/api/collateral-intel/revaluations/${revaluationId}/review`, "POST", body, actor),
+  colRevaluations: (ref: string) =>
+    call<any[]>(`/origination/api/collateral-intel/${ref}/revaluations`, "GET"),
+  chargeExcelUrl: (ref: string) =>
+    `/origination/api/collateral-intel/${ref}/charge-excel`,
 };
 
 // ---- risk ----

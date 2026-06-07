@@ -87,6 +87,9 @@ export default function DealWorkspace({ reference }: { reference: string }) {
         <CollateralsTable cols={cols.data || []} onChange={() => { cols.reload(); reload(); }} />
       </Card>
 
+      {/* Collateral intelligence: type-aware extraction + LTV revaluation + charge-Excel */}
+      <CollateralIntelBlock reference={reference} cols={cols.data || []} onChange={cols.reload} />
+
       {/* Documents */}
       <Card title="Documents" sub="AI classification with confidence; low-confidence routed to human review (PRD §3).">
         <div className="btnrow" style={{ marginBottom: 10 }}>
@@ -828,6 +831,153 @@ function CovenantIntelBlock({ reference, onConfirmed }: { reference: string; onC
             </div>
           )}
         </div>
+      </div>
+    </Card>
+  );
+}
+
+// ── Collateral intelligence: type-aware extraction + LTV revaluation + charge-Excel ──
+function CollateralIntelBlock({ reference, cols, onChange }: { reference: string; cols: any[]; onChange: () => void }) {
+  const { actor, notify } = useApp();
+  const extractions = useAsync(() => origination.colExtractions(reference).catch(() => [] as any[]), [reference]);
+  const revaluations = useAsync(() => origination.colRevaluations(reference).catch(() => [] as any[]), [reference]);
+
+  const KINDS = ["VALUATION_REPORT", "TITLE_DEED", "INSURANCE_POLICY", "VEHICLE_RC", "BOND_CERT", "PG_DEED"];
+  const [docKind, setDocKind] = useState("VALUATION_REPORT");
+  const [docText, setDocText] = useState(
+    "VALUATION REPORT\nProperty type: Industrial warehouse\nAddress: Plot 14, Phase 2, Pune\nMarket value: INR 4,80,00,000\nValuation date: 2026-03-15\nValuer: Knight & Co Surveyors\n",
+  );
+
+  const [revalCollateralId, setRevalCollateralId] = useState<number | "">("");
+  const [revalNewMV, setRevalNewMV] = useState<string>("");
+  const [revalDrawn, setRevalDrawn] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+
+  const go = async (fn: () => Promise<any>, ok: string) => {
+    setBusy(true);
+    try { await fn(); notify(ok); }
+    catch (e: any) { notify(e.message, true); }
+    finally { setBusy(false); }
+  };
+
+  const sevTone = (s: string) => s === "BREACH" ? "bad" : s === "WARN" ? "warn" : "info";
+
+  return (
+    <Card title="Collateral intelligence"
+      sub="Type-aware extraction over an uploaded collateral document, LTV-driven revaluation alerts, and the charge-Excel export. Advisory; live collateral values move only on human confirm."
+      right={<GovFlow ai="AI EXTRACTS / FLAGS" human="HUMAN CONFIRMS" note="capital projection untouched" />}>
+
+      {/* Type-aware extraction */}
+      <div className="grid cols-2" style={{ alignItems: "start" }}>
+        <div>
+          <Field label="Document kind">
+            <select value={docKind} onChange={(e) => setDocKind(e.target.value)}>
+              {KINDS.map((k) => <option key={k} value={k}>{k.replace(/_/g, " ")}</option>)}
+            </select>
+          </Field>
+          <Field label="Document text">
+            <textarea rows={6} value={docText} onChange={(e) => setDocText(e.target.value)} />
+          </Field>
+          <Button busy={busy} disabled={!docText.trim()}
+            onClick={() => go(async () => { await origination.colExtract(reference, { documentKind: docKind, text: docText }, actor); extractions.reload(); }, "Collateral extracted — review below")}>
+            Extract collateral
+          </Button>
+        </div>
+        <div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Extracted candidates</div>
+          {(extractions.data || []).length === 0 ? <div className="muted">None yet.</div> : (
+            <table>
+              <thead><tr><th>Type · kind</th><th>Fields</th><th>Missing</th><th>Status</th><th></th></tr></thead>
+              <tbody>{extractions.data!.map((e: any) => (
+                <tr key={e.id}>
+                  <td>{e.collateralType}<div className="prov" style={{ fontSize: 11 }}>{e.documentKind}</div></td>
+                  <td className="num">{Object.keys(e.fields || {}).length}<div className="prov" style={{ fontSize: 11 }}>conf {Math.round((e.overallConfidence || 0) * 100)}%</div></td>
+                  <td>{(e.missingMandatory || []).length === 0
+                    ? <Badge kind="ok">complete</Badge>
+                    : <Badge kind="warn">{(e.missingMandatory || []).length} missing</Badge>}</td>
+                  <td><Badge kind={e.status === "CONFIRMED" ? "ok" : e.status === "REJECTED" ? "bad" : "ai"}>{e.status}</Badge></td>
+                  <td>{e.status === "SUGGESTED" && (
+                    <div className="btnrow">
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await origination.colConfirm(e.id, {}, actor); extractions.reload(); onChange(); }, "Collateral created")}>Confirm</button>
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await origination.colReject(e.id, { note: "rejected" }, actor); extractions.reload(); }, "Rejected")}>Reject</button>
+                    </div>
+                  )}</td>
+                </tr>))}</tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div style={{ margin: "16px 0", borderTop: "1px solid var(--line)" }} />
+
+      {/* LTV revaluation */}
+      <div className="grid cols-2" style={{ alignItems: "start" }}>
+        <div>
+          <Field label="Collateral">
+            <select value={revalCollateralId} onChange={(e) => setRevalCollateralId(e.target.value ? Number(e.target.value) : "")}>
+              <option value="">— select collateral —</option>
+              {(cols || []).map((c: any) => (
+                <option key={c.id} value={c.id}>#{c.id} · {c.collateralType} · {fmt.money(c.marketValue, "")}</option>
+              ))}
+            </select>
+          </Field>
+          <div className="grid cols-2">
+            <Field label="New market value"><input type="number" value={revalNewMV} onChange={(e) => setRevalNewMV(e.target.value)} /></Field>
+            <Field label="Drawn exposure"><input type="number" value={revalDrawn} onChange={(e) => setRevalDrawn(e.target.value)} /></Field>
+          </div>
+          <Button busy={busy} disabled={!revalCollateralId || !revalNewMV || !revalDrawn}
+            onClick={() => go(async () => {
+              await origination.colRevalue(Number(revalCollateralId),
+                { newMarketValue: Number(revalNewMV), drawnExposure: Number(revalDrawn),
+                  trigger: "VALUATION_UPDATE", ltvThreshold: 0.80 }, actor);
+              revaluations.reload();
+            }, "Revaluation captured — review below")}>
+            Capture revaluation
+          </Button>
+          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+            <AiBadge label="AI · advisory" /> Captured values are advisory until a human applies them to the live collateral row.
+          </div>
+        </div>
+        <div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Recent revaluations</div>
+          {(revaluations.data || []).length === 0 ? <div className="muted">None yet.</div> : (
+            <table>
+              <thead><tr><th>When</th><th>Col</th><th>MV</th><th>LTV</th><th>Severity</th><th>Status</th><th></th></tr></thead>
+              <tbody>{revaluations.data!.slice(0, 8).map((r: any) => (
+                <tr key={r.id}>
+                  <td className="mono" style={{ whiteSpace: "nowrap" }}>{new Date(r.createdAt).toLocaleString()}</td>
+                  <td>#{r.collateralId}</td>
+                  <td className="mono">{fmt.money(r.previousMarketValue, "")} → {fmt.money(r.newMarketValue, "")}</td>
+                  <td className="mono">{r.ltvBefore.toFixed(2)} → {r.ltvAfter.toFixed(2)}</td>
+                  <td><Badge kind={sevTone(r.alertSeverity)}>{r.alertSeverity}</Badge></td>
+                  <td><Badge kind={r.confirmStatus === "APPLIED" ? "ok" : r.confirmStatus === "REJECTED" ? "bad" : "warn"}>{r.confirmStatus}</Badge></td>
+                  <td>{r.confirmStatus === "PENDING" && (
+                    <div className="btnrow">
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await origination.colReviewRevaluation(r.id, { apply: true, note: "confirmed" }, actor); revaluations.reload(); onChange(); }, "Applied to live collateral")}>Apply</button>
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await origination.colReviewRevaluation(r.id, { apply: false, note: "rejected" }, actor); revaluations.reload(); }, "Rejected")}>Reject</button>
+                    </div>
+                  )}</td>
+                </tr>))}</tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div style={{ margin: "16px 0", borderTop: "1px solid var(--line)" }} />
+
+      {/* Charge-Excel */}
+      <div className="flexbetween">
+        <div>
+          <b>Charge-Excel</b>
+          <div className="muted" style={{ fontSize: 12 }}>
+            CSV of every collateral with registration / valuation / perfection — the pre-release file for the limit-release checklist.
+          </div>
+        </div>
+        <a className="btn" href={origination.chargeExcelUrl(reference)} target="_blank" rel="noreferrer">Download CSV</a>
       </div>
     </Card>
   );

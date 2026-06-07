@@ -1122,6 +1122,149 @@ check("AUTHORITATIVE rating UNCHANGED by covenant extraction + certificate asses
       post["rating"]["finalGrade"] == pre_grade,
       f"{pre_grade} -> {post['rating']['finalGrade']}")
 
+print("== 45. Collateral intelligence: type-aware extraction · LTV revaluation · charge-Excel ==")
+# 45a. Snapshot the authoritative rating for the unchanged-by-collateral invariant
+st, pre_col = call("GET", f"/risk/api/risk/{ref}")
+pre_col_grade = pre_col["rating"]["finalGrade"]
+
+# 45b. Extract from a property valuation report
+val_text = (
+    "VALUATION REPORT\n"
+    "Property type: Industrial warehouse\n"
+    "Address: Plot 14, Phase 2, Pune Industrial Area\n"
+    "Market value: INR 4,80,00,000\n"
+    "Distressed sale value: INR 3,60,00,000\n"
+    "Valuation date: 2026-03-15\n"
+    "Valuer: Knight & Co Surveyors\n"
+    "Area: 28000 sqft\n"
+)
+st, col_ex = call("POST", f"/origination/api/collateral-intel/{ref}/extract",
+                  {"documentKind": "VALUATION_REPORT", "text": val_text}, actor="analyst.user")
+check("valuation extraction returns SUGGESTED candidate",
+      st == 200 and col_ex["status"] == "SUGGESTED" and col_ex["advisory"] is True, f"{st}")
+check("valuation extraction parsed market value + valuer + date",
+      col_ex["collateralType"] == "PROPERTY"
+      and "marketValue" in col_ex["fields"]
+      and "valuerName" in col_ex["fields"]
+      and "valuationDate" in col_ex["fields"],
+      str(list(col_ex.get("fields", {}).keys())))
+check("missingMandatory list surfaces gaps explicitly",
+      isinstance(col_ex.get("missingMandatory"), list), str(col_ex.get("missingMandatory")))
+
+# 45c. Confirm — materialises a real collateral via the same path analysts use
+st, col_made = call("POST", f"/origination/api/collateral-intel/extractions/{col_ex['id']}/confirm",
+                    {"marketValue": 48000000, "perfectionStatus": "PERFECTED"}, actor="analyst.user")
+check("confirm materialises a PROPERTY collateral",
+      st == 200 and col_made["collateralType"] == "PROPERTY"
+      and abs(col_made["marketValue"] - 48000000) < 1 and col_made["perfectionStatus"] == "PERFECTED",
+      f"{st} {col_made}")
+collateral_id = col_made["id"]
+st, recon = call("POST", f"/origination/api/collateral-intel/extractions/{col_ex['id']}/confirm",
+                 {"marketValue": 1}, actor="analyst.user")
+check("re-confirm rejected (already CONFIRMED, 409)", st == 409, f"{st}")
+
+# 45d. Insurance + Vehicle templates — reject path on a low-quality extraction
+ins_text = (
+    "Insurance policy\n"
+    "Policy No: AXAUAE-99887766\n"
+    "Type of policy: Industrial all-risk\n"
+    "Insurer: AXA Insurance Gulf\n"
+    "Beneficiary: Helix Bank\n"
+    "Sum insured: AED 50,000,000\n"
+    "Premium: AED 175,000\n"
+    "Valid until: 2027-03-14\n"
+)
+st, ins_ex = call("POST", f"/origination/api/collateral-intel/{ref}/extract",
+                  {"documentKind": "INSURANCE_POLICY", "text": ins_text}, actor="analyst.user")
+check("insurance extraction parsed policy + insurer + sumInsured + validUntil",
+      st == 200 and all(k in ins_ex["fields"] for k in ("policyNo", "insurerName", "sumInsured", "validUntil"))
+      and not ins_ex["missingMandatory"],
+      f"missing={ins_ex.get('missingMandatory')} fields={list(ins_ex['fields'].keys())}")
+
+st, veh_ex = call("POST", f"/origination/api/collateral-intel/{ref}/extract",
+                  {"documentKind": "VEHICLE_RC", "text": "Vehicle: Tata 5252.S\nMake: Tata\nModel: 5252.S"},
+                  actor="analyst.user")
+check("vehicle extraction surfaces missing mandatory fields",
+      st == 200 and "identificationNo" in veh_ex["missingMandatory"], str(veh_ex.get("missingMandatory")))
+st, veh_rej = call("POST", f"/origination/api/collateral-intel/extractions/{veh_ex['id']}/reject",
+                   {"note": "RC scan illegible"}, actor="analyst.user")
+check("reject path -> REJECTED", st == 200 and veh_rej["status"] == "REJECTED", f"{st}")
+
+# 45e. Snapshot live collateral MV before revaluation (for the apply-step assertion)
+st, cols_before = call("GET", f"/origination/api/applications/{ref}/collaterals")
+target = next((c for c in cols_before if c["id"] == collateral_id), None)
+check("live collateral on file pre-revaluation",
+      target is not None and abs(target["marketValue"] - 48000000) < 1, str(target))
+
+# 45f. Revalue — drop MV to push LTV past the 0.80 threshold; expect BREACH severity, PENDING confirm
+st, reval = call("POST", f"/origination/api/collateral-intel/collaterals/{collateral_id}/revalue",
+                 {"newMarketValue": 20000000, "drawnExposure": 24000000,
+                  "trigger": "VALUATION_UPDATE", "ltvThreshold": 0.80,
+                  "note": "Market correction"}, actor="risk.officer")
+check("revaluation produced LTV breach (drawn 24m / new 20m = 1.20 > 0.80)",
+      st == 200 and reval["ltvBreached"] is True and reval["alertSeverity"] == "BREACH"
+      and abs(reval["ltvAfter"] - 1.20) < 1e-6 and reval["confirmStatus"] == "PENDING", f"{st} {reval}")
+check("revaluation stamped as AI advisory event (audit + flag)",
+      reval["triggeredBy"] == "risk.officer", f"triggeredBy={reval.get('triggeredBy')}")
+st, reval_aud = call("GET", f"/origination/api/audit/subject?type=Application&id={ref}")
+check("COLLATERAL_REVALUED stamped on the application audit trail",
+      any(e.get("eventType") == "COLLATERAL_REVALUED" for e in (reval_aud or [])), "")
+
+# 45g. INVARIANT — pending revaluation does NOT mutate live collateral MV
+st, cols_mid = call("GET", f"/origination/api/applications/{ref}/collaterals")
+mid_target = next((c for c in cols_mid if c["id"] == collateral_id), None)
+check("live collateral MV UNCHANGED by pending revaluation",
+      mid_target is not None and abs(mid_target["marketValue"] - 48000000) < 1,
+      f"{mid_target.get('marketValue') if mid_target else None}")
+
+# 45h. Human gate — apply the revaluation
+st, applied = call("POST", f"/origination/api/collateral-intel/revaluations/{reval['id']}/review",
+                   {"apply": True, "note": "valuer confirmed"}, actor="analyst.user")
+check("revaluation APPLIED on human confirm",
+      st == 200 and applied["confirmStatus"] == "APPLIED" and applied["reviewedBy"] == "analyst.user", f"{st}")
+st, re_apply = call("POST", f"/origination/api/collateral-intel/revaluations/{reval['id']}/review",
+                    {"apply": True}, actor="analyst.user")
+check("re-review rejected (already APPLIED, 409)", st == 409, f"{st}")
+st, cols_after = call("GET", f"/origination/api/applications/{ref}/collaterals")
+after_target = next((c for c in cols_after if c["id"] == collateral_id), None)
+check("live collateral MV updated only AFTER human apply",
+      after_target is not None and abs(after_target["marketValue"] - 20000000) < 1,
+      f"after MV={after_target.get('marketValue') if after_target else None}")
+
+# 45i. Benign revaluation — LTV well below threshold, INFO severity
+st, reval2 = call("POST", f"/origination/api/collateral-intel/collaterals/{collateral_id}/revalue",
+                  {"newMarketValue": 60000000, "drawnExposure": 24000000,
+                   "trigger": "PERIODIC", "ltvThreshold": 0.80}, actor="risk.officer")
+check("benign revaluation flagged INFO (LTV 0.40 < 0.80)",
+      st == 200 and reval2["ltvBreached"] is False and reval2["alertSeverity"] == "INFO", f"{st} {reval2}")
+st, revals = call("GET", f"/origination/api/collateral-intel/{ref}/revaluations")
+check("revaluations listed in descending order", st == 200 and len(revals) >= 2 and revals[0]["id"] > revals[1]["id"], f"{st}")
+
+# 45j. Charge-Excel — CSV (Excel-compatible)
+import urllib.request
+gw = "http://localhost:8080"
+req_csv = urllib.request.Request(f"{gw}/origination/api/collateral-intel/{ref}/charge-excel",
+                                 headers={"X-Actor": "credit.ops"})
+with urllib.request.urlopen(req_csv, timeout=30) as r:
+    csv_status = r.status
+    csv_body = r.read().decode()
+    csv_disp = r.headers.get("Content-Disposition", "")
+    csv_ct = r.headers.get("Content-Type", "")
+check("charge-Excel returns CSV with attachment header",
+      csv_status == 200 and "csv" in csv_ct.lower() and "attachment" in csv_disp,
+      f"status={csv_status} ct={csv_ct} disp={csv_disp}")
+csv_lines = [l for l in csv_body.splitlines() if l.strip()]
+check("charge-Excel header + per-collateral rows",
+      len(csv_lines) >= 2 and csv_lines[0].startswith("Application,Borrower,Collateral ID")
+      and any(f",{collateral_id}," in l for l in csv_lines),
+      f"lines={len(csv_lines)} first={csv_lines[0][:60] if csv_lines else ''}")
+
+# 45k. INVARIANT — authoritative rating untouched by collateral intelligence
+st, post_col = call("GET", f"/risk/api/risk/{ref}")
+check("AUTHORITATIVE rating UNCHANGED by collateral extraction + revaluation",
+      post_col["rating"]["finalGrade"] == pre_col_grade,
+      f"{pre_col_grade} -> {post_col['rating']['finalGrade']}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")
