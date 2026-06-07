@@ -23,6 +23,7 @@ import PricingLab from "./pages/PricingLab";
 import Spreading from "./pages/Spreading";
 import Exports from "./pages/Exports";
 import Groups from "./pages/Groups";
+import Cpt from "./pages/Cpt";
 
 const NAV = [
   { key: "dashboard", label: "Portfolio Dashboard" },
@@ -32,6 +33,7 @@ const NAV = [
   { key: "docintel", label: "Doc Intelligence" },
   { key: "counterparties", label: "Counterparties" },
   { key: "groups", label: "Borrower Groups" },
+  { key: "cpt", label: "Client Planning" },
   { key: "limits", label: "Limits" },
   { key: "cad", label: "CAD · Documentation" },
   { key: "docgen", label: "Doc Generation" },
@@ -56,6 +58,7 @@ const CRUMB: Record<string, string> = {
   docintel: "GenAI document intelligence · extraction (human-confirmed) · language · translation · checks",
   counterparties: "Onboarding · KYC/KYB · UBO",
   groups: "Advisory group identification · group insights · combined credit proposal (member figures unchanged)",
+  cpt: "Client Planning Template · wallet sizing · cross-sell whitespace · completeness nudges (advisory)",
   limits: "Multi-level limit tree · fungibility · View/Validation/Utilisation APIs",
   cad: "Credit Administration · checklist · waivers/deviations · limit release",
   docgen: "Template-driven document generation · clause add/remove/edit · human-confirm gate",
@@ -128,6 +131,7 @@ export default function App() {
             {view === "docintel" && <DocIntel />}
             {view === "counterparties" && <Counterparties />}
             {view === "groups" && <Groups />}
+            {view === "cpt" && <Cpt />}
             {view === "limits" && <Limits />}
             {view === "cad" && <Cad />}
             {view === "docgen" && <DocGen />}

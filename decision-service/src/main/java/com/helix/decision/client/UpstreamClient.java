@@ -223,6 +223,48 @@ public class UpstreamClient {
         }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record CounterpartyDto(Long id, String reference, String legalName, String segment,
+                                  String sector, String country, String industry, String subIndustry,
+                                  String businessSegment, String borrowerType, String recordType,
+                                  String lifecycleStatus, String rmId, Long groupId, String externalId,
+                                  String createdAt) {
+    }
+
+    public CounterpartyDto counterpartyByReference(String reference) {
+        try {
+            return counterparty.get().uri("/api/counterparties/by-reference/{r}", reference)
+                    .retrieve().body(CounterpartyDto.class);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "counterparty-service unavailable for " + reference + ": " + e.getMessage());
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record AuditEventDto(Long id, String actor, String actorType, String eventType,
+                                String subjectType, String subjectId, String summary,
+                                String occurredAt) {
+    }
+
+    /** Audit history for any subject; used by CPT to detect missing call reports / RM changes. */
+    public List<AuditEventDto> auditFor(RestClient client, String type, String id) {
+        try {
+            AuditEventDto[] arr = client.get()
+                    .uri(uri -> uri.path("/api/audit/subject").queryParam("type", type).queryParam("id", id).build())
+                    .retrieve().body(AuditEventDto[].class);
+            return arr == null ? List.of() : List.of(arr);
+        } catch (Exception e) {
+            log.warn("audit lookup unavailable for {}/{} ({})", type, id, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** Counterparty-service audit (RM ownership history etc.). */
+    public List<AuditEventDto> counterpartyAudit(String type, String id) {
+        return auditFor(counterparty, type, id);
+    }
+
     private RulePackDto fallbackDoa() {
         Map<String, Object> payload = Map.of(
                 "levels", List.of(

@@ -57,6 +57,11 @@ public class CounterpartyController {
         return counterparties.get(id);
     }
 
+    @GetMapping("/by-reference/{reference}")
+    public Counterparty getByReference(@PathVariable String reference) {
+        return counterparties.getByReference(reference);
+    }
+
     @PostMapping("/{id}/kyc/verify")
     public Counterparty verifyKyc(@PathVariable Long id,
                                   @RequestHeader(value = "X-Actor", defaultValue = "compliance.officer") String actor) {

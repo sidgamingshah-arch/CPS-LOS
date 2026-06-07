@@ -93,6 +93,12 @@ public class CounterpartyService {
         return repository.findById(id).orElseThrow(() -> ApiException.notFound("No counterparty: " + id));
     }
 
+    @Transactional(readOnly = true)
+    public Counterparty getByReference(String reference) {
+        return repository.findByReference(reference)
+                .orElseThrow(() -> ApiException.notFound("No counterparty: " + reference));
+    }
+
     /**
      * Final CDD risk-tier sign-off (PRD §1 HITL gate). KYC cannot be verified while
      * any screening hit above MEDIUM severity remains open or escalated.

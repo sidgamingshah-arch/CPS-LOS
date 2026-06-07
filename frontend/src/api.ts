@@ -385,6 +385,16 @@ export const initiation = {
   listGroups: () => call<any[]>("/counterparty/api/initiation/groups", "GET").catch(() => []),
 };
 
+// ---- client planning template (CPT) ----
+export const cpt = {
+  generate: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/cpt/${ref}/generate`, "POST", body, actor),
+  latest: (ref: string) => call<any>(`/decision/api/cpt/${ref}`, "GET").catch(() => null),
+  versions: (ref: string) => call<any[]>(`/decision/api/cpt/${ref}/versions`, "GET").catch(() => [] as any[]),
+  review: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/cpt/${id}/review`, "POST", body, actor),
+};
+
 // ---- groups · decisioning (advisory rollup + combined CP) ----
 export const groups = {
   byReference: (ref: string) =>

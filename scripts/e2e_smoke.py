@@ -1265,6 +1265,111 @@ check("AUTHORITATIVE rating UNCHANGED by collateral extraction + revaluation",
       post_col["rating"]["finalGrade"] == pre_col_grade,
       f"{pre_col_grade} -> {post_col['rating']['finalGrade']}")
 
+print("== 46. Client Planning Template (CPT): auto-generation · wallet sizing · nudges (advisory) ==")
+# Snapshot rating before CPT generation — invariant assertion
+st, pre_cpt = call("GET", f"/risk/api/risk/{ref}")
+pre_cpt_grade = pre_cpt["rating"]["finalGrade"]
+pre_cpt_rate = pre_cpt["pricing"]["recommendedRate"]
+
+# 46a. Generate CPT for the live obligor (cp from §2). Pulls counterparty + apps + risk + audit.
+st, cpt1 = call("POST", f"/decision/api/cpt/{cp['reference']}/generate", {},
+                actor="rm.user")
+check("CPT generated (v1, DRAFT, advisory)",
+      st == 200 and cpt1["version"] == 1 and cpt1["status"] == "DRAFT"
+      and cpt1["advisory"] is True and cpt1["counterpartyReference"] == cp["reference"], f"{st}")
+check("CPT pulls live application count (Meridian has ≥1 application)",
+      cpt1["applicationCount"] >= 1, f"appCount={cpt1.get('applicationCount')}")
+check("CPT carries exposure-weighted figures (PD + RAROC + latestGrade)",
+      cpt1.get("weightedAveragePd") is not None
+      and cpt1.get("weightedAverageRaroc") is not None
+      and cpt1.get("latestGrade") is not None,
+      f"pd={cpt1.get('weightedAveragePd')} raroc={cpt1.get('weightedAverageRaroc')} grade={cpt1.get('latestGrade')}")
+check("CPT figures match the authoritative risk-service snapshot (quoted verbatim)",
+      cpt1["latestGrade"] == pre_cpt_grade, f"{cpt1['latestGrade']} vs {pre_cpt_grade}")
+
+# 46b. Cross-sell signal — borrower uses TERM_LOAN; catalogue contains other product types
+check("current facility types non-empty",
+      isinstance(cpt1.get("currentFacilityTypes"), list) and len(cpt1["currentFacilityTypes"]) >= 1,
+      str(cpt1.get("currentFacilityTypes")))
+check("cross-sell whitespace excludes already-held products",
+      all(p not in cpt1["potentialCrossSell"] for p in cpt1["currentFacilityTypes"])
+      and len(cpt1["potentialCrossSell"]) >= 3,
+      f"current={cpt1['currentFacilityTypes']} potential={cpt1['potentialCrossSell']}")
+
+# 46c. Wallet sizing — three scenarios with 3-year paths
+ws = cpt1.get("walletSizing") or {}
+scenarios = ws.get("scenarios") or []
+labels = [s.get("label") for s in scenarios]
+check("wallet sizing produces 3 scenarios (BEST / MOST_LIKELY / WORST)",
+      set(labels) == {"BEST_CASE", "MOST_LIKELY", "WORST_CASE"}, str(labels))
+check("each scenario has a 3-year revenue path or null when base unknown",
+      all(("projectedRevenue" not in s) or (isinstance(s["projectedRevenue"], list) and len(s["projectedRevenue"]) == 3)
+          for s in scenarios), str(scenarios))
+check("BEST_CASE delta > MOST_LIKELY delta > WORST_CASE delta",
+      next(s["deltaPct"] for s in scenarios if s["label"] == "BEST_CASE")
+      > next(s["deltaPct"] for s in scenarios if s["label"] == "MOST_LIKELY")
+      > next(s["deltaPct"] for s in scenarios if s["label"] == "WORST_CASE"),
+      str([(s["label"], s["deltaPct"]) for s in scenarios]))
+
+# 46d. Industry insights — sector-aware
+ind = cpt1.get("industryInsights") or {}
+check("industry insights carry sector + headwinds + tailwinds",
+      ind.get("sector") == cp["sector"]
+      and isinstance(ind.get("headwinds"), list) and isinstance(ind.get("tailwinds"), list),
+      str(ind))
+
+# 46e. Completeness nudges — at least call-report freshness should fire (no call-report event in audit)
+check("completeness nudges surface RM action items",
+      isinstance(cpt1.get("completenessNudges"), list) and len(cpt1["completenessNudges"]) >= 1,
+      str(cpt1.get("completenessNudges")))
+check("call-report nudge present (no CALL_REPORT event in audit history)",
+      any("call-report" in n.lower() or "rm visit" in n.lower() for n in cpt1["completenessNudges"]),
+      str(cpt1["completenessNudges"]))
+
+# 46f. Markdown + HTML rendered with all 8 sections
+check("CPT markdown contains all major sections",
+      all(h in cpt1["markdown"] for h in (
+          "1. Client overview", "2. Exposure snapshot", "3. Relationship surface",
+          "4. Wallet sizing", "5. Industry & region insights", "6. Peer & whitespace",
+          "7. Completeness nudges", "8. Provenance"
+      )), "missing sections")
+check("CPT cites the upstream services (grounding)",
+      all(k in (cpt1.get("citations") or {}) for k in
+          ("counterparty", "applications", "riskPerApp", "audit")),
+      str(cpt1.get("citations")))
+st, cpt_aud = call("GET", f"/decision/api/audit/subject?type=Counterparty&id={cp['reference']}")
+check("CPT generation stamped as AI event (decision-service audit)",
+      st == 200 and any(e.get("eventType") == "CPT_GENERATED" for e in (cpt_aud or [])),
+      f"{st} types={[e.get('eventType') for e in (cpt_aud or [])]}")
+
+# 46g. Versioning + custom trend override
+st, cpt2 = call("POST", f"/decision/api/cpt/{cp['reference']}/generate",
+                {"trendFactorOverride": 0.20, "note": "stress upcase"}, actor="rm.user")
+check("CPT regeneration -> v2 with overridden trend",
+      st == 200 and cpt2["version"] == 2
+      and abs((cpt2["walletSizing"].get("trendFactor") or 0) - 0.20) < 1e-9, f"{st}")
+st, vers = call("GET", f"/decision/api/cpt/{cp['reference']}/versions")
+check("CPT version history exposed", st == 200 and len(vers) >= 2 and vers[0]["version"] > vers[1]["version"], f"{st}")
+
+# 46h. Human gate — RM approves
+st, conf = call("POST", f"/decision/api/cpt/{cpt2['id']}/review",
+                {"approve": True, "note": "concur with plan"}, actor="rm.user")
+check("CPT confirmed -> CONFIRMED", st == 200 and conf["status"] == "CONFIRMED", f"{st}")
+st, reconf = call("POST", f"/decision/api/cpt/{cpt2['id']}/review",
+                  {"approve": True}, actor="rm.user")
+check("re-review rejected (already CONFIRMED, 409)", st == 409, f"{st}")
+# Reject path on v1
+st, rej = call("POST", f"/decision/api/cpt/{cpt1['id']}/review",
+               {"approve": False, "note": "superseded"}, actor="rm.user")
+check("CPT v1 rejected -> REJECTED", st == 200 and rej["status"] == "REJECTED", f"{st}")
+
+# 46i. INVARIANT — authoritative figures untouched by CPT generation + review
+st, post_cpt = call("GET", f"/risk/api/risk/{ref}")
+check("AUTHORITATIVE rating + pricing UNCHANGED by CPT",
+      post_cpt["rating"]["finalGrade"] == pre_cpt_grade
+      and abs(post_cpt["pricing"]["recommendedRate"] - pre_cpt_rate) < 1e-9,
+      f"{pre_cpt_grade}/{pre_cpt_rate} -> {post_cpt['rating']['finalGrade']}/{post_cpt['pricing']['recommendedRate']}")
+
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")
 check("risk-service audit trail present", st == 200 and len(audit) >= 2, f"{st}")
