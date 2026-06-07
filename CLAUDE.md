@@ -165,13 +165,17 @@ coherent.
 ## Pitch & demo assets
 
 - `docs/helix-pitch-demo.html` — auto-advancing slide viewer (loads from `docs/demo-assets/`).
-  Two cuts toggled in the top bar: **Executive · 2:30** (CRO/Head-of-Credit) and **Product
-  Deep-Dive · 5:30** (lifecycle).
+  Two cuts toggled in the top bar: **Executive · 2:30** (10 beats, CRO/Head-of-Credit) and
+  **Product Deep-Dive · 5:30** (20 beats, lifecycle). Two motion centerpieces are themselves
+  the pitch: the **Risk Lab signature split** (full-bleed AI-ADVISORY ↔ AUTHORITATIVE-UNCHANGED
+  with a pulsing `● UNCHANGED` ring) and the **Pricing governance chain** (animated
+  Target→Optimiser→Concession→L1✓→L2✓→`● PRESERVED`). Plus a **Copilot** beat. Every shot beat
+  has Ken-Burns + spotlight motion.
 - `docs/helix-pitch-demo-standalone.html` — same viewer, all screenshots base64-inlined
-  (15.6 MB single file, no server, no internet).
-- `docs/demo-assets/` — 18 PNG screenshots captured against the live UI. To refresh after a UI
-  change: start services + Vite dev, then re-shoot via Playwright (see prior runs of
-  `/tmp/shot_demo_refresh.mjs` for the pattern) and re-bundle the standalone with
+  (~17 MB single file, no server, no internet).
+- `docs/demo-assets/` — 19 PNG screenshots captured against the live UI (incl. `19-copilot.png`).
+  To refresh after a UI change: start services + Vite dev, then re-shoot via Playwright (see
+  prior runs of `/tmp/shot_demo_refresh.mjs` for the pattern) and re-bundle the standalone with
   `python3 /tmp/bundle_demo.py` (the bundler reads the source HTML, base64-encodes every
   `demo-assets/*.png`, and emits the standalone).
 - `docs/demo-script.md` — the read-aloud narration script for both cuts, with timings,
