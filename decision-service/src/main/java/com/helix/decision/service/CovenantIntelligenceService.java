@@ -4,6 +4,8 @@ import com.helix.common.audit.AuditService;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.CreditInputsDto;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.helix.decision.dto.CovenantIntelDtos.ConfirmExtractionRequest;
 import com.helix.decision.dto.Dtos.AddCovenantRequest;
 import com.helix.decision.entity.CertificateAssessment;
@@ -43,6 +45,8 @@ import java.util.regex.Pattern;
  */
 @Service
 public class CovenantIntelligenceService {
+
+    private static final Logger log = LoggerFactory.getLogger(CovenantIntelligenceService.class);
 
     // ---- metric taxonomy: canonical token + the borrower phrases that map to it ----
     private record MetricDef(String metric, String covenantType, String defaultOperator, List<String> synonyms) {
@@ -237,13 +241,21 @@ public class CovenantIntelligenceService {
 
     @Transactional
     public List<CertificateAssessment> assessCertificate(String reference, String text, String actor) {
-        // The deterministic spread ratios used to recompute each covenant.
+        // The deterministic spread ratios used to recompute each covenant. If origination
+        // is unreachable we still run the parser (extraction + taxonomy mismatch are useful
+        // even without the recompute) — but we log + flag so consumers don't mistake the
+        // assessment for one that included the deterministic disagreement check.
         Map<String, Double> ratios;
+        boolean recomputeAvailable;
         try {
             CreditInputsDto inputs = upstream.creditInputs(reference);
             ratios = inputs.ratios() == null ? Map.of() : inputs.ratios();
+            recomputeAvailable = !ratios.isEmpty();
         } catch (Exception ex) {
+            log.warn("origination-service credit-inputs unavailable for {} ({}); assessment will skip the deterministic recompute",
+                    reference, ex.getMessage());
             ratios = Map.of();
+            recomputeAvailable = false;
         }
         List<Covenant> active = covenants.findByApplicationReference(reference).stream()
                 .filter(Covenant::isActive).toList();
@@ -258,8 +270,11 @@ public class CovenantIntelligenceService {
             out.add(assessments.save(a));
         }
         audit.ai("covenant-certificate", "CERTIFICATE_ASSESSED", "Application", reference,
-                "Assessed %d certificate line(s); %d disagree with recomputation".formatted(out.size(), disagreements),
-                Map.of("lines", out.size(), "disagreements", disagreements, "advisory", true));
+                "Assessed %d certificate line(s); %d disagree with recomputation%s".formatted(
+                        out.size(), disagreements,
+                        recomputeAvailable ? "" : " (recompute skipped — upstream unavailable)"),
+                Map.of("lines", out.size(), "disagreements", disagreements,
+                        "recomputeAvailable", recomputeAvailable, "advisory", true));
         return out;
     }
 
@@ -283,8 +298,19 @@ public class CovenantIntelligenceService {
         a.setTaxonomyMismatch(!matched.text().equalsIgnoreCase(def.synonyms().get(0)));
         a.setAssessedBy("ai:covenant-certificate");
 
-        // Map to a system covenant on this metric and recompute deterministically.
-        Covenant cov = active.stream().filter(c -> def.metric().equals(c.getMetric())).findFirst().orElse(null);
+        // Map to a system covenant on this metric and recompute deterministically. When the
+        // analyst has tied multiple active covenants to the same metric (e.g. an information
+        // covenant + a maintenance covenant on NET_LEVERAGE), prefer the most-recently-created
+        // one and surface the ambiguity in the source line for a human to disambiguate.
+        List<Covenant> matches = active.stream()
+                .filter(c -> def.metric().equals(c.getMetric()))
+                .sorted((x, y) -> Long.compare(y.getId(), x.getId()))
+                .toList();
+        Covenant cov = matches.isEmpty() ? null : matches.get(0);
+        if (matches.size() > 1) {
+            a.setSourceLine(a.getSourceLine() + " [ambiguous: " + matches.size()
+                    + " active covenants on " + def.metric() + " — matched #" + cov.getId() + "]");
+        }
         if (cov != null) {
             a.setCovenantId(cov.getId());
             a.setOperator(cov.getOperator());

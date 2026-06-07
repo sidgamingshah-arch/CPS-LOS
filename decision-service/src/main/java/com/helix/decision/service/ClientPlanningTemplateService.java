@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -69,6 +68,7 @@ public class ClientPlanningTemplateService {
         // ---------- aggregate live applications: exposure / facilities / weighted figures ----------
         Map<String, Double> exposureByCcy = new LinkedHashMap<>();
         Map<String, Double> latestRatios = null;
+        Map<String, Double> latestFinancials = null;
         Set<String> facilityTypes = new HashSet<>();
         double wPdNum = 0.0, wRarocNum = 0.0, wDen = 0.0;
         int facCount = 0;
@@ -88,6 +88,10 @@ public class ClientPlanningTemplateService {
             if (latestRatios == null && env.ratios() != null && !env.ratios().isEmpty()) {
                 latestRatios = env.ratios();
             }
+            if (latestFinancials == null && env.latestFinancials() != null
+                    && !env.latestFinancials().isEmpty()) {
+                latestFinancials = env.latestFinancials();
+            }
             if (rs != null && rs.rating() != null) {
                 wPdNum += rs.rating().pd() * env.totalProposedAmount();
                 if (rs.pricing() != null) wRarocNum += rs.pricing().raroc() * env.totalProposedAmount();
@@ -98,13 +102,15 @@ public class ClientPlanningTemplateService {
         Double weightedPd = wDen == 0 ? null : wPdNum / wDen;
         Double weightedRaroc = wDen == 0 ? null : wRarocNum / wDen;
 
-        // ---------- group context ----------
+        // ---------- group context (resolved from counterparty-service when tagged) ----------
         String groupRef = null;
         String groupName = null;
         if (cp.groupId() != null) {
-            // No direct group-by-id lookup; we read what's available on the counterparty + group exposure.
-            // Best-effort: walk known groups by listing exposures by id is overkill; leave group enrichment optional.
-            groupRef = "GROUP_ID:" + cp.groupId();
+            CounterpartyGroupDto g = upstream.groupByIdOrNull(cp.groupId());
+            if (g != null) {
+                groupRef = g.reference();
+                groupName = g.name();
+            }
         }
 
         // ---------- cross-sell heuristic ----------
@@ -114,7 +120,7 @@ public class ClientPlanningTemplateService {
                 .toList();
 
         // ---------- wallet sizing: 3 scenarios on latest revenue ----------
-        Double baseRevenue = latestRatios == null ? null : approxRevenueFromRatios(latestRatios);
+        Double baseRevenue = approxRevenue(latestFinancials, latestRatios);
         Map<String, Object> walletSizing = composeWalletSizing(baseRevenue, trendOverride);
 
         // ---------- macro / industry signals (heuristic — sector + region tagging) ----------
@@ -130,7 +136,7 @@ public class ClientPlanningTemplateService {
         Md md = new Md();
         renderCpt(md, cp, apps.size(), withApp, exposureByCcy, weightedPd, weightedRaroc,
                 latestGrade, facCount, currentFacilityTypes, potentialCrossSell,
-                walletSizing, industryInsights, peerInsights, nudges, groupRef);
+                walletSizing, industryInsights, peerInsights, nudges, groupRef, groupName);
 
         Map<String, Object> citations = new LinkedHashMap<>();
         citations.put("counterparty",
@@ -213,13 +219,19 @@ public class ClientPlanningTemplateService {
 
     // ============================================================ enrichment
 
-    /** Reverse the spreading ratios to back out a revenue proxy when we don't have it directly. */
-    private static Double approxRevenueFromRatios(Map<String, Double> ratios) {
-        // The deal envelope's ratios map doesn't include raw revenue; instead derive
-        // a directional proxy: revenue ≈ EBITDA / EBITDA_MARGIN if both are present.
-        Double margin = ratios.get("EBITDA_MARGIN");
-        Double ebitda = ratios.get("EBITDA");
-        if (margin != null && margin > 0 && ebitda != null) return ebitda / margin;
+    /**
+     * Best revenue proxy from the deal envelope. Raw REVENUE lives on the financials map;
+     * the ratios map only carries derived ratios (EBITDA_MARGIN, DSCR, ...). Prefer the
+     * direct value; fall back to EBITDA / EBITDA_MARGIN when revenue isn't on file.
+     */
+    private static Double approxRevenue(Map<String, Double> financials, Map<String, Double> ratios) {
+        if (financials != null) {
+            Double rev = financials.get("REVENUE");
+            if (rev != null && rev > 0) return rev;
+            Double ebitda = financials.get("EBITDA");
+            Double margin = ratios == null ? null : ratios.get("EBITDA_MARGIN");
+            if (ebitda != null && margin != null && margin > 0) return ebitda / margin;
+        }
         return null;
     }
 
@@ -379,7 +391,7 @@ public class ClientPlanningTemplateService {
                                   String latestGrade, int facCount, List<String> currentFacTypes,
                                   List<String> crossSell, Map<String, Object> wallet,
                                   Map<String, Object> industry, List<String> peer, List<String> nudges,
-                                  String groupRef) {
+                                  String groupRef, String groupName) {
         md.h1("Client planning template · " + cp.legalName() + " (" + cp.reference() + ")");
         md.muted("Grounded in counterparty + applications + risk data. Advisory; "
                 + "deterministic figures (grade / capital / pricing) are quoted verbatim, never recomputed.");
@@ -395,7 +407,8 @@ public class ClientPlanningTemplateService {
                 bullet("Country", nv(cp.country())),
                 bullet("Borrower type", nv(cp.borrowerType())),
                 bullet("Relationship manager", nv(cp.rmId())),
-                bullet("Group", groupRef == null ? "Not tagged" : groupRef));
+                bullet("Group", groupRef == null ? "Not tagged"
+                        : (groupName == null ? groupRef : groupName + " (" + groupRef + ")")));
 
         // 2. Exposure snapshot
         md.h2("2. Exposure snapshot (deterministic, unchanged)");
@@ -511,18 +524,32 @@ public class ClientPlanningTemplateService {
         return out;
     }
 
-    /** Minimal Markdown + HTML accumulator (no external templating engine). */
+    /**
+     * Minimal Markdown + HTML accumulator (no external templating engine). Tracks an
+     * {@code inTable} flag so non-table blocks close the previous tbody/table cleanly,
+     * and {@code html()} doesn't emit a dangling {@code </tbody></table>} when no table
+     * was ever opened.
+     */
     private static class Md {
         private final StringBuilder mdBuf = new StringBuilder();
         private final StringBuilder htmlBuf = new StringBuilder("<article class='cpt'>");
+        private boolean inTable = false;
 
-        void h1(String t) { mdBuf.append("# ").append(t).append("\n\n"); htmlBuf.append("<h1>").append(esc(t)).append("</h1>"); }
-        void h2(String t) { mdBuf.append("## ").append(t).append("\n\n"); htmlBuf.append("<h2>").append(esc(t)).append("</h2>"); }
-        void line(String s) { mdBuf.append(s).append("\n\n"); htmlBuf.append("<p>").append(mdToHtml(s)).append("</p>"); }
-        void spacer() { mdBuf.append("\n"); htmlBuf.append("<div class='spacer'></div>"); }
-        void muted(String s) { mdBuf.append("_").append(s).append("_\n\n"); htmlBuf.append("<p class='muted'>").append(esc(s)).append("</p>"); }
+        private void closeTableIfOpen() {
+            if (inTable) {
+                htmlBuf.append("</tbody></table>");
+                inTable = false;
+            }
+        }
+
+        void h1(String t) { closeTableIfOpen(); mdBuf.append("# ").append(t).append("\n\n"); htmlBuf.append("<h1>").append(esc(t)).append("</h1>"); }
+        void h2(String t) { closeTableIfOpen(); mdBuf.append("## ").append(t).append("\n\n"); htmlBuf.append("<h2>").append(esc(t)).append("</h2>"); }
+        void line(String s) { closeTableIfOpen(); mdBuf.append(s).append("\n\n"); htmlBuf.append("<p>").append(mdToHtml(s)).append("</p>"); }
+        void spacer() { closeTableIfOpen(); mdBuf.append("\n"); htmlBuf.append("<div class='spacer'></div>"); }
+        void muted(String s) { closeTableIfOpen(); mdBuf.append("_").append(s).append("_\n\n"); htmlBuf.append("<p class='muted'>").append(esc(s)).append("</p>"); }
 
         void bullets(String[]... pairs) {
+            closeTableIfOpen();
             htmlBuf.append("<ul>");
             for (String[] p : pairs) {
                 mdBuf.append("- **").append(p[0]).append(":** ").append(p[1]).append("\n");
@@ -532,6 +559,7 @@ public class ClientPlanningTemplateService {
             htmlBuf.append("</ul>");
         }
         void kvBlock(Map<String, String> kv) {
+            closeTableIfOpen();
             htmlBuf.append("<table class='kv'>");
             kv.forEach((k, v) -> {
                 mdBuf.append("- **").append(k).append(":** ").append(v).append("\n");
@@ -541,20 +569,22 @@ public class ClientPlanningTemplateService {
             htmlBuf.append("</table>");
         }
         void table(String[] cols) {
+            closeTableIfOpen();
             mdBuf.append("| ").append(String.join(" | ", cols)).append(" |\n");
             mdBuf.append("|").append("---|".repeat(cols.length)).append("\n");
             htmlBuf.append("<table><thead><tr>");
             for (String c : cols) htmlBuf.append("<th>").append(esc(c)).append("</th>");
             htmlBuf.append("</tr></thead><tbody>");
+            inTable = true;
         }
         void row(String... cells) {
-            mdBuf.append("| ").append(Arrays.stream(cells).toList().stream().reduce((a, b) -> a + " | " + b).orElse("")).append(" |\n");
+            mdBuf.append("| ").append(String.join(" | ", cells)).append(" |\n");
             htmlBuf.append("<tr>");
             for (String c : cells) htmlBuf.append("<td>").append(esc(c)).append("</td>");
             htmlBuf.append("</tr>");
         }
         String markdown() { return mdBuf.toString(); }
-        String html() { return htmlBuf.append("</tbody></table></article>").toString(); }
+        String html() { closeTableIfOpen(); return htmlBuf.append("</article>").toString(); }
 
         private String esc(String s) {
             return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");

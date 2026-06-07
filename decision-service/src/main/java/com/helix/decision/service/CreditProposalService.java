@@ -446,17 +446,31 @@ public class CreditProposalService {
         return out;
     }
 
-    /** Minimal Markdown + HTML accumulator (no external templating engine). */
+    /**
+     * Minimal Markdown + HTML accumulator (no external templating engine). Tracks an
+     * {@code inTable} flag so non-table blocks emitted between tables close the previous
+     * tbody/table cleanly, and {@code html()} doesn't emit a dangling
+     * {@code </tbody></table>} when no table was ever opened.
+     */
     private static class Md {
         private final StringBuilder mdBuf = new StringBuilder();
         private final StringBuilder htmlBuf = new StringBuilder("<article class='credit-proposal'>");
+        private boolean inTable = false;
 
-        void h1(String t) { mdBuf.append("# ").append(t).append("\n\n"); htmlBuf.append("<h1>").append(esc(t)).append("</h1>"); }
-        void h2(String t) { mdBuf.append("## ").append(t).append("\n\n"); htmlBuf.append("<h2>").append(esc(t)).append("</h2>"); }
-        void line(String s) { mdBuf.append(s).append("\n\n"); htmlBuf.append("<p>").append(mdToHtml(s)).append("</p>"); }
-        void spacer() { mdBuf.append("\n"); htmlBuf.append("<div class='spacer'></div>"); }
-        void muted(String s) { mdBuf.append("_").append(s).append("_\n\n"); htmlBuf.append("<p class='muted'>").append(esc(s)).append("</p>"); }
+        private void closeTableIfOpen() {
+            if (inTable) {
+                htmlBuf.append("</tbody></table>");
+                inTable = false;
+            }
+        }
+
+        void h1(String t) { closeTableIfOpen(); mdBuf.append("# ").append(t).append("\n\n"); htmlBuf.append("<h1>").append(esc(t)).append("</h1>"); }
+        void h2(String t) { closeTableIfOpen(); mdBuf.append("## ").append(t).append("\n\n"); htmlBuf.append("<h2>").append(esc(t)).append("</h2>"); }
+        void line(String s) { closeTableIfOpen(); mdBuf.append(s).append("\n\n"); htmlBuf.append("<p>").append(mdToHtml(s)).append("</p>"); }
+        void spacer() { closeTableIfOpen(); mdBuf.append("\n"); htmlBuf.append("<div class='spacer'></div>"); }
+        void muted(String s) { closeTableIfOpen(); mdBuf.append("_").append(s).append("_\n\n"); htmlBuf.append("<p class='muted'>").append(esc(s)).append("</p>"); }
         void bullets(String[]... pairs) {
+            closeTableIfOpen();
             htmlBuf.append("<ul>");
             for (String[] p : pairs) {
                 mdBuf.append("- **").append(p[0]).append(":** ").append(p[1]).append("\n");
@@ -466,6 +480,7 @@ public class CreditProposalService {
             htmlBuf.append("</ul>");
         }
         void kvBlock(Map<String, String> kv) {
+            closeTableIfOpen();
             htmlBuf.append("<table class='kv'>");
             kv.forEach((k, v) -> {
                 mdBuf.append("- **").append(k).append(":** ").append(v).append("\n");
@@ -475,11 +490,13 @@ public class CreditProposalService {
             htmlBuf.append("</table>");
         }
         void table(String[] cols) {
+            closeTableIfOpen();
             mdBuf.append("| ").append(String.join(" | ", cols)).append(" |\n");
             mdBuf.append("|").append("---|".repeat(cols.length)).append("\n");
             htmlBuf.append("<table><thead><tr>");
             for (String c : cols) htmlBuf.append("<th>").append(esc(c)).append("</th>");
             htmlBuf.append("</tr></thead><tbody>");
+            inTable = true;
         }
         void row(String... cells) {
             mdBuf.append("| ").append(String.join(" | ", cells)).append(" |\n");
@@ -488,7 +505,7 @@ public class CreditProposalService {
             htmlBuf.append("</tr>");
         }
         String markdown() { return mdBuf.toString(); }
-        String html() { return htmlBuf.append("</tbody></table></article>").toString(); }
+        String html() { closeTableIfOpen(); return htmlBuf.append("</article>").toString(); }
 
         private String esc(String s) {
             return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");

@@ -206,9 +206,9 @@ public class GroupInsightsService {
                                     Double weightedRaroc, String lowestGrade, String highestGrade,
                                     int belowHurdle, int overridden) {
         StringBuilder sb = new StringBuilder();
-        sb.append("**").append(group.name()).append("** is a ");
+        sb.append("**").append(nv(group.name())).append("** is a ");
         sb.append(group.multiCountry() ? "multi-country" : "single-country").append(" borrower group ");
-        sb.append("under group RM `").append(group.groupRmId()).append("`. ");
+        sb.append("under group RM `").append(nv(group.groupRmId())).append("`. ");
         sb.append("It carries ").append(memberCount).append(" tagged member(s)");
         sb.append(", ").append(exposure.obligorCount()).append(" of which are active obligors");
         sb.append("; ").append(withApp).append(" have a live application in the platform.");
@@ -251,5 +251,9 @@ public class GroupInsightsService {
 
     private static String safe(String s) {
         return s == null || s.isBlank() ? "unknown" : s;
+    }
+
+    private static String nv(String s) {
+        return s == null || s.isBlank() || "null".equalsIgnoreCase(s) ? "—" : s;
     }
 }

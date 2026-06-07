@@ -114,14 +114,18 @@ public class GroupIdentificationService {
         }
         siblings.sort(Comparator.comparingDouble(SiblingCandidate::score).reversed());
 
-        // 3) Recommendation.
+        // 3) Recommendation. If there's any existing-group match above the suggest floor we
+        // never jump straight to CREATE_NEW_GROUP — that would silently ignore a viable
+        // parent. Only escalate to TAG when the top group is strong enough on its own.
         double topGroup = groupMatches.isEmpty() ? 0.0 : groupMatches.get(0).score();
         String recommendation;
         if (topGroup >= GROUP_RECOMMEND_FLOOR) {
             recommendation = "TAG_TO_EXISTING_GROUP";
+        } else if (!groupMatches.isEmpty()) {
+            recommendation = "REVIEW_CANDIDATES";
         } else if (siblings.size() >= 2) {
             recommendation = "CREATE_NEW_GROUP";
-        } else if (!groupMatches.isEmpty() || !siblings.isEmpty()) {
+        } else if (!siblings.isEmpty()) {
             recommendation = "REVIEW_CANDIDATES";
         } else {
             recommendation = "NO_STRONG_MATCH";

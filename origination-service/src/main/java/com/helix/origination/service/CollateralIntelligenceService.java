@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -223,15 +224,29 @@ public class CollateralIntelligenceService {
                 .orElseThrow(() -> ApiException.notFound("No collateral: " + collateralId));
         LoanApplication app = applications.findById(c.getApplicationId())
                 .orElseThrow(() -> ApiException.notFound("No application for collateral"));
+        if (req.newMarketValue() <= 0) {
+            // A complete wipeout isn't a revaluation; it's a write-off and must take a
+            // different path. Refusing here keeps the LTV math + audit summary coherent.
+            throw ApiException.badRequest(
+                    "newMarketValue must be positive — route a full write-off through the collateral release path");
+        }
         double threshold = req.ltvThreshold() == null ? DEFAULT_LTV_THRESHOLD : req.ltvThreshold();
 
         double prev = c.getMarketValue();
         double newMv = req.newMarketValue();
         double drawn = req.drawnExposure();
         double ltvBefore = prev <= 0 ? 0.0 : drawn / prev;
-        double ltvAfter = newMv <= 0 ? Double.POSITIVE_INFINITY : drawn / newMv;
+        double ltvAfter = drawn / newMv;
         boolean breached = ltvAfter > threshold;
         String severity = !breached ? "INFO" : ltvAfter > threshold * 1.10 ? "BREACH" : "WARN";
+
+        LocalDate effective;
+        try {
+            effective = req.effectiveDate() == null || req.effectiveDate().isBlank()
+                    ? LocalDate.now() : LocalDate.parse(req.effectiveDate());
+        } catch (DateTimeParseException ex) {
+            throw ApiException.badRequest("Invalid effectiveDate; expected ISO yyyy-MM-dd");
+        }
 
         CollateralRevaluation r = new CollateralRevaluation();
         r.setCollateralId(collateralId);
@@ -240,10 +255,9 @@ public class CollateralIntelligenceService {
         r.setNewMarketValue(newMv);
         r.setDrawnExposure(drawn);
         r.setLtvBefore(round(ltvBefore));
-        r.setLtvAfter(Double.isFinite(ltvAfter) ? round(ltvAfter) : 0.0);
+        r.setLtvAfter(round(ltvAfter));
         r.setTrigger(req.trigger() == null ? "VALUATION_UPDATE" : req.trigger().toUpperCase());
-        r.setEffectiveDate(req.effectiveDate() == null || req.effectiveDate().isBlank()
-                ? LocalDate.now() : LocalDate.parse(req.effectiveDate()));
+        r.setEffectiveDate(effective);
         r.setLtvBreached(breached);
         r.setLtvThreshold(threshold);
         r.setAlertSeverity(severity);
@@ -328,9 +342,9 @@ public class CollateralIntelligenceService {
               .append(c.getPerfectionDate() == null ? "" : c.getPerfectionDate()).append(",")
               .append(csv(facRef)).append("\n");
         }
-        audit.ai("collateral-charge-excel", "CHARGE_EXCEL_GENERATED", "Application", reference,
+        audit.engine("CHARGE_EXCEL_GENERATED", "Application", reference,
                 "Generated charge-Excel for %d collateral row(s)".formatted(all.size()),
-                Map.of("rows", all.size(), "advisory", true));
+                Map.of("rows", all.size()));
         return sb.toString();
     }
 
@@ -441,44 +455,56 @@ public class CollateralIntelligenceService {
                     Integer.parseInt(dmy.group(2)), Integer.parseInt(dmy.group(1)));
         }
         // Then money — require a full match so partial digit prefixes don't sneak through.
-        Matcher mn = MONEY.matcher(raw);
-        if (mn.matches()) {
-            try {
-                double v = Double.parseDouble(mn.group(1).replace(",", "").replace(" ", ""));
-                String unit = mn.group(2);
-                if (unit != null) {
-                    String u = unit.toLowerCase();
-                    if (u.startsWith("cr") || u.startsWith("crore")) v *= 10_000_000;
-                    else if (u.startsWith("lak") || u.startsWith("lac")) v *= 100_000;
-                    else if (u.startsWith("mn") || u.startsWith("million") || u.equals("m")) v *= 1_000_000;
-                    else if (u.startsWith("bn") || u.startsWith("billion")) v *= 1_000_000_000;
-                }
-                return v;
-            } catch (NumberFormatException ignored) { /* fall through */ }
-        }
+        Double parsed = parseMoney(raw);
+        if (parsed != null) return parsed;
         return raw;
     }
 
+    /**
+     * Parse a money expression that may use US/UK grouping ("4,800,000"), Indian grouping
+     * ("4,80,00,000" = 4 crore 80 lakh), bare numbers, or a magnitude unit (crore / lakh /
+     * million / billion). Returns null when the string isn't a money expression.
+     */
+    private static Double parseMoney(String raw) {
+        Matcher mn = MONEY.matcher(raw);
+        if (!mn.matches()) {
+            // Indian groupings (1-2 digit head + repeated 2-digit groups + 3-digit tail) don't
+            // satisfy the (?:[ ,][0-9]{3})+ pattern. Re-attempt by stripping group separators
+            // and re-matching the digits-and-unit shape.
+            String stripped = raw.replaceAll("[\\s,]", "");
+            Matcher loose = MONEY.matcher(stripped);
+            if (!loose.matches()) return null;
+            mn = loose;
+        }
+        try {
+            double v = Double.parseDouble(mn.group(1).replace(",", "").replace(" ", ""));
+            String unit = mn.group(2);
+            if (unit != null) {
+                String u = unit.toLowerCase();
+                if (u.startsWith("cr") || u.startsWith("crore")) v *= 10_000_000;
+                else if (u.startsWith("lak") || u.startsWith("lac")) v *= 100_000;
+                else if (u.startsWith("mn") || u.startsWith("million") || u.equals("m")) v *= 1_000_000;
+                else if (u.startsWith("bn") || u.startsWith("billion")) v *= 1_000_000_000;
+            }
+            return v;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     private static Double largestMoney(String text) {
-        Matcher mn = MONEY.matcher(text);
+        // Scan tokens separated by whitespace / non-digit punctuation so Indian groupings
+        // ("4,80,00,000") survive intact, then parse each candidate via parseMoney.
         double best = 0.0;
         boolean any = false;
-        while (mn.find()) {
-            try {
-                double v = Double.parseDouble(mn.group(1).replace(",", "").replace(" ", ""));
-                String unit = mn.group(2);
-                if (unit != null) {
-                    String u = unit.toLowerCase();
-                    if (u.startsWith("cr") || u.startsWith("crore")) v *= 10_000_000;
-                    else if (u.startsWith("lak") || u.startsWith("lac")) v *= 100_000;
-                    else if (u.startsWith("mn") || u.startsWith("million") || u.equals("m")) v *= 1_000_000;
-                    else if (u.startsWith("bn") || u.startsWith("billion")) v *= 1_000_000_000;
-                }
-                if (v > best) {
-                    best = v;
-                    any = true;
-                }
-            } catch (NumberFormatException ignored) { /* skip */ }
+        for (String token : text.split("(?<=\\d)[^0-9,. crloemnxbioCRLOEMNXBIO]+|\\s{2,}|\\n|\\r|;|\\|")) {
+            String t = token.trim();
+            if (t.isEmpty() || !t.matches(".*\\d.*")) continue;
+            Double v = parseMoney(t);
+            if (v != null && v > best) {
+                best = v;
+                any = true;
+            }
         }
         return any ? best : null;
     }
@@ -544,8 +570,19 @@ public class CollateralIntelligenceService {
 
     private static String csv(String s) {
         if (s == null) return "";
-        boolean needs = s.contains(",") || s.contains("\"") || s.contains("\n");
-        String escaped = s.replace("\"", "\"\"");
+        // Defang spreadsheet-formula triggers (OWASP CSV-injection): prefix with apostrophe
+        // when the cell would otherwise begin with =, +, -, @, TAB, or CR — Excel / Sheets /
+        // LibreOffice evaluate these even inside quoted CSV fields.
+        String safe = s;
+        if (!safe.isEmpty()) {
+            char first = safe.charAt(0);
+            if (first == '=' || first == '+' || first == '-' || first == '@'
+                    || first == '\t' || first == '\r') {
+                safe = "'" + safe;
+            }
+        }
+        boolean needs = safe.contains(",") || safe.contains("\"") || safe.contains("\n");
+        String escaped = safe.replace("\"", "\"\"");
         return needs ? "\"" + escaped + "\"" : escaped;
     }
 

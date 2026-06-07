@@ -140,8 +140,16 @@ public class InitiationController {
     }
 
     @GetMapping("/groups")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<CounterpartyGroup> listGroups() {
         return groupRepository.findAll();
+    }
+
+    @GetMapping("/groups/{groupId}")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public CounterpartyGroup getGroup(@PathVariable Long groupId) {
+        return groupRepository.findById(groupId)
+                .orElseThrow(() -> ApiException.notFound("No group: " + groupId));
     }
 
     @PostMapping("/counterparties/{id}/group/{groupId}")

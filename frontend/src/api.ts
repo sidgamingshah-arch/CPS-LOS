@@ -392,7 +392,7 @@ export const cpt = {
   latest: (ref: string) => call<any>(`/decision/api/cpt/${ref}`, "GET").catch(() => null),
   versions: (ref: string) => call<any[]>(`/decision/api/cpt/${ref}/versions`, "GET").catch(() => [] as any[]),
   review: (id: number, body: any, actor: string) =>
-    call<any>(`/decision/api/cpt/${id}/review`, "POST", body, actor),
+    call<any>(`/decision/api/cpt/templates/${id}/review`, "POST", body, actor),
 };
 
 // ---- groups · decisioning (advisory rollup + combined CP) ----

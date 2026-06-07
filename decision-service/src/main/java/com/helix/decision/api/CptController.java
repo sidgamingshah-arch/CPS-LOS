@@ -47,7 +47,7 @@ public class CptController {
         return cpt.versions(counterpartyReference);
     }
 
-    @PostMapping("/{id}/review")
+    @PostMapping("/templates/{id}/review")
     public ClientPlanningTemplate review(@PathVariable Long id,
                                          @RequestBody ReviewCptRequest req,
                                          @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {

