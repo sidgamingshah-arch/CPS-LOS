@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -241,22 +242,24 @@ public class CovenantIntelligenceService {
 
     @Transactional
     public List<CertificateAssessment> assessCertificate(String reference, String text, String actor) {
-        // The deterministic spread ratios used to recompute each covenant. If origination
-        // is unreachable we still run the parser (extraction + taxonomy mismatch are useful
-        // even without the recompute) — but we log + flag so consumers don't mistake the
-        // assessment for one that included the deterministic disagreement check.
+        // The deterministic spread ratios used to recompute each covenant. We distinguish
+        // three states so consumers (API + audit) can tell them apart:
+        //   - UPSTREAM_OK + non-empty ratios  → recompute ran
+        //   - UPSTREAM_OK + empty ratios      → spread not confirmed yet (no fault)
+        //   - UPSTREAM_DOWN                   → origination unreachable; recompute skipped
         Map<String, Double> ratios;
-        boolean recomputeAvailable;
+        boolean upstreamOk;
         try {
             CreditInputsDto inputs = upstream.creditInputs(reference);
             ratios = inputs.ratios() == null ? Map.of() : inputs.ratios();
-            recomputeAvailable = !ratios.isEmpty();
+            upstreamOk = true;
         } catch (Exception ex) {
             log.warn("origination-service credit-inputs unavailable for {} ({}); assessment will skip the deterministic recompute",
                     reference, ex.getMessage());
             ratios = Map.of();
-            recomputeAvailable = false;
+            upstreamOk = false;
         }
+        boolean recomputeAvailable = upstreamOk && !ratios.isEmpty();
         List<Covenant> active = covenants.findByApplicationReference(reference).stream()
                 .filter(Covenant::isActive).toList();
 
@@ -266,17 +269,35 @@ public class CovenantIntelligenceService {
             if (line.isBlank()) continue;
             CertificateAssessment a = parseCertificateLine(reference, line, active, ratios);
             if (a == null) continue;
+            a.setRecomputeAvailable(recomputeAvailable);
             if (Boolean.FALSE.equals(a.getAgreement())) disagreements++;
             out.add(assessments.save(a));
         }
+        String tail = upstreamOk
+                ? (ratios.isEmpty() ? " (no ratios on file — spread not yet confirmed)" : "")
+                : " (recompute skipped — origination unavailable)";
         audit.ai("covenant-certificate", "CERTIFICATE_ASSESSED", "Application", reference,
                 "Assessed %d certificate line(s); %d disagree with recomputation%s".formatted(
-                        out.size(), disagreements,
-                        recomputeAvailable ? "" : " (recompute skipped — upstream unavailable)"),
+                        out.size(), disagreements, tail),
                 Map.of("lines", out.size(), "disagreements", disagreements,
-                        "recomputeAvailable", recomputeAvailable, "advisory", true));
+                        "recomputeAvailable", recomputeAvailable,
+                        "upstreamOk", upstreamOk, "advisory", true));
         return out;
     }
+
+    /**
+     * Metric synonyms that read as natural canonical names in industry usage even though
+     * they are not the primary token — we don't want to flag these as "taxonomy mismatch"
+     * because that floods the UI with false positives the analyst learns to ignore.
+     */
+    private static final Set<String> CANONICAL_SECONDARY_SYNONYMS = Set.of(
+            "icr",                  // interest coverage
+            "tnw", "net worth",     // tangible net worth
+            "debt/equity",          // gearing
+            "net debt to ebitda", "net debt/ebitda");  // net leverage
+
+    /** Maximum source-line length the persisted column allows (matches @Column(length=…)). */
+    private static final int SOURCE_LINE_MAX = 1000;
 
     private CertificateAssessment parseCertificateLine(String reference, String rawLine,
                                                        List<Covenant> active, Map<String, Double> ratios) {
@@ -293,9 +314,14 @@ public class CovenantIntelligenceService {
         a.setReportedLabel(matched.text());
         a.setSystemMetric(def.metric());
         a.setReportedValue(nearestNumber(line, metricIdx));
-        a.setReportedStatus(detectStatus(lower));
-        // Taxonomy mismatch: the borrower used a non-primary term for the metric.
-        a.setTaxonomyMismatch(!matched.text().equalsIgnoreCase(def.synonyms().get(0)));
+        a.setReportedStatus(detectStatus(line));
+        // Taxonomy mismatch only when the borrower's term is not the canonical primary
+        // synonym AND not a widely-accepted secondary (ICR/TNW etc) — otherwise we'd flag
+        // every legitimate industry-standard abbreviation as a mismatch.
+        String primary = def.synonyms().get(0);
+        boolean nonPrimary = !matched.text().equalsIgnoreCase(primary);
+        boolean canonical = CANONICAL_SECONDARY_SYNONYMS.contains(matched.text().toLowerCase());
+        a.setTaxonomyMismatch(nonPrimary && !canonical);
         a.setAssessedBy("ai:covenant-certificate");
 
         // Map to a system covenant on this metric and recompute deterministically. When the
@@ -308,8 +334,16 @@ public class CovenantIntelligenceService {
                 .toList();
         Covenant cov = matches.isEmpty() ? null : matches.get(0);
         if (matches.size() > 1) {
-            a.setSourceLine(a.getSourceLine() + " [ambiguous: " + matches.size()
-                    + " active covenants on " + def.metric() + " — matched #" + cov.getId() + "]");
+            String suffix = " [ambiguous: " + matches.size() + " active covenants on "
+                    + def.metric() + " — matched #" + cov.getId() + "]";
+            // Truncate the line content (not the suffix) so the ambiguity marker is always
+            // preserved and the row never overflows the @Column(length = SOURCE_LINE_MAX).
+            String current = a.getSourceLine();
+            int available = SOURCE_LINE_MAX - suffix.length();
+            if (current.length() > available) {
+                current = current.substring(0, Math.max(0, available - 1)) + "…";
+            }
+            a.setSourceLine(current + suffix);
         }
         if (cov != null) {
             a.setCovenantId(cov.getId());
@@ -375,36 +409,64 @@ public class CovenantIntelligenceService {
         return null;
     }
 
-    private static String detectFrequency(String lower) {
-        if (lower.contains("quarter")) return "QUARTERLY";
-        if (lower.contains("month")) return "MONTHLY";
-        if (containsAny(lower, "semi-annual", "semi annual", "half-year", "half year")) return "SEMI_ANNUAL";
-        if (containsAny(lower, "annual", "yearly", "per annum", "p.a.")) return "ANNUAL";
+    /**
+     * Frequency keywords matched on word boundaries — substring matches were flipping
+     * "12-month projections" to MONTHLY even when the clause itself was annual / quarterly.
+     */
+    private static final Pattern FREQ_QUARTERLY = Pattern.compile("\\bquarterly\\b|\\bper quarter\\b|\\beach quarter\\b|\\bevery quarter\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FREQ_MONTHLY = Pattern.compile("\\bmonthly\\b|\\bper month\\b|\\beach month\\b|\\bevery month\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FREQ_SEMI_ANNUAL = Pattern.compile("\\bsemi[-\\s]?annual(?:ly)?\\b|\\bhalf[-\\s]?yearly?\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FREQ_ANNUAL = Pattern.compile("\\bannual(?:ly)?\\b|\\byearly\\b|\\bper annum\\b|\\bp\\.a\\.", Pattern.CASE_INSENSITIVE);
+
+    private static String detectFrequency(String text) {
+        if (FREQ_QUARTERLY.matcher(text).find()) return "QUARTERLY";
+        if (FREQ_MONTHLY.matcher(text).find()) return "MONTHLY";
+        if (FREQ_SEMI_ANNUAL.matcher(text).find()) return "SEMI_ANNUAL";
+        if (FREQ_ANNUAL.matcher(text).find()) return "ANNUAL";
         return null;
     }
 
-    private static String detectStatus(String lower) {
-        // negative first — "complied" is a substring of "not complied"
-        if (containsAny(lower, "not complied", "non-complied", "non complied", "non-compliant",
-                "non compliant", "breach", "breached", "not met", "fail", "default")) return "NOT_COMPLIED";
-        if (containsAny(lower, "complied", "compliant", "in compliance", "met", "pass", "satisfied",
-                "within limit")) return "COMPLIED";
+    /**
+     * Compliance keywords matched on word boundaries. The previous substring match flipped
+     * lines like "Key metrics: DSCR 0.90x" to COMPLIED because "metrics" contains "met".
+     */
+    private static final Pattern NON_COMPLIED = Pattern.compile(
+            "\\bnot complied\\b|\\bnon[-\\s]complied\\b|\\bnon[-\\s]compliant\\b|"
+                    + "\\bbreach(?:ed)?\\b|\\bnot met\\b|\\bfailure\\b|\\bfailed\\b|\\bdefault(?:ed)?\\b",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern COMPLIED = Pattern.compile(
+            "\\bcomplied\\b|\\bcompliant\\b|\\bin compliance\\b|\\bmet\\b|\\bpassed\\b|"
+                    + "\\bsatisfied\\b|\\bwithin limit\\b|\\bwithin limits\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    private static String detectStatus(String text) {
+        // Negative first — "complied" is a sub-pattern of "not complied".
+        if (NON_COMPLIED.matcher(text).find()) return "NOT_COMPLIED";
+        if (COMPLIED.matcher(text).find()) return "COMPLIED";
         return "UNKNOWN";
     }
 
-    /** The number nearest to {@code anchorIdx}; percent values are normalised to a fraction. */
+    /**
+     * The number nearest to the metric mention. Constrained to a window around the anchor
+     * (60 chars) so a day-count phrase elsewhere in the clause ("Quarterly reporting within
+     * 30 days; DSCR shall be at least 1.40x") doesn't beat the actual threshold. Percent
+     * suffixes are normalised to a fraction.
+     */
+    private static final int ANCHOR_WINDOW = 60;
+
     private static Double nearestNumber(String text, int anchorIdx) {
         Matcher m = NUMBER.matcher(text);
         Double best = null;
         int bestDist = Integer.MAX_VALUE;
         while (m.find()) {
+            int dist = Math.abs(m.start() - anchorIdx);
+            if (dist > ANCHOR_WINDOW) continue;
             double val = Double.parseDouble(m.group(1));
             String unit = m.group(2);
             if (unit != null && (unit.startsWith("%") || unit.toLowerCase().contains("percent")
                     || unit.toLowerCase().contains("per cent"))) {
                 val = val / 100.0;
             }
-            int dist = Math.abs(m.start() - anchorIdx);
             if (dist < bestDist) {
                 bestDist = dist;
                 best = val;

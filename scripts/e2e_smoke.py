@@ -999,6 +999,13 @@ check("combined proposal renders the per-member breakdown",
 check("combined proposal sections include rollup + provenance",
       "Group summary" in (gcp.get("sections") or [])
       and "Provenance" in (gcp.get("sections") or []), "")
+# Section numbering must not skip integers when concentrations / callouts are conditionally
+# rendered. The markdown should always have sections 1..K contiguous.
+import re as _re
+_section_nums = [int(m.group(1)) for m in _re.finditer(r"## (\d+)\.", gcp.get("markdown", ""))]
+check("combined-CP section numbers are contiguous (no skipped integers)",
+      _section_nums == list(range(1, len(_section_nums) + 1)),
+      f"sections={_section_nums}")
 
 # 43g. Versioned just like an application-level proposal
 st, gcp2 = call("POST",
@@ -1106,6 +1113,43 @@ check("borrower 'Complied' DISAGREES with deterministic recompute (NET_LEVERAGE 
 st, assaud = call("GET", f"/decision/api/audit/subject?type=Application&id={ref}")
 check("certificate assessment stamped as AI event",
       any(e.get("eventType") == "CERTIFICATE_ASSESSED" for e in (assaud or [])), "")
+# recomputeAvailable must surface on the entity so API consumers can tell
+# 'parser-only' from 'recomputed and agreed'.
+check("recomputeAvailable surfaced on each assessment (entity, not just audit)",
+      all("recomputeAvailable" in a and a["recomputeAvailable"] is True for a in (ass or [])),
+      str([a.get("recomputeAvailable") for a in (ass or [])]))
+# 'ICR' is a canonical industry secondary synonym — must NOT be flagged as taxonomy mismatch.
+icr_cert = "Interest coverage tested annually shall be at least 3.0x.\nICR for the quarter stood at 3.20x — Complied."
+st, icr_assess = call("POST", f"/decision/api/covenants/intel/{ref}/certificate/assess",
+                      {"text": icr_cert}, actor="analyst.user")
+icr_row = next((a for a in (icr_assess or []) if a.get("systemMetric") == "INTEREST_COVERAGE"
+                and a.get("reportedLabel") == "icr"), None)
+check("'ICR' (canonical industry term) NOT flagged as taxonomy mismatch",
+      icr_row is not None and icr_row["taxonomyMismatch"] is False, str(icr_row))
+# 'detectFrequency' must use word boundaries — '12-month projections' should not flip MONTHLY.
+freq_text = "The Borrower shall provide 12-month projections; DSCR tested annually shall be at least 1.4x."
+st, freq_ext = call("POST", f"/decision/api/covenants/intel/{ref}/extract",
+                    {"text": freq_text}, actor="analyst.user")
+dscr_freq = next((e for e in (freq_ext or []) if e.get("metric") == "DSCR"), None)
+check("'12-month projections' does NOT flip frequency to MONTHLY (word-boundary fix)",
+      dscr_freq is not None and dscr_freq["testFrequency"] == "ANNUAL", str(dscr_freq))
+# 'detectStatus' must not match 'met' inside 'metrics'.
+status_text = "Key metrics: DSCR 2.00x — Complied."
+st, st_assess = call("POST", f"/decision/api/covenants/intel/{ref}/certificate/assess",
+                     {"text": status_text}, actor="analyst.user")
+key_metrics_row = next((a for a in (st_assess or []) if a.get("systemMetric") == "DSCR"), None)
+check("'metrics' substring does NOT flip status to COMPLIED unconditionally",
+      key_metrics_row is not None and key_metrics_row["reportedStatus"] == "COMPLIED",
+      f"reportedStatus={key_metrics_row.get('reportedStatus') if key_metrics_row else None}")
+# 'nearestNumber' must constrain to a window — a day count near the metric must not win
+# over a threshold farther away (but still within window).
+near_text = "Quarterly reporting within 30 days; DSCR shall be at least 1.40x at all times."
+st, near_ext = call("POST", f"/decision/api/covenants/intel/{ref}/extract",
+                    {"text": near_text}, actor="analyst.user")
+near_row = next((e for e in (near_ext or []) if e.get("metric") == "DSCR"), None)
+check("nearestNumber ignores adjacent day-count and picks the actual threshold",
+      near_row is not None and abs(near_row["threshold"] - 1.40) < 1e-6,
+      f"threshold={near_row.get('threshold') if near_row else None}")
 
 # 44e. Human gate on an assessment
 dscr_assess_id = by_sys["DSCR"]["id"]
@@ -1425,6 +1469,15 @@ check("AUTHORITATIVE rating + pricing UNCHANGED by CPT",
       post_cpt["rating"]["finalGrade"] == pre_cpt_grade
       and abs(post_cpt["pricing"]["recommendedRate"] - pre_cpt_rate) < 1e-9,
       f"{pre_cpt_grade}/{pre_cpt_rate} -> {post_cpt['rating']['finalGrade']}/{post_cpt['pricing']['recommendedRate']}")
+
+# 46j. 404 vs 502 — unknown counterparty must surface as 404, not BAD_GATEWAY.
+st, missing = call("POST", "/decision/api/cpt/CP-DOES-NOT-EXIST/generate", {}, actor="rm.user")
+check("CPT for unknown counterparty returns 404 (not 502 'upstream unavailable')",
+      st == 404, f"{st} {missing}")
+# Same for group rollup.
+st, missing_group = call("GET", "/decision/api/decisions/groups/GRP-DOES-NOT-EXIST/insights",
+                         actor="credit.head")
+check("Group insights for unknown group returns 404 (not 502)", st == 404, f"{st}")
 
 print("== 13. Audit trail ==")
 st, audit = call("GET", f"/risk/api/audit/subject?type=Application&id={ref}")

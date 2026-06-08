@@ -65,11 +65,17 @@ public class GroupInsightsService {
 
         for (GroupMemberDto m : exposure.members()) {
             List<LoanApplicationRefDto> apps = upstream.applicationsForCounterparty(m.reference());
-            // pick the most-recent application by reference order (lexical fallback) or the first non-CLOSED.
+            // Pick the most-recently-created non-CLOSED application. createdAt is an ISO
+            // instant string from origination; lexical ordering matches chronological order
+            // for that format. If every app is CLOSED we deliberately treat the member as
+            // having no live application — counting a closed loan in the rollup would
+            // inflate exposure / PD weights.
             LoanApplicationRefDto latest = apps.stream()
                     .filter(a -> !"CLOSED".equalsIgnoreCase(a.status()))
-                    .min(Comparator.comparing(LoanApplicationRefDto::reference).reversed())
-                    .orElse(apps.isEmpty() ? null : apps.get(0));
+                    .max(Comparator.comparing(
+                            (LoanApplicationRefDto a) -> a.createdAt() == null ? "" : a.createdAt())
+                            .thenComparing(LoanApplicationRefDto::reference))
+                    .orElse(null);
 
             String appRef = latest == null ? null : latest.reference();
             DealEnvelopeDto env = appRef == null ? null : upstream.envelopeOrNull(appRef);

@@ -149,6 +149,7 @@ public class OriginationService {
         return applications.findAll();
     }
 
+    @Transactional(readOnly = true)
     public List<LoanApplication> listByCounterparty(String counterpartyRef) {
         return applications.findByCounterpartyRef(counterpartyRef);
     }

@@ -60,6 +60,13 @@ public class CertificateAssessment {
     private Double threshold;
     private Boolean recomputedPassed;   // applying op/threshold to recomputedObserved
 
+    /**
+     * Whether the deterministic recompute could be run at all. False when origination
+     * was unreachable or the spread has no ratios yet — distinguishes that condition
+     * from "no covenant on this metric" (which leaves recomputedObserved null too).
+     */
+    private boolean recomputeAvailable;
+
     /** True when the borrower-reported status matches the recomputation. */
     private Boolean agreement;
 

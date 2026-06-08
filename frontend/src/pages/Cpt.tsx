@@ -41,10 +41,17 @@ export default function Cpt() {
 
   const generate = async () => {
     if (!ref) return;
+    const body: any = {};
+    if (trend.trim() !== "") {
+      const parsed = Number(trend);
+      if (!Number.isFinite(parsed)) {
+        notify(`Trend must be a number (got '${trend}') — clear the field for default 10%`, true);
+        return;
+      }
+      body.trendFactorOverride = parsed / 100;     // user enters % (e.g. 12 → 0.12)
+    }
     setGenerating(true);
     try {
-      const body: any = {};
-      if (trend.trim() !== "") body.trendFactorOverride = Number(trend) / 100; // user enters %
       const out = await cptApi.generate(ref, body, actor);
       notify(`CPT v${out.version} generated`);
       latest.reload();

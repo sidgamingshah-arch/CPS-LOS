@@ -186,13 +186,16 @@ public class UpstreamClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record LoanApplicationRefDto(String reference, String counterpartyRef,
-                                        String counterpartyName, String status) {
+                                        String counterpartyName, String status,
+                                        String createdAt) {
     }
 
     public CounterpartyGroupDto groupByReference(String groupReference) {
         try {
             return counterparty.get().uri("/api/initiation/groups/by-reference/{r}", groupReference)
                     .retrieve().body(CounterpartyGroupDto.class);
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound nf) {
+            throw ApiException.notFound("No group: " + groupReference);
         } catch (Exception e) {
             throw new ApiException(HttpStatus.BAD_GATEWAY,
                     "counterparty-service unavailable for group " + groupReference + ": " + e.getMessage());
@@ -204,6 +207,8 @@ public class UpstreamClient {
         try {
             return counterparty.get().uri("/api/initiation/groups/{id}", groupId)
                     .retrieve().body(CounterpartyGroupDto.class);
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound nf) {
+            return null;       // 404 = group no longer exists; treat as untagged
         } catch (Exception e) {
             log.warn("counterparty-service group lookup unavailable for id={} ({})", groupId, e.getMessage());
             return null;
@@ -215,6 +220,8 @@ public class UpstreamClient {
             return counterparty.get()
                     .uri("/api/initiation/groups/by-reference/{r}/exposure", groupReference)
                     .retrieve().body(GroupExposureDto.class);
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound nf) {
+            throw ApiException.notFound("No group: " + groupReference);
         } catch (Exception e) {
             throw new ApiException(HttpStatus.BAD_GATEWAY,
                     "counterparty-service group exposure unavailable: " + e.getMessage());
@@ -227,10 +234,14 @@ public class UpstreamClient {
                     .uri("/api/applications/by-counterparty/{r}", counterpartyRef)
                     .retrieve().body(LoanApplicationRefDto[].class);
             return arr == null ? List.of() : List.of(arr);
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound nf) {
+            return List.of();   // 404 = no apps for this counterparty; not an outage
         } catch (Exception e) {
-            log.warn("origination-service applications-by-counterparty unavailable for {} ({})",
-                    counterpartyRef, e.getMessage());
-            return List.of();
+            // Transient / upstream failure — surface to the caller so a 0-app rollup
+            // can't be mistaken for a real "no applications" answer.
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "origination-service unavailable for applications-by-counterparty "
+                            + counterpartyRef + ": " + e.getMessage());
         }
     }
 
@@ -246,6 +257,8 @@ public class UpstreamClient {
         try {
             return counterparty.get().uri("/api/counterparties/by-reference/{r}", reference)
                     .retrieve().body(CounterpartyDto.class);
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound nf) {
+            throw ApiException.notFound("No counterparty: " + reference);
         } catch (Exception e) {
             throw new ApiException(HttpStatus.BAD_GATEWAY,
                     "counterparty-service unavailable for " + reference + ": " + e.getMessage());

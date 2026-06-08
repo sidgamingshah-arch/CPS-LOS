@@ -309,7 +309,8 @@ public class CollateralIntelligenceService {
 
     // ================================================================ 3. charge-Excel
 
-    @Transactional(readOnly = true)
+    // Not readOnly — the method stamps audit.engine which writes a row into audit_events.
+    @Transactional
     public String chargeExcel(String reference) {
         LoanApplication app = applications.findByReference(reference)
                 .orElseThrow(() -> ApiException.notFound("No application: " + reference));
@@ -492,19 +493,29 @@ public class CollateralIntelligenceService {
         }
     }
 
+    /**
+     * Finds the largest money expression in the text. Scans every digit-run together with
+     * an optional trailing unit (crore / lakh / million / billion) via the same MONEY
+     * regex used by {@link #parseMoney}, and keeps the maximum. Robust to single-spaced
+     * sentences (a previous token-split approach missed those) and to Indian groupings.
+     */
     private static Double largestMoney(String text) {
-        // Scan tokens separated by whitespace / non-digit punctuation so Indian groupings
-        // ("4,80,00,000") survive intact, then parse each candidate via parseMoney.
         double best = 0.0;
         boolean any = false;
-        for (String token : text.split("(?<=\\d)[^0-9,. crloemnxbioCRLOEMNXBIO]+|\\s{2,}|\\n|\\r|;|\\|")) {
-            String t = token.trim();
-            if (t.isEmpty() || !t.matches(".*\\d.*")) continue;
-            Double v = parseMoney(t);
-            if (v != null && v > best) {
-                best = v;
-                any = true;
-            }
+        Matcher m = MONEY.matcher(text);
+        while (m.find()) {
+            try {
+                double v = Double.parseDouble(m.group(1).replace(",", "").replace(" ", ""));
+                String unit = m.group(2);
+                if (unit != null) {
+                    String u = unit.toLowerCase();
+                    if (u.startsWith("cr") || u.startsWith("crore")) v *= 10_000_000;
+                    else if (u.startsWith("lak") || u.startsWith("lac")) v *= 100_000;
+                    else if (u.startsWith("mn") || u.startsWith("million") || u.equals("m")) v *= 1_000_000;
+                    else if (u.startsWith("bn") || u.startsWith("billion")) v *= 1_000_000_000;
+                }
+                if (v > best) { best = v; any = true; }
+            } catch (NumberFormatException ignored) { /* skip */ }
         }
         return any ? best : null;
     }
