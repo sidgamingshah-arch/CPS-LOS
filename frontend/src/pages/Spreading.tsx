@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { fmt, origination } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, useAsync } from "../ui";
 
 /**
  * SpreadJS-style financial spreading grid (PRD spreading UI). Rows are taxonomy line
@@ -192,8 +192,23 @@ export default function Spreading() {
         </div>
       )}
 
+      {!ref && (
+        <Card>
+          <EmptyState
+            glyph="▦"
+            title="Select a deal to spread its financials"
+            sub="Pick an application above. The multi-period grid loads with cell-level provenance; derived lines compute automatically, and overriding an extracted cell resets confirmation."
+          />
+        </Card>
+      )}
       {ref && periods.length === 0 && !analysis.loading && (
-        <Card title="No spread yet"><div className="muted">Auto-spread sample financials above to populate the grid.</div></Card>
+        <Card>
+          <EmptyState
+            glyph="▦"
+            title="No spread on this deal yet"
+            sub="Auto-spread the sample financials above to populate the grid. You can also upload statements on Doc Intelligence first."
+          />
+        </Card>
       )}
     </div>
   );

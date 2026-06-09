@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { counterparty, fmt, limits as L, origination } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, Stat, statusTone, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, Stat, statusTone, useAsync } from "../ui";
 
 /**
  * Limit management: build limit tree from a deal, view per-CIF tree with
@@ -33,6 +33,16 @@ export default function Limits() {
           </div>
         </div>
       </Card>
+
+      {!cif && (
+        <Card>
+          <EmptyState
+            glyph="◔"
+            title="Select a counterparty to load its limit tree"
+            sub="Pick a CIF above, or build a new tree from an approved deal. The View / Validation / Utilisation APIs and the ledger then anchor on that CIF."
+          />
+        </Card>
+      )}
 
       {tree.data && <TreeView tree={tree.data} reload={() => { tree.reload(); ledger.reload(); }} actor={actor} notify={notify} />}
 

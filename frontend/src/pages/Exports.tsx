@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { exports as feeds, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, useAsync } from "../ui";
 
 type ExportBatch = {
   id: number;
@@ -207,7 +207,11 @@ export default function Exports() {
         {batches.loading && <div className="loading">Loading batches…</div>}
         {batches.error && <div className="alert err">{batches.error}</div>}
         {!batches.loading && batchList.length === 0 && (
-          <div className="muted">No export batches yet. Use the buttons above to generate a feed.</div>
+          <EmptyState
+            glyph="⇪"
+            title="No export batches yet"
+            sub="Generate one with the buttons above. Re-running the same as-of day is idempotent — you'll get the existing batch back, not a duplicate."
+          />
         )}
         {batchList.length > 0 && (
           <table>

@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { origination, commentary, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, GovFlow, Stat, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, GovFlow, Stat, useAsync } from "../ui";
 
 // ── types ──────────────────────────────────────────────────────────────────
 
@@ -261,6 +261,16 @@ export default function Commentary() {
         </Field>
       </Card>
 
+      {!selectedRef && (
+        <Card>
+          <EmptyState
+            glyph="✎"
+            title="Select a deal to draft AI commentary"
+            sub="Pick an application above. Commentary is grounded in the deal's data; every draft is advisory and must be reviewed by a named human before it appears on the proposal."
+          />
+        </Card>
+      )}
+
       {/* ── Draft section ── */}
       {selectedRef && (
         <Card
@@ -305,10 +315,12 @@ export default function Commentary() {
             <div className="loading">Loading commentary…</div>
           )}
           {!entries.loading && (entries.data ?? []).length === 0 && (
-            <Card title="No commentary yet">
-              <div className="muted">
-                No commentary found for this deal — use the "Draft section" card above to create one.
-              </div>
+            <Card>
+              <EmptyState
+                glyph="✎"
+                title="No commentary on this deal yet"
+                sub="Use the “Draft section” card above to generate the first piece. Drafts stay advisory until a named human approves them."
+              />
             </Card>
           )}
 

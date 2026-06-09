@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { counterparty, origination, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, statusTone, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, statusTone, useAsync } from "../ui";
 
 const FACILITIES = ["TERM_LOAN", "WORKING_CAPITAL", "REVOLVING_CREDIT", "PROJECT_LOAN", "GUARANTEE", "TRADE_LINE"];
 const COLLATERAL = ["", "CASH", "GOVT_SECURITIES", "PROPERTY", "RECEIVABLES", "EQUITY_LISTED"];
@@ -16,7 +16,13 @@ export default function Deals() {
     <div className="grid">
       <Card title="Origination pipeline" sub="Intake → spread → rate → capital → price → approve → book."
         right={<Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New deal"}</Button>}>
-        {apps.loading ? <div className="loading">Loading…</div> : (
+        {apps.loading ? <div className="loading">Loading…</div> : (apps.data || []).length === 0 ? (
+          <EmptyState
+            glyph="✦"
+            title="No deals on the pipeline yet"
+            sub="Click + New deal to start an application — facility, sublimits and collateral. The lifecycle takes it from intake through spreading, rating, pricing, approval and booking."
+          />
+        ) : (
           <table>
             <thead><tr><th>Reference</th><th>Counterparty</th><th>Facility</th><th className="num">Amount</th><th>Status</th></tr></thead>
             <tbody>
@@ -29,7 +35,6 @@ export default function Deals() {
                   <td><Badge kind={statusTone(a.status)}>{a.status}</Badge></td>
                 </tr>
               ))}
-              {(apps.data || []).length === 0 && <tr><td colSpan={5} className="muted">No deals yet — create one.</td></tr>}
             </tbody>
           </table>
         )}

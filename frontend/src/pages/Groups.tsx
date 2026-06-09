@@ -16,6 +16,7 @@ import {
   Badge,
   Button,
   Card,
+  EmptyState,
   Field,
   GovFlow,
   Stat,
@@ -142,9 +143,12 @@ export default function Groups() {
           </select>
         </Field>
         {groupList.length === 0 && !allGroups.loading && (
-          <div className="muted" style={{ marginTop: 6 }}>
-            No groups yet — create one in <b>Counterparties</b> → Groups, or via{" "}
-            <span className="mono">POST /api/initiation/groups</span>.
+          <div style={{ marginTop: 6 }}>
+            <EmptyState
+              glyph="◌"
+              title="No borrower groups yet"
+              sub="Create one in Counterparties → Groups, or via POST /api/initiation/groups. Once tagged, members roll up here for combined credit decisioning."
+            />
           </div>
         )}
       </Card>

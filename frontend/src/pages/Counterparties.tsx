@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { counterparty } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, statusTone, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, statusTone, useAsync } from "../ui";
 
 const SEGMENTS = ["MID_CORPORATE", "LARGE_CORPORATE", "SME", "PROJECT_FINANCE", "TRADE_FINANCE", "FINANCIAL_INSTITUTION"];
 
@@ -52,8 +52,12 @@ export default function Counterparties() {
 
       <div>
         {selId ? <Detail id={selId} onChange={() => list.reload()} /> :
-          <Card title="Select a counterparty" sub="KYC/KYB · CDD tiering · UBO graph · screening — PRD Stage 1.">
-            <div className="muted">Pick a counterparty on the left, or create one.</div>
+          <Card>
+            <EmptyState
+              glyph="◴"
+              title="Select a counterparty to open its profile"
+              sub="Pick one from the list on the left or use + New to onboard a new obligor — KYC/KYB, CDD tiering, UBO graph and screening live inside."
+            />
           </Card>}
       </div>
     </div>

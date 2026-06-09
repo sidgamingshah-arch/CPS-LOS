@@ -14,6 +14,7 @@ import {
   Badge,
   Button,
   Card,
+  EmptyState,
   Field,
   GovFlow,
   Stat,
@@ -143,8 +144,12 @@ export default function Cpt() {
       </Card>
 
       {!t && ref && !latest.loading && (
-        <Card title="No CPT on file">
-          <div className="muted">No CPT for {ref} yet — click <b>Generate CPT</b> above.</div>
+        <Card>
+          <EmptyState
+            glyph="◷"
+            title={`No CPT for ${ref} yet`}
+            sub="Click Generate CPT above to draft the plan. The AI assembles the snapshot, wallet sizing and nudges; the RM signs off — rating, capital and pricing are never mutated."
+          />
         </Card>
       )}
 

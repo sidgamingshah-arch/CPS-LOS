@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { origination, docs } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, GovFlow, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, GovFlow, useAsync } from "../ui";
 
 /** Shape of a generated document as returned by docs.list / docs.generate */
 type GeneratedDocument = {
@@ -183,6 +183,16 @@ export default function DocGen() {
         </Field>
       </Card>
 
+      {!ref && (
+        <Card>
+          <EmptyState
+            glyph="◰"
+            title="Select a deal to draft documents"
+            sub="Pick an application above. Generation drafts from the template + clause library; nothing reaches the deal record until a named human confirms the draft."
+          />
+        </Card>
+      )}
+
       {ref && (
         <>
           {/* ── Generate panel ── */}
@@ -213,7 +223,11 @@ export default function DocGen() {
           >
             {docList.loading && <div className="loading">Loading…</div>}
             {!docList.loading && (docList.data ?? []).length === 0 && (
-              <div className="muted">No documents yet. Generate one above.</div>
+              <EmptyState
+                glyph="◰"
+                title="No documents on this deal yet"
+                sub="Generate one above to begin. Drafts are AI-authored; a named human must confirm before the document is locked to the deal."
+              />
             )}
             {(docList.data ?? []).length > 0 && (
               <table>

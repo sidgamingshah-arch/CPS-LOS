@@ -31,7 +31,7 @@
 import { useState } from "react";
 import { origination, docIntel, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, GovFlow, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, GovFlow, useAsync } from "../ui";
 
 const DECLARED_TYPES = [
   "FINANCIAL_STATEMENT",
@@ -261,6 +261,16 @@ export default function DocIntel() {
         </Field>
       </Card>
 
+      {!selectedRef && (
+        <Card>
+          <EmptyState
+            glyph="◴"
+            title="Select a deal to load its documents"
+            sub="Pick an application above. You can then upload financials / approvals / KYC docs and let AI classify and extract — every extraction is advisory until an analyst confirms it."
+          />
+        </Card>
+      )}
+
       {/* ── Documents table + upload ── */}
       {selectedRef && (
         <Card
@@ -290,7 +300,11 @@ export default function DocIntel() {
         >
           {docs.loading && <div className="loading">Loading documents…</div>}
           {!docs.loading && (docs.data || []).length === 0 && (
-            <div className="muted">No documents yet — upload one above.</div>
+            <EmptyState
+              glyph="⤴"
+              title="No documents on this deal yet"
+              sub="Upload one with the controls above. AI will classify it and extract structured fields — you confirm what's right before any data lands on the figure path."
+            />
           )}
           {(docs.data || []).length > 0 && (
             <table>
@@ -351,7 +365,11 @@ export default function DocIntel() {
 
           {extractions.loading && <div className="loading">Loading extractions…</div>}
           {!extractions.loading && (extractions.data || []).length === 0 && (
-            <div className="muted">No extractions yet — click Extract above.</div>
+            <EmptyState
+              glyph="✦"
+              title="No extractions on this document yet"
+              sub="Click Extract to let AI pull structured fields. The results are advisory — they only reach the figure path when an analyst confirms them."
+            />
           )}
 
           {(extractions.data || []).map((ex) => (
