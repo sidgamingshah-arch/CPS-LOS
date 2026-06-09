@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { origination, risk, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, GradeBadge, GovSplit, Stat, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, GradeBadge, GovSplit, Stat, useAsync } from "../ui";
 
 const SECTOR_OUTLOOKS = ["IMPROVING", "STABLE", "DETERIORATING"] as const;
 type SectorOutlook = (typeof SECTOR_OUTLOOKS)[number];
@@ -206,6 +206,18 @@ export default function RiskLab() {
         </Card>
       )}
 
+      {!ref && (
+        <Card>
+          <EmptyState
+            glyph="◎"
+            title="Select a deal to run advisory overlays"
+            sub="Pick an application above. Risk Lab then offers a statistical RAG band and macro stress overlays — both advisory, neither ever rewrites the authoritative rating."
+          />
+        </Card>
+      )}
+
+      {ref && (
+      <>
       {/* RAG card */}
       <Card
         title="RAG Assessment"
@@ -452,6 +464,8 @@ export default function RiskLab() {
           <div className="muted" style={{ marginTop: 8 }}>No macro assessments yet — configure a scenario and run.</div>
         )}
       </Card>
+      </>
+      )}
     </div>
   );
 }

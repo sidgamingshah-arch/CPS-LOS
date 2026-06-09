@@ -61,6 +61,20 @@ export function Field({ label, children }: { label: string; children: React.Reac
   return <label className="field"><span className="lbl">{label}</span>{children}</label>;
 }
 
+/** A friendly placeholder for a screen (or card) that needs a selection/action first. */
+export function EmptyState({ glyph = "◴", title, sub, action }: {
+  glyph?: string; title: string; sub?: string; action?: React.ReactNode;
+}) {
+  return (
+    <div className="empty">
+      <div className="empty-glyph">{glyph}</div>
+      <div className="empty-title">{title}</div>
+      {sub && <div className="empty-sub">{sub}</div>}
+      {action && <div style={{ marginTop: 10 }}>{action}</div>}
+    </div>
+  );
+}
+
 /** Async data hook with a manual refresh trigger. */
 export function useAsync<T>(fn: () => Promise<T>, deps: any[] = []): {
   data: T | null; error: string | null; loading: boolean; reload: () => void;

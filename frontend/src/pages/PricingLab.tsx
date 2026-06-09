@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { origination, risk, optimiser, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, Stat, Unchanged, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, Stat, Unchanged, useAsync } from "../ui";
 
 interface PricingException {
   id: number;
@@ -232,7 +232,18 @@ export default function PricingLab() {
         )}
       </Card>
 
+      {!ref && (
+        <Card>
+          <EmptyState
+            glyph="◎"
+            title="Select a deal to optimise pricing"
+            sub="Pick an application above. The goal-seek optimiser proposes rate/fee/collateral scenarios toward a target RAROC — advisory only; the authoritative pricing of record is never mutated."
+          />
+        </Card>
+      )}
+
       {/* Optimiser form */}
+      {ref && (
       <Card title="Optimiser constraints">
         <div className="btnrow" style={{ marginBottom: 10 }}>
           <Button kind="ghost" onClick={() => setForm(PRESET_STRETCH)}>
@@ -265,6 +276,7 @@ export default function PricingLab() {
           <span className="muted">Acting as {actor}</span>
         </div>
       </Card>
+      )}
 
       {/* Pricing exceptions / concessions */}
       {ref && (
