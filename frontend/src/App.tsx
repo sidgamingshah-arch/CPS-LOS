@@ -25,30 +25,66 @@ import Exports from "./pages/Exports";
 import Groups from "./pages/Groups";
 import Cpt from "./pages/Cpt";
 
-const NAV = [
-  { key: "dashboard", label: "Portfolio Dashboard" },
-  { key: "deals", label: "Deals" },
-  { key: "spreading", label: "Financial Spreading" },
-  { key: "structuring", label: "Deal Structuring" },
-  { key: "docintel", label: "Doc Intelligence" },
-  { key: "counterparties", label: "Counterparties" },
-  { key: "groups", label: "Borrower Groups" },
-  { key: "cpt", label: "Client Planning" },
-  { key: "limits", label: "Limits" },
-  { key: "cad", label: "CAD · Documentation" },
-  { key: "docgen", label: "Doc Generation" },
-  { key: "commentary", label: "AI Commentary" },
-  { key: "pricinglab", label: "Pricing Lab" },
-  { key: "monitoring", label: "Monitoring · MER" },
-  { key: "customer360", label: "Customer-360" },
-  { key: "risklab", label: "Risk Lab" },
-  { key: "mis", label: "MIS · Reports" },
-  { key: "exports", label: "Downstream Exports" },
-  { key: "copilot", label: "Copilot" },
-  { key: "rulepacks", label: "Jurisdictions & Rule Packs" },
-  { key: "masters", label: "Master Data" },
-  { key: "audit", label: "Audit Trail" },
+/**
+ * Navigation grouped by the credit-lifecycle spine (counterparty → origination →
+ * risk → decision → limit → portfolio → config). Each section maps to a phase of
+ * work rather than to a service, so the IA reads as a journey, not a server list.
+ */
+type NavItem = { key: string; label: string };
+type NavGroup = { title: string; items: NavItem[] };
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    title: "Overview",
+    items: [
+      { key: "dashboard", label: "Portfolio Dashboard" },
+      { key: "copilot", label: "Copilot" },
+    ],
+  },
+  {
+    title: "Originate",
+    items: [
+      { key: "counterparties", label: "Counterparties" },
+      { key: "groups", label: "Borrower Groups" },
+      { key: "cpt", label: "Client Planning" },
+      { key: "deals", label: "Deals" },
+      { key: "structuring", label: "Deal Structuring" },
+      { key: "spreading", label: "Financial Spreading" },
+      { key: "docintel", label: "Doc Intelligence" },
+    ],
+  },
+  {
+    title: "Assess & Decide",
+    items: [
+      { key: "risklab", label: "Risk Lab" },
+      { key: "pricinglab", label: "Pricing Lab" },
+      { key: "cad", label: "CAD · Documentation" },
+      { key: "docgen", label: "Doc Generation" },
+      { key: "commentary", label: "AI Commentary" },
+    ],
+  },
+  {
+    title: "Limits & Portfolio",
+    items: [
+      { key: "limits", label: "Limits" },
+      { key: "monitoring", label: "Monitoring · MER" },
+      { key: "customer360", label: "Customer-360" },
+      { key: "mis", label: "MIS · Reports" },
+      { key: "exports", label: "Downstream Exports" },
+    ],
+  },
+  {
+    title: "Configure & Govern",
+    items: [
+      { key: "rulepacks", label: "Jurisdictions & Rule Packs" },
+      { key: "masters", label: "Master Data" },
+      { key: "audit", label: "Audit Trail" },
+    ],
+  },
 ];
+
+/** Flat key→label lookup derived from the groups (topbar title). */
+const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
 const CRUMB: Record<string, string> = {
   dashboard: "Portfolio & book-level intelligence",
@@ -81,9 +117,14 @@ export default function App() {
   const [ref, setRef] = useState<string | undefined>();
   const [actor, setActor] = useState("rm.user");
   const [msg, setMsg] = useState<{ text: string; err?: boolean } | null>(null);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const notify = useCallback((text: string, err?: boolean) => setMsg({ text, err }), []);
   const nav = useCallback((v: string, r?: string) => { setView(v); if (r !== undefined) setRef(r); }, []);
+  const toggleGroup = useCallback(
+    (title: string) => setCollapsed((c) => ({ ...c, [title]: !c[title] })),
+    [],
+  );
 
   const ctx = useMemo(() => ({ actor, notify, nav }), [actor, notify, nav]);
 
@@ -96,11 +137,32 @@ export default function App() {
             <div className="tag">Governed AI for Wholesale Credit</div>
           </div>
           <nav className="nav">
-            {NAV.map((n) => (
-              <button key={n.key} className={view === n.key ? "active" : ""} onClick={() => nav(n.key)}>
-                <span className="dot" /> {n.label}
-              </button>
-            ))}
+            {NAV_GROUPS.map((g) => {
+              const isCollapsed = !!collapsed[g.title];
+              return (
+                <div key={g.title} className={`nav-group${isCollapsed ? " collapsed" : ""}`}>
+                  <button
+                    className="nav-group-title"
+                    onClick={() => toggleGroup(g.title)}
+                    aria-expanded={!isCollapsed}
+                  >
+                    <span>{g.title}</span>
+                    <span className="chev">▾</span>
+                  </button>
+                  <div className="nav-group-items">
+                    {g.items.map((n) => (
+                      <button
+                        key={n.key}
+                        className={`nav-item${view === n.key ? " active" : ""}`}
+                        onClick={() => nav(n.key)}
+                      >
+                        <span className="dot" /> {n.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </nav>
           <div className="actor">
             Acting as (named accountable user)
