@@ -18,6 +18,10 @@ spring:
         dialect: org.hibernate.community.dialect.SQLiteDialect
     show-sql: false
 
+helix:
+  config-service:
+    base-url: ${CONFIG_SERVICE_URL:http://localhost:8081}
+
 management:
   endpoints:
     web:

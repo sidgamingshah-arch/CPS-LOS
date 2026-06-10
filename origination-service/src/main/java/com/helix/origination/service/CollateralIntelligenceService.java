@@ -88,6 +88,7 @@ public class CollateralIntelligenceService {
     private final LoanApplicationRepository applications;
     private final OriginationService origination;
     private final AuditService audit;
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
     public CollateralIntelligenceService(CollateralExtractionRepository extractions,
                                          CollateralRevaluationRepository revaluations,
@@ -95,7 +96,8 @@ public class CollateralIntelligenceService {
                                          ProposedFacilityRepository facilities,
                                          LoanApplicationRepository applications,
                                          OriginationService origination,
-                                         AuditService audit) {
+                                         AuditService audit,
+                                         com.helix.common.governance.AiGovernanceClient governance) {
         this.extractions = extractions;
         this.revaluations = revaluations;
         this.collaterals = collaterals;
@@ -103,14 +105,16 @@ public class CollateralIntelligenceService {
         this.applications = applications;
         this.origination = origination;
         this.audit = audit;
+        this.governance = governance;
     }
 
     // ================================================================ 1. extraction
 
     @Transactional
     public CollateralExtraction extract(String reference, String documentKind, String text, String actor) {
-        applications.findByReference(reference)
+        LoanApplication app = applications.findByReference(reference)
                 .orElseThrow(() -> ApiException.notFound("No application: " + reference));
+        governance.enforce(com.helix.common.governance.AiCapability.COLLATERAL_INTEL, app.getJurisdiction());
         String kind = documentKind.toUpperCase();
         if (!MANDATORY.containsKey(kind)) {
             throw ApiException.badRequest("Unknown documentKind '" + documentKind + "'");

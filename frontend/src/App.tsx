@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppContext, ACTORS } from "./app-context";
+import { AppContext, ACTORS, AI_BY_NAV, isNavEnabled } from "./app-context";
+import { governance } from "./api";
 import { Toast, AiBadge, HumanBadge, DeterministicBadge, GovernanceStrip } from "./ui";
 import CommandPalette from "./CommandPalette";
 import Dashboard from "./pages/Dashboard";
 import RulePacks from "./pages/RulePacks";
+import Governance from "./pages/Governance";
 import Counterparties from "./pages/Counterparties";
 import Deals from "./pages/Deals";
 import DealWorkspace from "./pages/DealWorkspace";
@@ -79,6 +81,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "rulepacks", label: "Jurisdictions & Rule Packs" },
       { key: "masters", label: "Master Data" },
+      { key: "governance", label: "AI Governance" },
       { key: "audit", label: "Audit Trail" },
     ],
   },
@@ -114,6 +117,7 @@ const CRUMB: Record<string, string> = {
   copilot: "Scoped, grounded, non-binding assistant",
   rulepacks: "Regulatory abstraction layer",
   masters: "Generic Master-Data engine · maker-checker SoD · 22 master types",
+  governance: "AI off-switch · capability-level · per-jurisdiction override · 403 enforced",
   audit: "Immutable, examiner-ready trail",
   workspace: "Deal workspace — AI-executed, human-gated",
 };
@@ -134,6 +138,22 @@ export default function App() {
   });
   const [navOpen, setNavOpen] = useState(false);   // mobile drawer
   const [cmdkOpen, setCmdkOpen] = useState(false); // ⌘K palette
+  const [aiEnabled, setAiEnabled] = useState<Record<string, boolean>>({});
+
+  // Pull the resolved AI-governance map on boot. Conservative fallback: if the
+  // call fails we treat every capability as enabled (matches the server's TTL'd
+  // client fallback), so a brief outage on config-service doesn't blank the UI.
+  useEffect(() => {
+    governance.resolved()
+      .then((m) => {
+        const out: Record<string, boolean> = {};
+        for (const [k, v] of Object.entries(m.capabilities || {})) {
+          out[k] = (v as any).enabled !== false;
+        }
+        setAiEnabled(out);
+      })
+      .catch(() => setAiEnabled({}));
+  }, []);
 
   const notify = useCallback((text: string, err?: boolean) => setMsg({ text, err }), []);
   const nav = useCallback((v: string, r?: string) => {
@@ -164,7 +184,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const ctx = useMemo(() => ({ actor, notify, nav }), [actor, notify, nav]);
+  const ctx = useMemo(() => ({ actor, notify, nav, aiEnabled }),
+                       [actor, notify, nav, aiEnabled]);
 
   const title = NAV.find((n) => n.key === view)?.label || "Deal Workspace";
   // The active-deal context chip: show whenever a deal is selected but we're not
@@ -183,6 +204,11 @@ export default function App() {
           <nav className="nav">
             {NAV_GROUPS.map((g) => {
               const isCollapsed = !!collapsed[g.title];
+              // Hide AI-disabled screens from the nav. The server-side enforcement
+              // (403 forbiddenAutonomy) is the real gate; this just stops users
+              // landing on a screen whose primary action wouldn't work.
+              const items = g.items.filter((n) => isNavEnabled(n.key, aiEnabled));
+              if (items.length === 0) return null;
               return (
                 <div key={g.title} className={`nav-group${isCollapsed ? " collapsed" : ""}`}>
                   <button
@@ -194,7 +220,7 @@ export default function App() {
                     <span className="chev">▾</span>
                   </button>
                   <div className="nav-group-items">
-                    {g.items.map((n) => (
+                    {items.map((n) => (
                       <button
                         key={n.key}
                         className={`nav-item${view === n.key ? " active" : ""}`}
@@ -264,6 +290,7 @@ export default function App() {
             {view === "exports" && <Exports />}
             {view === "copilot" && <Copilot />}
             {view === "rulepacks" && <RulePacks />}
+            {view === "governance" && <Governance />}
             {view === "masters" && <Masters />}
             {view === "audit" && <AuditLog />}
             {view === "workspace" && ref && <DealWorkspace reference={ref} />}

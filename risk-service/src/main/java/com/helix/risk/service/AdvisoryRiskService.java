@@ -52,15 +52,17 @@ public class AdvisoryRiskService {
     private final MacroImpactAssessmentRepository macroRepo;
     private final OriginationClient origination;
     private final AuditService audit;
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
     public AdvisoryRiskService(RatingRepository ratings, RagAssessmentRepository ragRepo,
                                MacroImpactAssessmentRepository macroRepo, OriginationClient origination,
-                               AuditService audit) {
+                               AuditService audit, com.helix.common.governance.AiGovernanceClient governance) {
         this.ratings = ratings;
         this.ragRepo = ragRepo;
         this.macroRepo = macroRepo;
         this.origination = origination;
         this.audit = audit;
+        this.governance = governance;
     }
 
     // --------------------------------------------------- statistical RAG
@@ -68,6 +70,7 @@ public class AdvisoryRiskService {
     @Transactional
     public RagAssessment assessRag(String reference, String actor) {
         CreditInputsDto in = origination.creditInputs(reference);
+        governance.enforce(com.helix.common.governance.AiCapability.RAG_OVERLAY, in.jurisdiction());
         Map<String, Double> ratios = in.ratios() == null ? Map.of() : in.ratios();
         Rating rating = ratings.findFirstByApplicationReferenceOrderByCreatedAtDesc(reference).orElse(null);
 
@@ -124,6 +127,8 @@ public class AdvisoryRiskService {
     public MacroImpactAssessment assessMacro(String reference, MacroScenarioRequest req, String actor) {
         Rating rating = ratings.findFirstByApplicationReferenceOrderByCreatedAtDesc(reference)
                 .orElseThrow(() -> ApiException.notFound("No rating for " + reference + " — rate the deal first"));
+        governance.enforce(com.helix.common.governance.AiCapability.MACRO_IMPACT,
+                origination.creditInputs(reference).jurisdiction());
         double basePd = Math.max(0.0001, rating.getPd());
 
         double rateBps = nz(req.interestRateBps());

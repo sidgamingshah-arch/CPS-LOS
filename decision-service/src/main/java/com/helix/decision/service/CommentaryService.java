@@ -36,11 +36,14 @@ public class CommentaryService {
     private final ProposalCommentaryRepository repo;
     private final UpstreamClient upstream;
     private final AuditService audit;
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
-    public CommentaryService(ProposalCommentaryRepository repo, UpstreamClient upstream, AuditService audit) {
+    public CommentaryService(ProposalCommentaryRepository repo, UpstreamClient upstream, AuditService audit,
+                             com.helix.common.governance.AiGovernanceClient governance) {
         this.repo = repo;
         this.upstream = upstream;
         this.audit = audit;
+        this.governance = governance;
     }
 
     @Transactional
@@ -50,6 +53,8 @@ public class CommentaryService {
         }
         String s = section.toLowerCase();
         DealEnvelopeDto env = upstream.envelope(reference);
+        governance.enforce(com.helix.common.governance.AiCapability.COMMENTARY,
+                env == null ? null : env.jurisdiction());
         RiskSummaryDto rs;
         try { rs = upstream.riskSummary(reference); } catch (Exception e) { rs = null; }
 

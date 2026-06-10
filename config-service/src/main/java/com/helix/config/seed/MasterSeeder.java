@@ -107,6 +107,17 @@ public class MasterSeeder implements CommandLineRunner {
         masters.seedActive("CHECKLIST_MASTER", "CORP_TERM_LOAN_SECURED", null, map("items", List.of("Sanction letter", "Facility agreement", "Mortgage deed", "Board resolution", "Insurance assignment")));
         masters.seedActive("DOC_TEMPLATE_MASTER", "FACILITY_AGREEMENT", null, map("format", "DOCX", "clauses", List.of("definitions", "facility", "interest", "covenants", "events_of_default")));
         masters.seedActive("TNC_MASTER", "REGISTERED_MORTGAGE", null, map("text", "Borrower to maintain valid insurance on the mortgaged property assigned to the bank.", "appliesTo", "PROPERTY"));
+
+        // ---- AI governance master (default record per capability, jurisdiction=null) ----
+        // Default posture: every governed AI capability is ENABLED. A bank can flip an
+        // individual capability off, or layer a per-jurisdiction override on top of
+        // the default. The frontend reads /config/api/governance/ai/resolved to render
+        // the surface; each AI service consults AiGovernanceClient.enforce(...) before
+        // doing AI work, returning 403 forbiddenAutonomy when disabled.
+        for (com.helix.common.governance.AiCapability cap : com.helix.common.governance.AiCapability.values()) {
+            masters.seedActive("AI_GOVERNANCE", cap.key(), null,
+                    map("enabled", true, "description", cap.description()));
+        }
     }
 
     private Map<String, Object> hier(String group, String subGroup, String type, String subType, double rw, String valMethod) {

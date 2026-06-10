@@ -35,13 +35,15 @@ public class PricingOptimiser {
     private final ConfigClient config;
     private final OriginationClient origination;
     private final AuditService audit;
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
     public PricingOptimiser(RiskService risk, ConfigClient config, OriginationClient origination,
-                            AuditService audit) {
+                            AuditService audit, com.helix.common.governance.AiGovernanceClient governance) {
         this.risk = risk;
         this.config = config;
         this.origination = origination;
         this.audit = audit;
+        this.governance = governance;
     }
 
     @Transactional
@@ -49,6 +51,7 @@ public class PricingOptimiser {
         Rating rating = risk.latestRating(reference);
         CapitalResult capital = risk.latestCapital(reference);
         CreditInputsDto in = origination.creditInputs(reference);
+        governance.enforce(com.helix.common.governance.AiCapability.PRICING_OPTIMISER, in.jurisdiction());
         RulePackDto pack = config.activePack(in.jurisdiction(), "PRICING");
 
         double hurdle = pack.number("hurdle_raroc", 0.15);

@@ -28,6 +28,24 @@ export const config = {
     call<any>(`/config/api/rulepacks?jurisdiction=${jurisdiction}&type=${type}`, "GET"),
 };
 
+// ---- AI governance (capability on/off switch with per-jurisdiction override) ----
+export type AiGovernanceMap = {
+  jurisdiction: string | null;
+  capabilities: Record<string, { enabled: boolean; description: string; source: string }>;
+};
+export const governance = {
+  capabilities: () => call<{ key: string; description: string }[]>(
+    "/config/api/governance/ai/capabilities", "GET"),
+  resolved: (jurisdiction?: string) => call<AiGovernanceMap>(
+    "/config/api/governance/ai/resolved" + (jurisdiction ? `?jurisdiction=${jurisdiction}` : ""),
+    "GET"),
+  setEnabled: (key: string, enabled: boolean, jurisdiction: string | null, actor: string) =>
+    call<any>("/config/api/masters/AI_GOVERNANCE", "POST",
+      { recordKey: key, jurisdiction, payload: { enabled } }, actor),
+  approve: (recordId: number, actor: string) =>
+    call<any>(`/config/api/masters/records/${recordId}/approve`, "POST", undefined, actor),
+};
+
 // ---- counterparty ----
 export const counterparty = {
   list: () => call<any[]>("/counterparty/api/counterparties", "GET"),
