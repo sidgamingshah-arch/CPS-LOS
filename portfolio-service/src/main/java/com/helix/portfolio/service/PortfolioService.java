@@ -71,6 +71,9 @@ public class PortfolioService {
         e.setJurisdiction(inputs.jurisdiction());
         e.setSegment(inputs.segment());
         e.setSector(inputs.segment());   // sector proxy; counterparty sector would refine this
+        e.setFacilityType(inputs.facilityType());
+        e.setTenorMonths(inputs.tenorMonths());
+        e.setGroupRef(upstream.groupRefFor(inputs.counterpartyRef()));
         e.setFinalGrade(risk.rating().finalGrade());
         e.setPd(risk.rating().pd());
         e.setLgd(risk.rating().lgd());

@@ -19,18 +19,42 @@ public class PortfolioUpstreamClient {
     private static final Logger log = LoggerFactory.getLogger(PortfolioUpstreamClient.class);
 
     private final RestClient config;
+    private final RestClient counterparty;
     private final RestClient origination;
     private final RestClient risk;
     private final RestClient decision;
 
     public PortfolioUpstreamClient(@Value("${helix.config-service.base-url}") String configUrl,
+                                   @Value("${helix.counterparty-service.base-url}") String counterpartyUrl,
                                    @Value("${helix.origination-service.base-url}") String originationUrl,
                                    @Value("${helix.risk-service.base-url}") String riskUrl,
                                    @Value("${helix.decision-service.base-url}") String decisionUrl) {
         this.config = RestClient.builder().baseUrl(configUrl).build();
+        this.counterparty = RestClient.builder().baseUrl(counterpartyUrl).build();
         this.origination = RestClient.builder().baseUrl(originationUrl).build();
         this.risk = RestClient.builder().baseUrl(riskUrl).build();
         this.decision = RestClient.builder().baseUrl(decisionUrl).build();
+    }
+
+    /**
+     * Best-effort counterparty-group key for the concentration group dimension.
+     * Returns {@code GRP-<id>} when the obligor is tagged to a group, else the
+     * obligor's own reference (ungrouped obligors are their own group of one).
+     */
+    @SuppressWarnings("unchecked")
+    public String groupRefFor(String counterpartyRef) {
+        if (counterpartyRef == null) return null;
+        try {
+            Map<String, Object> cp = counterparty.get()
+                    .uri("/api/counterparties/by-reference/{ref}", counterpartyRef)
+                    .retrieve().body(Map.class);
+            if (cp != null && cp.get("groupId") != null) {
+                return "GRP-" + cp.get("groupId");
+            }
+        } catch (Exception e) {
+            log.debug("group lookup failed for {} ({})", counterpartyRef, e.getMessage());
+        }
+        return counterpartyRef;
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -50,7 +74,8 @@ public class PortfolioUpstreamClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record CreditInputsDto(String applicationReference, String counterpartyRef, String counterpartyName,
                                   String jurisdiction, String segment, String facilityType, double requestedAmount,
-                                  String currency, Map<String, Double> ratios, Map<String, Double> latestFinancials) {
+                                  String currency, int tenorMonths,
+                                  Map<String, Double> ratios, Map<String, Double> latestFinancials) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

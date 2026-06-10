@@ -69,6 +69,7 @@ public class RulePackSeeder implements CommandLineRunner {
         pack("rbi_doa_matrix", "DOA_MATRIX", "IN-RBI", doaMatrix(50_000_000d, 250_000_000d, 1_000_000_000d));
         pack("rbi_kyc_md_tiers", "CDD_TIERS", "IN-RBI", cddTiers());
         pack("rbi_large_exposure_framework", "EXPOSURE_LIMITS", "IN-RBI", exposureLimits(0.15, 0.25));
+        pack("rbi_concentration_limits", "CONCENTRATION_LIMITS", "IN-RBI", concentrationLimits(0.15, 0.25, 0.15));
         pack("rbi_pricing_v1", "PRICING", "IN-RBI", pricing(0.15, 0.075, 0.010));
         pack("workflow_mid_corp_rbi_v1", "WORKFLOW_DEFINITION", "IN-RBI",
                 workflowMidCorporate("MID_CORPORATE", true));
@@ -108,6 +109,7 @@ public class RulePackSeeder implements CommandLineRunner {
         pack("cbuae_doa_matrix", "DOA_MATRIX", "AE-CBUAE", doaMatrix(20_000_000d, 100_000_000d, 500_000_000d));
         pack("cbuae_aml_tiers", "CDD_TIERS", "AE-CBUAE", cddTiers());
         pack("cbuae_large_exposure", "EXPOSURE_LIMITS", "AE-CBUAE", exposureLimits(0.25, 0.25));
+        pack("cbuae_concentration_limits", "CONCENTRATION_LIMITS", "AE-CBUAE", concentrationLimits(0.25, 0.25, 0.18));
         pack("cbuae_pricing", "PRICING", "AE-CBUAE", pricing(0.135, 0.045, 0.011));
         pack("workflow_mid_corp_cbuae_v1", "WORKFLOW_DEFINITION", "AE-CBUAE",
                 workflowMidCorporate("MID_CORPORATE", false));
@@ -259,6 +261,29 @@ public class RulePackSeeder implements CommandLineRunner {
                 "geography_cap_pct_portfolio", 0.30,
                 "capital_base", 50_000_000_000d
         );
+    }
+
+    /**
+     * Multi-dimensional concentration thresholds. Each dimension carries its limit
+     * basis (CAPITAL or PORTFOLIO) and limit %. The intersection cells
+     * (sector × geography, rating × sector) are deliberately tight — they are where
+     * correlated tail risk hides. {@code singleName}/{@code group} flow through so a
+     * jurisdiction's large-exposure stance is consistent across both views.
+     */
+    private Map<String, Object> concentrationLimits(double singleName, double group, double sectorGeoCell) {
+        return map(
+                "capital_base", 50_000_000_000d,
+                "dimensions", map(
+                        "SINGLE_NAME", map("basis", "CAPITAL", "limitPct", singleName),
+                        "GROUP", map("basis", "CAPITAL", "limitPct", group),
+                        "SECTOR", map("basis", "PORTFOLIO", "limitPct", 0.20),
+                        "GEOGRAPHY", map("basis", "PORTFOLIO", "limitPct", 0.40),
+                        "INSTRUMENT", map("basis", "PORTFOLIO", "limitPct", 0.50),
+                        "DURATION_BUCKET", map("basis", "PORTFOLIO", "limitPct", 0.45),
+                        "RATING", map("basis", "PORTFOLIO", "limitPct", 0.35),
+                        "CURRENCY", map("basis", "PORTFOLIO", "limitPct", 0.60),
+                        "SECTOR_x_GEOGRAPHY", map("basis", "PORTFOLIO", "limitPct", sectorGeoCell),
+                        "RATING_x_SECTOR", map("basis", "PORTFOLIO", "limitPct", 0.12)));
     }
 
     /**

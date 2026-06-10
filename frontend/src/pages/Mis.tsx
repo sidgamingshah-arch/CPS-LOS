@@ -1,9 +1,12 @@
-import { mis, fmt } from "../api";
+import { Fragment, useState } from "react";
+import { mis, fmt, portfolio } from "../api";
 import { Badge, Card, Stat, useAsync } from "../ui";
 
 export default function Mis() {
   const dash = useAsync(() => mis.dashboard(), []);
   const ecl = useAsync(() => mis.eclByStage(), []);
+  const multi = useAsync(() => portfolio.concentrationMulti("IN-RBI"), []);
+  const [openDim, setOpenDim] = useState<string | null>(null);
 
   if (dash.loading) return <div className="loading">Loading MIS dashboard…</div>;
   if (dash.error) return <div className="alert err">{dash.error}</div>;
@@ -85,6 +88,58 @@ export default function Mis() {
           <DistCounts map={watch.bySignalType} />
         </Card>
       </div>
+
+      <Card title="Multi-dimensional concentration"
+        sub={multi.data
+          ? `${multi.data.dimensionCount} dimensions · ${multi.data.totalBreaches} breach(es) · thresholds from the CONCENTRATION_LIMITS pack. Click a row for buckets.`
+          : "Loading…"}>
+        {multi.loading ? <div className="loading">Loading…</div> :
+         !multi.data ? <div className="muted">No exposures booked.</div> : (
+          <table>
+            <thead>
+              <tr><th>Dimension</th><th>Basis</th><th className="num">Limit %</th><th className="num">Buckets</th>
+                  <th className="num">Top share</th><th className="num">HHI</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {multi.data.dimensions.map((d: any) => (
+                <Fragment key={d.dimension}>
+                  <tr style={{ cursor: "pointer" }}
+                      onClick={() => setOpenDim(openDim === d.dimension ? null : d.dimension)}>
+                    <td className="mono">{d.dimension.replace(/_x_/g, " × ")}</td>
+                    <td><Badge kind={d.basis === "CAPITAL" ? "info" : ""}>{d.basis}</Badge></td>
+                    <td className="num">{(d.limitPct * 100).toFixed(0)}%</td>
+                    <td className="num">{d.bucketCount}</td>
+                    <td className="num">{fmt.pct(d.topBucketShare, 1)}</td>
+                    <td className="num">{d.hhi.toFixed(3)}</td>
+                    <td>{d.breachCount > 0 ? <Badge kind="bad">{d.breachCount} breach</Badge> : <Badge kind="ok">within</Badge>}</td>
+                  </tr>
+                  {openDim === d.dimension && (
+                    <tr>
+                      <td colSpan={7} style={{ background: "var(--surface-2, rgba(0,0,0,0.02))" }}>
+                        <table>
+                          <thead><tr><th>Bucket</th><th className="num">EAD</th><th className="num">Share</th><th className="num">Limit</th><th className="num">Utilisation</th><th /></tr></thead>
+                          <tbody>
+                            {d.lines.slice(0, 12).map((l: any) => (
+                              <tr key={l.key}>
+                                <td>{l.key}</td>
+                                <td className="num">{fmt.money(l.exposure, "")}</td>
+                                <td className="num">{fmt.pct(l.share, 1)}</td>
+                                <td className="num">{fmt.money(l.limitAmount, "")}</td>
+                                <td className="num">{fmt.pct(l.utilisation, 0)}</td>
+                                <td>{l.breach ? <Badge kind="bad">breach</Badge> : ""}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
 
       <Card title="ECL by stage × jurisdiction" sub="Reported provision per jurisdiction policy (max(ECL, IRAC) for IN-RBI; ECL only for AE-CBUAE).">
         {ecl.loading ? <div className="loading">Loading…</div> :

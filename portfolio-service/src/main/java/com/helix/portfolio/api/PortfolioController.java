@@ -14,6 +14,7 @@ import com.helix.portfolio.entity.ExposureRecord;
 import com.helix.portfolio.entity.RarocTracking;
 import com.helix.portfolio.service.CoreBankingIngestionService;
 import com.helix.portfolio.service.EwsService;
+import com.helix.portfolio.service.MultiDimConcentrationService;
 import com.helix.portfolio.service.PortfolioService;
 import com.helix.portfolio.service.RarocTrackingService;
 
@@ -38,13 +39,15 @@ public class PortfolioController {
     private final EwsService ews;
     private final CoreBankingIngestionService coreBanking;
     private final RarocTrackingService raroc;
+    private final MultiDimConcentrationService multiDim;
 
     public PortfolioController(PortfolioService portfolio, EwsService ews, CoreBankingIngestionService coreBanking,
-                               RarocTrackingService raroc) {
+                               RarocTrackingService raroc, MultiDimConcentrationService multiDim) {
         this.portfolio = portfolio;
         this.ews = ews;
         this.coreBanking = coreBanking;
         this.raroc = raroc;
+        this.multiDim = multiDim;
     }
 
     // ---- exposures ----
@@ -96,6 +99,13 @@ public class PortfolioController {
     @GetMapping("/concentration")
     public ConcentrationView concentration(@RequestParam(defaultValue = "IN-RBI") String jurisdiction) {
         return portfolio.concentration(jurisdiction);
+    }
+
+    /** Multi-dimensional concentration: 8 dimensions + 2 intersections, HHI per dim. */
+    @GetMapping("/concentration/multi")
+    public com.helix.portfolio.dto.Dtos.MultiDimConcentrationView concentrationMulti(
+            @RequestParam(defaultValue = "IN-RBI") String jurisdiction) {
+        return multiDim.concentration(jurisdiction);
     }
 
     @GetMapping("/stress")

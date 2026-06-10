@@ -23,6 +23,20 @@ public final class Dtos {
                                     List<ConcentrationLine> segment, List<String> breaches) {
     }
 
+    /** One dimension in the multi-dimensional concentration view. */
+    public record ConcentrationDimension(String dimension, String basis, double limitPct,
+                                         double limitAmount, double hhi, int bucketCount,
+                                         double topBucketShare, int breachCount,
+                                         List<ConcentrationLine> lines) {
+    }
+
+    /** Multi-dimensional concentration: every configured dimension + intersections. */
+    public record MultiDimConcentrationView(String jurisdiction, double totalExposure, double capitalBase,
+                                            int dimensionCount, int totalBreaches,
+                                            List<ConcentrationDimension> dimensions,
+                                            List<String> breaches) {
+    }
+
     public record PortfolioSummary(long exposureCount, double totalEad, double totalRwa,
                                    double totalReportedProvision, Map<String, Long> byStage,
                                    Map<String, Double> provisionByStage, long openSignals) {
