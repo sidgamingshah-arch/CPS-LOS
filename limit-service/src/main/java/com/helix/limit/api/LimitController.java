@@ -75,6 +75,17 @@ public class LimitController {
         return limits.node(reference);
     }
 
+    @GetMapping("/by-application")
+    public List<com.helix.limit.entity.LimitNode> byApplication(@RequestParam String applicationRef) {
+        return limits.nodesByApplication(applicationRef);
+    }
+
+    @GetMapping("/by-facility")
+    public com.helix.limit.entity.LimitNode byFacility(@RequestParam String applicationRef,
+                                                       @RequestParam String facilityRef) {
+        return limits.nodeByFacility(applicationRef, facilityRef);
+    }
+
     @GetMapping("/{cif}/exposure")
     public ExposureCheckResult exposure(@PathVariable String cif) {
         return limits.exposureCheck(cif, 0);

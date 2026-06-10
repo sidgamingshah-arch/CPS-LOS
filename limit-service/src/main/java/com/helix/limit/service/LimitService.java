@@ -171,6 +171,11 @@ public class LimitService {
         for (FacilityDto f : facilities) {
             LimitNode fac = child(root, fOrd++, f.facilityType(), f.facilityType(), null,
                     isRevolving(f.facilityType()), f.amount(), f.currency(), f.tenorMonths(), null, false, null);
+            // Carry the upstream facility reference so disbursement-service can match
+            // a draw to the correct limit node (multiple facilities of the same type
+            // would otherwise collide on 'code').
+            fac.setFacilityRef(f.reference());
+            nodes.save(fac);
             int sOrd = 0;
             for (var s : f.sublimits() == null ? List.<LimitUpstreamClient.SublimitDto>of() : f.sublimits()) {
                 child(fac, sOrd++, s.code(), s.productType(), null, isRevolving(s.productType()),
@@ -240,6 +245,18 @@ public class LimitService {
     @Transactional(readOnly = true)
     public NodeView node(String reference) {
         return view(byRef(reference));
+    }
+
+    @Transactional(readOnly = true)
+    public List<LimitNode> nodesByApplication(String applicationRef) {
+        return nodes.findByApplicationRefOrderByLevelAscOrdinalAsc(applicationRef);
+    }
+
+    @Transactional(readOnly = true)
+    public LimitNode nodeByFacility(String applicationRef, String facilityRef) {
+        return nodes.findByApplicationRefAndFacilityRef(applicationRef, facilityRef)
+                .orElseThrow(() -> ApiException.notFound(
+                        "No limit node for facility " + facilityRef + " on " + applicationRef));
     }
 
     private NodeView view(LimitNode n) {

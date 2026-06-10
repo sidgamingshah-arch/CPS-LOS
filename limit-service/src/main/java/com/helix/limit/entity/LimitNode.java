@@ -44,6 +44,7 @@ public class LimitNode {
     private String cif;              // counterparty reference / CIF
 
     private String applicationRef;   // originating deal, if any
+    private String facilityRef;      // the upstream ProposedFacility.reference, when this node represents a facility
     private Long groupId;            // group, for group-level roll-up
 
     private Long parentId;           // null at root

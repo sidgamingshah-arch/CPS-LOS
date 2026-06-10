@@ -1,0 +1,329 @@
+/**
+ * Pre-disbursement workflow + CP gate UI.
+ *
+ * Three panes per deal:
+ *   1. Conditions Precedent — register seeded from CP_MASTER; clear / waive each.
+ *   2. Drawdown tranches — request → authorise (CP gate) → release.
+ *   3. Audit trail — every transition stamped with the named human.
+ *
+ * The gate is enforced server-side (HTTP 403 with blocker payload) — this UI
+ * surfaces the same state so credit ops can see exactly what's blocking before
+ * even trying to authorise. The "AUTHORISATION GATE · CP-ENFORCED" banner pairs
+ * the gate state next to the authoritative facility figure, matching the
+ * platform's HUMAN-GATED / DETERMINISTIC chrome.
+ */
+import { useEffect, useMemo, useState } from "react";
+import { cps as cpApi, disbursement, fmt, origination } from "../api";
+import { useApp } from "../app-context";
+import {
+  Badge,
+  Button,
+  Card,
+  DeterministicBadge,
+  EmptyState,
+  Field,
+  HumanBadge,
+  useAsync,
+} from "../ui";
+
+export default function Disbursement() {
+  const { actor, notify } = useApp();
+  const apps = useAsync(() => origination.list(), []);
+  const [ref, setRef] = useState<string>("");
+  const [facilityRef, setFacilityRef] = useState<string>("");
+
+  const app = useAsync(
+    () => (ref ? origination.envelope(ref) : Promise.resolve(null)),
+    [ref]);
+
+  const facilities = useMemo(() => app.data?.facilities ?? [], [app.data]);
+
+  // Auto-select the first facility once the application loads.
+  useEffect(() => {
+    if (facilities.length > 0 && !facilityRef) setFacilityRef(facilities[0].reference);
+  }, [facilities, facilityRef]);
+
+  const register = useAsync(
+    () => (ref ? cpApi.register(ref, facilityRef) : Promise.resolve([])),
+    [ref, facilityRef]);
+
+  const gate = useAsync(
+    () => (ref && facilityRef ? cpApi.gate(ref, facilityRef) : Promise.resolve(null)),
+    [ref, facilityRef, register.data]);
+
+  const history = useAsync(
+    () => (ref ? disbursement.history(ref, facilityRef) : Promise.resolve([])),
+    [ref, facilityRef]);
+
+  const facility = facilities.find((f: any) => f.reference === facilityRef);
+
+  async function seed() {
+    if (!ref) return;
+    try {
+      const seeded = await cpApi.seed(ref, actor);
+      notify(`Seeded ${seeded.length} CP(s) from CP_MASTER`);
+      register.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function clearCp(id: number) {
+    const evidence = prompt("Evidence reference (e.g. DOC-12345)") || "";
+    try { await cpApi.clear(id, { evidenceRef: evidence }, actor);
+      notify("CP cleared");
+      register.reload(); gate.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function waiveCp(id: number) {
+    const reason = prompt("Waiver reason (required)") || "";
+    if (!reason) return;
+    try { await cpApi.waive(id, { reason }, actor);
+      notify("CP waived");
+      register.reload(); gate.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function requestDraw() {
+    if (!facility) return;
+    const amtStr = prompt(`Drawdown amount (${facility.currency})`) || "";
+    const amt = parseFloat(amtStr.replace(/[, ]/g, ""));
+    if (!amt || amt <= 0) return;
+    try {
+      await disbursement.request(ref, {
+        facilityRef, amount: amt, currency: facility.currency,
+        purpose: "drawdown", narrative: "via UI",
+      }, actor);
+      notify("Drawdown requested");
+      history.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function authorize(id: number) {
+    try { await disbursement.authorize(id, { note: "ui authorise" }, actor);
+      notify("Drawdown authorised");
+      history.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function release(id: number) {
+    try { await disbursement.release(id, actor);
+      notify("Drawdown released — limit utilisation booked");
+      history.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function reject(id: number) {
+    const reason = prompt("Rejection reason") || "";
+    if (!reason) return;
+    try { await disbursement.reject(id, { reason }, actor);
+      notify("Drawdown rejected");
+      history.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  return (
+    <div className="grid">
+      <Card title="Pre-disbursement workflow"
+        sub="Conditions Precedent are the explicit list of things that must be met before the FIRST drawdown of a facility. Server-side gate · maker-checker SoD on every transition."
+        right={<HumanBadge label="DRAWDOWN GATE · HUMAN-AUTHORISED" />}>
+        <div className="grid cols-2" style={{ alignItems: "end" }}>
+          <Field label="Application">
+            <select value={ref} onChange={(e) => { setRef(e.target.value); setFacilityRef(""); }}>
+              <option value="">— select —</option>
+              {(apps.data || []).map((a: any) => (
+                <option key={a.reference} value={a.reference}>
+                  {a.counterpartyName} · {a.reference}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Facility">
+            <select value={facilityRef} onChange={(e) => setFacilityRef(e.target.value)}>
+              <option value="">— select —</option>
+              {facilities.map((f: any) => (
+                <option key={f.reference} value={f.reference}>
+                  {f.facilityType} · {fmt.money(f.amount, f.currency)} · {f.reference}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        {ref && (
+          <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
+            <Button onClick={seed} kind="primary">Seed CPs from master</Button>
+          </div>
+        )}
+      </Card>
+
+      {ref && facilityRef && (
+        <Card title="Authorisation gate · CP-enforced"
+          sub="The pre-disbursement check on this facility — every mandatory CP must be CLEARED or WAIVED before a drawdown can be authorised."
+          right={
+            gate.data?.canDrawdown
+              ? <DeterministicBadge label="GATE OPEN — CAN DRAWDOWN" />
+              : <Badge kind="bad">GATE CLOSED · {gate.data?.mandatoryOpen ?? "—"} BLOCKER(S)</Badge>
+          }>
+          {gate.data && (
+            <div className="grid cols-3" style={{ marginBottom: 8 }}>
+              <div>
+                <div className="label">Facility</div>
+                <div className="mono">{facility?.reference} · {facility?.facilityType}</div>
+              </div>
+              <div>
+                <div className="label">Sanctioned</div>
+                <div className="mono">{facility ? fmt.money(facility.amount, facility.currency) : "—"}</div>
+              </div>
+              <div>
+                <div className="label">Mandatory CPs</div>
+                <div>
+                  <b>{(gate.data.mandatoryTotal ?? 0) - (gate.data.mandatoryOpen ?? 0)}</b> of <b>{gate.data.mandatoryTotal ?? 0}</b> cleared
+                </div>
+              </div>
+            </div>
+          )}
+          {gate.data && !gate.data.canDrawdown && (gate.data.blockers ?? []).length > 0 && (
+            <div style={{ borderLeft: "3px solid var(--bad)", padding: "8px 14px", background: "rgba(255,90,90,0.06)" }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Open blockers</div>
+              <ul style={{ margin: 0 }}>
+                {gate.data.blockers.map((b: any) => (
+                  <li key={b.code}><span className="mono">{b.code}</span> — {b.title}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {ref && (
+        <Card title="Conditions Precedent register"
+          sub="Seeded from CP_MASTER (by facility type · jurisdiction-overridable). Clear / waive flows with named-human SoD.">
+          {(register.data ?? []).length === 0 ? (
+            <EmptyState glyph="○" title="No CPs yet"
+              sub="Click 'Seed CPs from master' to populate from CP_MASTER, or add a custom item." />
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Title</th>
+                  <th>Facility</th>
+                  <th>Mandatory</th>
+                  <th>Status</th>
+                  <th>Source</th>
+                  <th>Cleared / waived by</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {(register.data ?? []).map((cp: any) => (
+                  <tr key={cp.id}>
+                    <td className="mono">{cp.code}</td>
+                    <td>
+                      <div>{cp.title}</div>
+                      {cp.description && (
+                        <div className="muted" style={{ fontSize: 12 }}>{cp.description}</div>
+                      )}
+                    </td>
+                    <td className="mono">{cp.facilityRef}</td>
+                    <td>
+                      {cp.mandatory ? <Badge kind="warn">MANDATORY</Badge>
+                                    : <Badge kind="">advisory</Badge>}
+                    </td>
+                    <td>
+                      <Badge kind={cp.status === "CLEARED" ? "ok"
+                                  : cp.status === "WAIVED" ? "info"
+                                  : cp.status === "REJECTED" ? "bad" : "warn"}>
+                        {cp.status}
+                      </Badge>
+                    </td>
+                    <td>
+                      <Badge kind={cp.source === "TEMPLATE" ? "" : "info"}>
+                        {cp.source}
+                      </Badge>
+                    </td>
+                    <td className="muted" style={{ fontSize: 12 }}>
+                      {cp.clearedBy && <>cleared by {cp.clearedBy}<br /></>}
+                      {cp.waivedBy && <>waived by {cp.waivedBy}<br /></>}
+                      {cp.waivedReason && <span className="muted">"{cp.waivedReason}"</span>}
+                    </td>
+                    <td>
+                      {cp.status === "OPEN" && (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <Button kind="subtle" onClick={() => clearCp(cp.id)}>Clear</Button>
+                          <Button kind="ghost" onClick={() => waiveCp(cp.id)}>Waive</Button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      )}
+
+      {ref && facilityRef && (
+        <Card title="Drawdown tranches"
+          sub="One row per draw. Multi-tranche PF, partial WC, and revolver use all map to repeated rows on the same facility. Each transition is SoD-gated."
+          right={
+            <Button kind="primary" onClick={requestDraw}
+              disabled={!facility}>
+              Request drawdown
+            </Button>
+          }>
+          {(history.data ?? []).length === 0 ? (
+            <EmptyState glyph="◯" title="No drawdowns yet"
+              sub="Request the first tranche once the gate is open." />
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Requested · authorised · released</th>
+                  <th>Utilisation ref</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {(history.data ?? []).map((d: any) => (
+                  <tr key={d.id}>
+                    <td>#{d.drawdownNo}</td>
+                    <td className="mono">{fmt.money(d.amount, d.currency)}</td>
+                    <td>
+                      <Badge kind={d.status === "RELEASED" ? "ok"
+                                  : d.status === "AUTHORIZED" ? "info"
+                                  : d.status === "REJECTED" ? "bad" : "warn"}>
+                        {d.status}
+                      </Badge>
+                    </td>
+                    <td className="muted" style={{ fontSize: 12 }}>
+                      <div>{d.requestedBy ?? "—"}</div>
+                      <div>{d.authorizedBy ?? "—"}</div>
+                      <div>{d.releasedBy ?? "—"}</div>
+                    </td>
+                    <td className="mono" style={{ fontSize: 12 }}>{d.utilisationRef ?? "—"}</td>
+                    <td>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {d.status === "DRAFT" && (
+                          <>
+                            <Button kind="primary" onClick={() => authorize(d.id)}>Authorise</Button>
+                            <Button kind="ghost" onClick={() => reject(d.id)}>Reject</Button>
+                          </>
+                        )}
+                        {d.status === "AUTHORIZED" && (
+                          <Button kind="primary" onClick={() => release(d.id)}>Release</Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}

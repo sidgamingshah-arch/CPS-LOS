@@ -403,6 +403,37 @@ export const initiation = {
   listGroups: () => call<any[]>("/counterparty/api/initiation/groups", "GET").catch(() => []),
 };
 
+// ---- pre-disbursement: Condition Precedent register + Disbursement workflow ----
+export const cps = {
+  seed: (ref: string, actor: string) =>
+    call<any[]>(`/decision/api/cps/${ref}/seed`, "POST", undefined, actor),
+  register: (ref: string, facilityRef?: string) =>
+    call<any[]>(`/decision/api/cps/${ref}${facilityRef ? `?facilityRef=${facilityRef}` : ""}`, "GET"),
+  gate: (ref: string, facilityRef: string) =>
+    call<any>(`/decision/api/cps/gate/${ref}/${facilityRef}`, "GET"),
+  add: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/cps/${ref}`, "POST", body, actor),
+  clear: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/cps/${id}/clear`, "POST", body, actor),
+  waive: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/cps/${id}/waive`, "POST", body, actor),
+  reject: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/cps/${id}/reject`, "POST", body, actor),
+};
+
+export const disbursement = {
+  request: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${ref}/request`, "POST", body, actor),
+  authorize: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/authorize`, "POST", body, actor),
+  release: (id: number, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/release`, "POST", undefined, actor),
+  reject: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/reject`, "POST", body, actor),
+  history: (ref: string, facilityRef?: string) =>
+    call<any[]>(`/decision/api/disbursement/${ref}${facilityRef ? `?facilityRef=${facilityRef}` : ""}`, "GET"),
+};
+
 // ---- client planning template (CPT) ----
 export const cpt = {
   generate: (ref: string, body: any, actor: string) =>

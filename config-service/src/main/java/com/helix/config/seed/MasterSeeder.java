@@ -108,6 +108,46 @@ public class MasterSeeder implements CommandLineRunner {
         masters.seedActive("DOC_TEMPLATE_MASTER", "FACILITY_AGREEMENT", null, map("format", "DOCX", "clauses", List.of("definitions", "facility", "interest", "covenants", "events_of_default")));
         masters.seedActive("TNC_MASTER", "REGISTERED_MORTGAGE", null, map("text", "Borrower to maintain valid insurance on the mortgaged property assigned to the bank.", "appliesTo", "PROPERTY"));
 
+        // ---- CP_MASTER — pre-disbursement Conditions Precedent templates per facility type ----
+        // The pre-disbursement gate (decision-service) seeds an application's CP register
+        // from this master at sanction-time. Jurisdiction-specific keys layer on top:
+        // a "TERM_LOAN:IN-RBI" key wins over the plain "TERM_LOAN" default.
+        masters.seedActive("CP_MASTER", "TERM_LOAN", null, map("items", List.of(
+                map("code", "CP-FA",      "title", "Executed facility agreement",      "mandatory", true,  "description", "Original facility agreement executed by all parties and held in safe custody."),
+                map("code", "CP-BR",      "title", "Board resolution",                 "mandatory", true,  "description", "Borrower board / shareholder resolution authorising the borrowing."),
+                map("code", "CP-SEC",     "title", "Security perfection",              "mandatory", true,  "description", "All collateral charges registered with the regulator (ROC/CERSAI) and on-record."),
+                map("code", "CP-INS",     "title", "Insurance assignment",             "mandatory", true,  "description", "Valid insurance on charged assets with the bank named as loss-payee."),
+                map("code", "CP-VAL",     "title", "Independent valuation within 90 days", "mandatory", true,  "description", "Empanelled valuer report not older than 90 days, at sanction value or better."),
+                map("code", "CP-MAC",     "title", "No material adverse change",       "mandatory", true,  "description", "RM confirmation that no MAC has occurred since the sanction date."),
+                map("code", "CP-KYC",     "title", "KYC re-verified",                  "mandatory", false, "description", "KYC refreshed within INACTIVITY_THRESHOLD if the relationship was dormant."))));
+        masters.seedActive("CP_MASTER", "WORKING_CAPITAL", null, map("items", List.of(
+                map("code", "CP-FA",      "title", "Executed facility agreement",      "mandatory", true),
+                map("code", "CP-DPN",     "title", "Demand promissory note",           "mandatory", true,  "description", "Borrower-executed DPN held on file."),
+                map("code", "CP-SEC",     "title", "Hypothecation of current assets",  "mandatory", true,  "description", "Charge over book debts + inventory perfected."),
+                map("code", "CP-STK",     "title", "Stock statement template signed",  "mandatory", true,  "description", "Borrower acknowledges monthly stock/debtor statement obligation."),
+                map("code", "CP-MAC",     "title", "No material adverse change",       "mandatory", true))));
+        masters.seedActive("CP_MASTER", "OVERDRAFT", null, map("items", List.of(
+                map("code", "CP-FA",      "title", "Executed OD agreement",            "mandatory", true),
+                map("code", "CP-SEC",     "title", "Lien on FD / counter-security",    "mandatory", true,  "description", "Lien marked on the counter-security (FD/cash margin) before account is enabled for drawing."),
+                map("code", "CP-MAC",     "title", "No material adverse change",       "mandatory", true))));
+        masters.seedActive("CP_MASTER", "BG", null, map("items", List.of(
+                map("code", "CP-CG",      "title", "Counter-guarantee + indemnity",    "mandatory", true,  "description", "Borrower counter-guarantee + indemnity executed before issuance."),
+                map("code", "CP-MAR",     "title", "Cash margin lodged",               "mandatory", true,  "description", "Cash margin per sanction terms lodged in lien-marked account."),
+                map("code", "CP-DRAFT",   "title", "BG draft text approved",           "mandatory", true,  "description", "Beneficiary BG text reviewed and approved by Legal."))));
+        masters.seedActive("CP_MASTER", "LC", null, map("items", List.of(
+                map("code", "CP-AGR",     "title", "Executed LC agreement",            "mandatory", true),
+                map("code", "CP-MAR",     "title", "LC margin lodged",                 "mandatory", true),
+                map("code", "CP-TRADE",   "title", "Underlying trade documents",       "mandatory", true,  "description", "Proforma invoice / contract / import licence on record."),
+                map("code", "CP-MAC",     "title", "No material adverse change",       "mandatory", true))));
+        masters.seedActive("CP_MASTER", "PROJECT_FINANCE", null, map("items", List.of(
+                map("code", "CP-CTA",     "title", "Common Terms Agreement executed",  "mandatory", true),
+                map("code", "CP-IA",      "title", "Intercreditor / inter-se",         "mandatory", true,  "description", "Inter-creditor / inter-se agreement signed by every lender in the consortium."),
+                map("code", "CP-EQ",      "title", "Sponsor equity tied up",           "mandatory", true,  "description", "Sponsor equity contribution evidenced (bank statement / share allotment)."),
+                map("code", "CP-PERMITS", "title", "All required statutory permits",   "mandatory", true,  "description", "Environmental, land, regulatory approvals on file."),
+                map("code", "CP-DSRA",    "title", "DSRA / TRA funded",                "mandatory", true,  "description", "Debt-service reserve / trust-and-retention account funded per facility doc."),
+                map("code", "CP-MILES",   "title", "Milestone certification",          "mandatory", true,  "description", "LIE / lender's engineer certifies the milestone for the tranche being drawn."),
+                map("code", "CP-INS",     "title", "Construction & operating insurance", "mandatory", true,  "description", "CAR/EAR + operating insurance with lender as loss-payee."))));
+
         // ---- AI governance master (default record per capability, jurisdiction=null) ----
         // Default posture: every governed AI capability is ENABLED. A bank can flip an
         // individual capability off, or layer a per-jurisdiction override on top of

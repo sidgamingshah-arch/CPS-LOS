@@ -36,4 +36,6 @@ helix:
     base-url: ${ORIGINATION_SERVICE_URL:http://localhost:8083}
   risk-service:
     base-url: ${RISK_SERVICE_URL:http://localhost:8084}
+  limit-service:
+    base-url: ${LIMIT_SERVICE_URL:http://localhost:8088}
 

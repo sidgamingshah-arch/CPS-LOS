@@ -6,6 +6,7 @@ import CommandPalette from "./CommandPalette";
 import Dashboard from "./pages/Dashboard";
 import RulePacks from "./pages/RulePacks";
 import Governance from "./pages/Governance";
+import Disbursement from "./pages/Disbursement";
 import Counterparties from "./pages/Counterparties";
 import Deals from "./pages/Deals";
 import DealWorkspace from "./pages/DealWorkspace";
@@ -70,6 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Limits & Portfolio",
     items: [
       { key: "limits", label: "Limits" },
+      { key: "disbursement", label: "Disbursement · CPs" },
       { key: "monitoring", label: "Monitoring · MER" },
       { key: "customer360", label: "Customer-360" },
       { key: "mis", label: "MIS · Reports" },
@@ -105,6 +107,7 @@ const CRUMB: Record<string, string> = {
   groups: "Advisory group identification · group insights · combined credit proposal (member figures unchanged)",
   cpt: "Client Planning Template · wallet sizing · cross-sell whitespace · completeness nudges (advisory)",
   limits: "Multi-level limit tree · fungibility · View/Validation/Utilisation APIs",
+  disbursement: "Pre-disbursement gate · CP register · drawdown maker-checker · limit-utilise booking",
   cad: "Credit Administration · checklist · waivers/deviations · limit release",
   docgen: "Template-driven document generation · clause add/remove/edit · human-confirm gate",
   commentary: "AI narrative commentary · grounded · advisory · human-confirm gate",
@@ -279,6 +282,7 @@ export default function App() {
             {view === "groups" && <Groups />}
             {view === "cpt" && <Cpt />}
             {view === "limits" && <Limits />}
+            {view === "disbursement" && <Disbursement />}
             {view === "cad" && <Cad />}
             {view === "docgen" && <DocGen />}
             {view === "commentary" && <Commentary />}
