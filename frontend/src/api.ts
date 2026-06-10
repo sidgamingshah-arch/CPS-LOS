@@ -403,6 +403,15 @@ export const initiation = {
   listGroups: () => call<any[]>("/counterparty/api/initiation/groups", "GET").catch(() => []),
 };
 
+// ---- syndication agency: book · fee waterfall · agency reconciliation · feed ----
+export const syndication = {
+  book: (ref: string) => call<any>(`/origination/api/syndication/${ref}/book`, "GET"),
+  allocate: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/${ref}/allocate`, "POST", body, actor),
+  allocations: (ref: string) => call<any[]>(`/origination/api/syndication/${ref}/allocations`, "GET"),
+  feed: (ref: string) => call<any>(`/origination/api/syndication/${ref}/feed`, "GET"),
+};
+
 // ---- pre-disbursement: Condition Precedent register + Disbursement workflow ----
 export const cps = {
   seed: (ref: string, actor: string) =>

@@ -19,6 +19,7 @@ import Monitoring from "./pages/Monitoring";
 import Limits from "./pages/Limits";
 import Masters from "./pages/Masters";
 import Structuring from "./pages/Structuring";
+import Syndication from "./pages/Syndication";
 import DocIntel from "./pages/DocIntel";
 import RiskLab from "./pages/RiskLab";
 import DocGen from "./pages/DocGen";
@@ -53,6 +54,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "cpt", label: "Client Planning" },
       { key: "deals", label: "Deals" },
       { key: "structuring", label: "Deal Structuring" },
+      { key: "syndication", label: "Syndication" },
       { key: "spreading", label: "Financial Spreading" },
       { key: "docintel", label: "Doc Intelligence" },
     ],
@@ -102,6 +104,7 @@ const CRUMB: Record<string, string> = {
   deals: "Origination pipeline",
   spreading: "SpreadJS-style grid · multi-period · cell provenance · override-with-reason gate · ratios",
   structuring: "Specialised CP variants · group · joint/dual-obligor · syndication · FI ICR · renewal copy",
+  syndication: "Syndicate book · fee waterfall · agency reconciliation · participant feed",
   docintel: "GenAI document intelligence · extraction (human-confirmed) · language · translation · checks",
   counterparties: "Onboarding · KYC/KYB · UBO",
   groups: "Advisory group identification · group insights · combined credit proposal (member figures unchanged)",
@@ -277,6 +280,7 @@ export default function App() {
             {view === "deals" && <Deals />}
             {view === "spreading" && <Spreading />}
             {view === "structuring" && <Structuring />}
+            {view === "syndication" && <Syndication />}
             {view === "docintel" && <DocIntel />}
             {view === "counterparties" && <Counterparties />}
             {view === "groups" && <Groups />}

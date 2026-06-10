@@ -186,6 +186,14 @@ public class MasterSeeder implements CommandLineRunner {
                         "TERM_LOAN", map("lifeFactor", 0.6, "type", "AMORTISING"),
                         "WORKING_CAPITAL", map("behaviouralMonths", 12, "type", "REVOLVING"))));
 
+        // ---- SYNDICATION_FEE_MASTER — fee schedule for the syndication agency engine ----
+        // recordKey 'default'; jurisdiction-overridable. bps applied as: arrangement +
+        // underwriting + agency accrue to the lead/agent on the total; participation
+        // fee accrues to each lender on its committed share.
+        masters.seedActive("SYNDICATION_FEE_MASTER", "default", null, map(
+                "arrangementFeeBps", 75.0, "underwritingFeeBps", 25.0,
+                "agencyFeeBps", 10.0, "participationFeeBps", 30.0));
+
         // ---- AI governance master (default record per capability, jurisdiction=null) ----
         // Default posture: every governed AI capability is ENABLED. A bank can flip an
         // individual capability off, or layer a per-jurisdiction override on top of

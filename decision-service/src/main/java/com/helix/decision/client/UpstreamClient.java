@@ -167,6 +167,27 @@ public class UpstreamClient {
         }
     }
 
+    /**
+     * Best-effort syndication agency allocation on drawdown release. If the deal is
+     * a syndication, the agent allocates the funded draw pro-rata across lenders.
+     * Idempotent on {@code drawdownRef}, so this never double-counts. Failures are
+     * swallowed — the limit booking has already succeeded and the agency desk can
+     * always re-trigger via the standalone allocate endpoint.
+     */
+    public void allocateSyndicationOrSkip(String reference, String drawdownRef, double amount,
+                                          String currency, String actor) {
+        try {
+            origination.post().uri("/api/syndication/{ref}/allocate", reference)
+                    .header("X-Actor", actor == null ? "agency.desk" : actor)
+                    .body(Map.of("drawdownRef", drawdownRef, "amount", amount,
+                            "currency", currency == null ? "" : currency))
+                    .retrieve().toBodilessEntity();
+        } catch (Exception e) {
+            // Not a syndication deal (400/404) or origination briefly down — skip silently.
+            log.debug("syndication allocate skipped for {} draw {} ({})", reference, drawdownRef, e.getMessage());
+        }
+    }
+
     // ---- group / counterparty / per-counterparty applications lookup ----
 
     @JsonIgnoreProperties(ignoreUnknown = true)

@@ -201,6 +201,11 @@ public class DisbursementService {
         d.setReleasedAt(Instant.now());
         d.setUtilisationRef(txnRef);
         Disbursement saved = repo.save(d);
+
+        // If this is a syndicated deal, the agent allocates the funded draw pro-rata
+        // across lenders. Best-effort + idempotent — never blocks the release.
+        upstream.allocateSyndicationOrSkip(d.getApplicationReference(), txnRef, d.getAmount(),
+                d.getCurrency(), actor);
         audit.human(actor, "DISBURSEMENT_RELEASED", "Disbursement", String.valueOf(id),
                 "Released drawdown #%d of %.2f %s on %s (utilisation %s)".formatted(
                         d.getDrawdownNo(), d.getAmount(), d.getCurrency(), d.getFacilityRef(), txnRef),

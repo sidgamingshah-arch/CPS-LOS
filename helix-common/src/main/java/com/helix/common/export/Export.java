@@ -40,4 +40,11 @@ public final class Export {
     /** CPR feed — a portfolio composition / concentration line. */
     public record CprPortfolioLine(String dimension, String bucket, double ead, double sharePct) {
     }
+
+    /** Syndication feed — one statement line per participating lender. */
+    public record SyndicationParticipantLine(String applicationRef, String participantRef, String name,
+                                             String role, double commitment, double sharePct,
+                                             double fundedToDate, double undrawn, double totalFees,
+                                             String currency) {
+    }
 }

@@ -9,5 +9,6 @@ public enum DownstreamSystem {
     ERM,            // Enterprise Risk Management — obligor/exposure risk records
     FINANCE_GL,     // Finance / General Ledger — provisioning & accounting entries
     CPR,            // Credit Policy / Portfolio Reporting — composition & concentration
-    REGULATORY      // Regulatory reporting feeds
+    REGULATORY,     // Regulatory reporting feeds
+    SYNDICATION     // Syndicate participant statements — per-lender share/funded/fees feed
 }
