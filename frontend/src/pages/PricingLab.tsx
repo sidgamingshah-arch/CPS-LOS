@@ -482,7 +482,14 @@ export default function PricingLab() {
                     const numVal = typeof v === "number" ? v : null;
                     const isRate = ["rate", "raroc"].includes(k);
                     const isMoney = ["ead", "expectedLoss", "capitalCharge"].includes(k);
-                    const displayVal = numVal !== null
+                    // The FTP block is a nested object — show the derived rate + how it was built.
+                    const isObj = v !== null && typeof v === "object";
+                    const displayVal = isObj
+                      ? (k === "ftp" && typeof (v as any).ftp === "number"
+                          ? `${fmt.pct((v as any).ftp)} · ${(v as any).source ?? ""}` +
+                            ((v as any).behaviourType ? ` · ${(v as any).behaviourType} ${(v as any).behaviouralMonths}m` : "")
+                          : JSON.stringify(v))
+                      : numVal !== null
                       ? isRate
                         ? fmt.pct(numVal)
                         : isMoney

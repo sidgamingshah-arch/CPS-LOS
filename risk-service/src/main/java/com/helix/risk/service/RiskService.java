@@ -35,6 +35,7 @@ public class RiskService {
     private final RatingEngine ratingEngine;
     private final CapitalEngine capitalEngine;
     private final PricingEngine pricingEngine;
+    private final FtpService ftpService;
     private final ConfigClient config;
     private final OriginationClient origination;
     private final RatingRepository ratings;
@@ -43,12 +44,13 @@ public class RiskService {
     private final AuditService audit;
 
     public RiskService(RatingEngine ratingEngine, CapitalEngine capitalEngine, PricingEngine pricingEngine,
-                       ConfigClient config, OriginationClient origination, RatingRepository ratings,
-                       CapitalResultRepository capitalResults, PricingResultRepository pricingResults,
-                       AuditService audit) {
+                       FtpService ftpService, ConfigClient config, OriginationClient origination,
+                       RatingRepository ratings, CapitalResultRepository capitalResults,
+                       PricingResultRepository pricingResults, AuditService audit) {
         this.ratingEngine = ratingEngine;
         this.capitalEngine = capitalEngine;
         this.pricingEngine = pricingEngine;
+        this.ftpService = ftpService;
         this.config = config;
         this.origination = origination;
         this.ratings = ratings;
@@ -203,10 +205,16 @@ public class RiskService {
     public PricingResult price(String reference, String actor) {
         Rating rating = latestRating(reference);
         CapitalResult capital = latestCapital(reference);
-        RulePackDto pricingPack = config.activePack(jurisdictionOf(reference), "PRICING");
+        CreditInputsDto in = origination.creditInputs(reference);
+        RulePackDto pricingPack = config.activePack(in.jurisdiction(), "PRICING");
+
+        // Resolve the term-structured, behaviourally-adjusted FTP for this facility.
+        // Falls back to the pack's flat cost_of_funds if no FTP_CURVE master exists.
+        FtpService.FtpResult ftp = ftpService.computeFtp(in.currency(), in.jurisdiction(),
+                in.facilityType(), in.tenorMonths(), pricingPack.number("cost_of_funds", 0.075));
 
         PricingResult result = pricingEngine.price(reference, rating.getPd(), rating.getLgd(),
-                capital.getRwa(), rating.getEad(), pricingPack);
+                capital.getRwa(), rating.getEad(), pricingPack, ftp);
         PricingResult saved = pricingResults.save(result);
 
         // Deterministic RAROC pricing → SYSTEM actor. The AI goal-seek optimiser and

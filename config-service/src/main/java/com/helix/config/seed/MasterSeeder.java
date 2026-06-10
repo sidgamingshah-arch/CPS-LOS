@@ -148,6 +148,44 @@ public class MasterSeeder implements CommandLineRunner {
                 map("code", "CP-MILES",   "title", "Milestone certification",          "mandatory", true,  "description", "LIE / lender's engineer certifies the milestone for the tranche being drawn."),
                 map("code", "CP-INS",     "title", "Construction & operating insurance", "mandatory", true,  "description", "CAR/EAR + operating insurance with lender as loss-payee."))));
 
+        // ---- FTP_CURVE master — funds-transfer-pricing curve per currency ----
+        // The pricing path reads this to derive a term-structured, behaviourally-adjusted
+        // cost of funds instead of a flat number. recordKey = currency; jurisdiction
+        // optional (a jurisdiction-specific curve overrides the default). tenorPoints is
+        // the funding curve; behavioural maps each facility type to its behavioural life.
+        masters.seedActive("FTP_CURVE", "INR", null, map(
+                "tenorPoints", List.of(
+                        map("months", 1, "rate", 0.0625), map("months", 3, "rate", 0.0655),
+                        map("months", 12, "rate", 0.0690), map("months", 36, "rate", 0.0730),
+                        map("months", 60, "rate", 0.0760), map("months", 120, "rate", 0.0795)),
+                "liquidityPremiumBpsPerYear", 2.0,
+                "behavioural", map(
+                        "TERM_LOAN", map("lifeFactor", 0.6, "type", "AMORTISING"),
+                        "PROJECT_FINANCE", map("lifeFactor", 0.7, "type", "AMORTISING"),
+                        "WORKING_CAPITAL", map("behaviouralMonths", 12, "type", "REVOLVING"),
+                        "OVERDRAFT", map("behaviouralMonths", 6, "type", "DEMAND"),
+                        "BG", map("behaviouralMonths", 12, "type", "CONTINGENT"),
+                        "LC", map("behaviouralMonths", 6, "type", "CONTINGENT"))));
+        masters.seedActive("FTP_CURVE", "USD", null, map(
+                "tenorPoints", List.of(
+                        map("months", 1, "rate", 0.0530), map("months", 3, "rate", 0.0545),
+                        map("months", 12, "rate", 0.0560), map("months", 36, "rate", 0.0585),
+                        map("months", 60, "rate", 0.0605), map("months", 120, "rate", 0.0635)),
+                "liquidityPremiumBpsPerYear", 1.5,
+                "behavioural", map(
+                        "TERM_LOAN", map("lifeFactor", 0.6, "type", "AMORTISING"),
+                        "PROJECT_FINANCE", map("lifeFactor", 0.7, "type", "AMORTISING"),
+                        "WORKING_CAPITAL", map("behaviouralMonths", 12, "type", "REVOLVING"),
+                        "OVERDRAFT", map("behaviouralMonths", 6, "type", "DEMAND"))));
+        masters.seedActive("FTP_CURVE", "AED", null, map(
+                "tenorPoints", List.of(
+                        map("months", 1, "rate", 0.0540), map("months", 12, "rate", 0.0570),
+                        map("months", 36, "rate", 0.0595), map("months", 60, "rate", 0.0615)),
+                "liquidityPremiumBpsPerYear", 1.5,
+                "behavioural", map(
+                        "TERM_LOAN", map("lifeFactor", 0.6, "type", "AMORTISING"),
+                        "WORKING_CAPITAL", map("behaviouralMonths", 12, "type", "REVOLVING"))));
+
         // ---- AI governance master (default record per capability, jurisdiction=null) ----
         // Default posture: every governed AI capability is ENABLED. A bank can flip an
         // individual capability off, or layer a per-jurisdiction override on top of

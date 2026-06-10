@@ -38,14 +38,17 @@ public class PricingExceptionService {
     private final OriginationClient origination;
     private final AuditService audit;
 
+    private final FtpService ftpService;
+
     public PricingExceptionService(PricingExceptionRepository exceptions, PricingResultRepository pricingResults,
                                    RiskService risk, ConfigClient config, OriginationClient origination,
-                                   AuditService audit) {
+                                   FtpService ftpService, AuditService audit) {
         this.exceptions = exceptions;
         this.pricingResults = pricingResults;
         this.risk = risk;
         this.config = config;
         this.origination = origination;
+        this.ftpService = ftpService;
         this.audit = audit;
     }
 
@@ -61,7 +64,8 @@ public class PricingExceptionService {
 
         double recommended = pricing.getRecommendedRate();
         double hurdle = pack.number("hurdle_raroc", 0.15);
-        double costOfFunds = pack.number("cost_of_funds", 0.075);
+        double costOfFunds = ftpService.computeFtp(in.currency(), in.jurisdiction(),
+                in.facilityType(), in.tenorMonths(), pack.number("cost_of_funds", 0.075)).ftp();
         double opexRate = pack.number("opex_rate", 0.010);
         double targetCapitalRatio = pack.number("target_capital_ratio", 0.12);
         double singleLevelBps = pack.number("exception_single_level_bps", 100);

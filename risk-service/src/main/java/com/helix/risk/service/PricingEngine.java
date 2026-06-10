@@ -17,8 +17,19 @@ public class PricingEngine {
 
     public PricingResult price(String applicationReference, double pd, double lgd, double rwa, double ead,
                                RulePackDto pricingPack) {
+        // Backwards-compatible overload: use the flat pack cost_of_funds with no FTP detail.
+        return price(applicationReference, pd, lgd, rwa, ead, pricingPack,
+                new FtpService.FtpResult(pricingPack.number("cost_of_funds", 0.075), false, 0, 0,
+                        "FLAT", pricingPack.number("cost_of_funds", 0.075), 0.0,
+                        java.util.Map.of("source", "FLAT_PACK")));
+    }
+
+    public PricingResult price(String applicationReference, double pd, double lgd, double rwa, double ead,
+                               RulePackDto pricingPack, FtpService.FtpResult ftp) {
         double hurdle = pricingPack.number("hurdle_raroc", 0.15);
-        double costOfFunds = pricingPack.number("cost_of_funds", 0.075);
+        // Cost of funds now comes from the FTP engine (term-structured + behavioural),
+        // not a flat pack number. The pack value is the fallback baked into FtpResult.
+        double costOfFunds = ftp.ftp();
         double opexRate = pricingPack.number("opex_rate", 0.010);
         double targetCapitalRatio = pricingPack.number("target_capital_ratio", 0.12);
         double minSpread = pricingPack.number("min_spread", 0.005);
@@ -57,6 +68,8 @@ public class PricingEngine {
         breakdown.put("capitalCharge", round(capital));
         breakdown.put("costOfFunds", costOfFunds);
         breakdown.put("costOfFundsAmount", round(cofAmount));
+        // Surface the FTP derivation so the funding number is explainable, not a constant.
+        breakdown.put("ftp", ftp.breakdown());
         breakdown.put("opexRate", opexRate);
         breakdown.put("opexAmount", round(opexAmount));
         breakdown.put("requiredRate", round4(requiredRate));
