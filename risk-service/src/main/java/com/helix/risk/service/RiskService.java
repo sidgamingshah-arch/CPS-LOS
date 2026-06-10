@@ -81,8 +81,10 @@ public class RiskService {
         rating.setScoreBreakdown(c.breakdown());
         Rating saved = ratings.save(rating);
 
-        audit.ai("rating-scorecard", "RATING_PROPOSED", "Application", reference,
-                "Model proposed grade %s (score %.1f, PD %.2f%%) — analyst proposes, approver confirms"
+        // Deterministic scorecard output → SYSTEM actor (the figure path is never AI).
+        // A human analyst proposes and a credit officer confirms via audit.human(...).
+        audit.engine("RATING_PROPOSED", "Application", reference,
+                "Scorecard computed grade %s (score %.1f, PD %.2f%%) — analyst proposes, approver confirms"
                         .formatted(c.grade(), c.score(), c.pd() * 100),
                 Map.of("grade", c.grade(), "score", c.score(), "pd", c.pd()));
         return saved;
@@ -207,8 +209,10 @@ public class RiskService {
                 capital.getRwa(), rating.getEad(), pricingPack);
         PricingResult saved = pricingResults.save(result);
 
-        audit.ai("pricing-engine", "PRICING_RECOMMENDED", "Application", reference,
-                "Recommended rate %.2f%%, RAROC %.1f%% vs hurdle %.1f%%%s (advisory)".formatted(
+        // Deterministic RAROC pricing → SYSTEM actor. The AI goal-seek optimiser and
+        // concession sub-workflow are separate, advisory, and stamped audit.ai elsewhere.
+        audit.engine("PRICING_RECOMMENDED", "Application", reference,
+                "Recommended rate %.2f%%, RAROC %.1f%% vs hurdle %.1f%%%s (deterministic)".formatted(
                         saved.getRecommendedRate() * 100, saved.getRaroc() * 100, saved.getHurdleRaroc() * 100,
                         saved.isBelowHurdle() ? " — BELOW HURDLE" : ""),
                 Map.of("recommendedRate", saved.getRecommendedRate(), "raroc", saved.getRaroc(),
