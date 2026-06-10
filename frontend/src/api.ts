@@ -430,6 +430,25 @@ export const cps = {
     call<any>(`/decision/api/cps/${id}/reject`, "POST", body, actor),
 };
 
+// ---- project-finance post-drawdown mechanics: milestones + reserves ----
+export const pf = {
+  milestones: (ref: string, facilityRef?: string) =>
+    call<any[]>(`/decision/api/pf/${ref}/milestones${facilityRef ? `?facilityRef=${facilityRef}` : ""}`, "GET"),
+  defineMilestone: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/${ref}/milestones`, "POST", body, actor),
+  certify: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/milestones/${id}/certify`, "POST", body, actor),
+  reserves: (ref: string) => call<any[]>(`/decision/api/pf/${ref}/reserves`, "GET"),
+  defineReserve: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/${ref}/reserves`, "POST", body, actor),
+  fund: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/reserves/${id}/fund`, "POST", body, actor),
+  withdraw: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/reserves/${id}/withdraw`, "POST", body, actor),
+  gate: (ref: string, facilityRef: string, seq?: number) =>
+    call<any>(`/decision/api/pf/gate/${ref}/${facilityRef}${seq != null ? `?milestoneSequence=${seq}` : ""}`, "GET"),
+};
+
 export const disbursement = {
   request: (ref: string, body: any, actor: string) =>
     call<any>(`/decision/api/disbursement/${ref}/request`, "POST", body, actor),

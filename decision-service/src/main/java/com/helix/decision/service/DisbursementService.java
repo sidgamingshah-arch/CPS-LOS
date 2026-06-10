@@ -34,14 +34,16 @@ public class DisbursementService {
 
     private final DisbursementRepository repo;
     private final ConditionPrecedentService cps;
+    private final PfService pf;
     private final UpstreamClient upstream;
     private final LimitClient limits;
     private final AuditService audit;
 
-    public DisbursementService(DisbursementRepository repo, ConditionPrecedentService cps,
+    public DisbursementService(DisbursementRepository repo, ConditionPrecedentService cps, PfService pf,
                                UpstreamClient upstream, LimitClient limits, AuditService audit) {
         this.repo = repo;
         this.cps = cps;
+        this.pf = pf;
         this.upstream = upstream;
         this.limits = limits;
         this.audit = audit;
@@ -58,7 +60,7 @@ public class DisbursementService {
     @Transactional
     public Disbursement request(String applicationReference, String facilityRef,
                                 double amount, String currency, String purpose, String narrative,
-                                String actor) {
+                                Integer milestoneSequence, String actor) {
         DealEnvelopeDto env = upstream.envelope(applicationReference);
         if (env == null) throw ApiException.notFound("No deal envelope for " + applicationReference);
         FacilityViewDto facility = findFacility(env, facilityRef);
@@ -94,6 +96,7 @@ public class DisbursementService {
         d.setNarrative(narrative);
         d.setStatus("DRAFT");
         d.setRequestedBy(actor);
+        d.setMilestoneSequence(milestoneSequence);
         Disbursement saved = repo.save(d);
         audit.human(actor, "DISBURSEMENT_REQUESTED", "Disbursement", String.valueOf(saved.getId()),
                 "Drawdown #%d of %.2f %s requested on %s".formatted(nextNo, amount, currency, facilityRef),
@@ -137,6 +140,11 @@ public class DisbursementService {
                     msg, payload);
             throw ApiException.forbiddenAutonomy(msg);
         }
+        // PF facilities layer a per-tranche gate on top of the CP gate: the named
+        // milestone must be LIE-certified and all reserve accounts funded. No-op for
+        // non-PF facilities (those with no milestones defined).
+        pf.assertDrawable(d.getApplicationReference(), d.getFacilityRef(), d.getMilestoneSequence());
+
         d.setStatus("AUTHORIZED");
         d.setAuthorizedBy(actor);
         d.setAuthorizedAt(Instant.now());
@@ -206,6 +214,8 @@ public class DisbursementService {
         // across lenders. Best-effort + idempotent — never blocks the release.
         upstream.allocateSyndicationOrSkip(d.getApplicationReference(), txnRef, d.getAmount(),
                 d.getCurrency(), actor);
+        // For PF tranches, mark the milestone DRAWN so it can't be re-drawn.
+        pf.markDrawn(d.getApplicationReference(), d.getFacilityRef(), d.getMilestoneSequence(), d.getId());
         audit.human(actor, "DISBURSEMENT_RELEASED", "Disbursement", String.valueOf(id),
                 "Released drawdown #%d of %.2f %s on %s (utilisation %s)".formatted(
                         d.getDrawdownNo(), d.getAmount(), d.getCurrency(), d.getFacilityRef(), txnRef),

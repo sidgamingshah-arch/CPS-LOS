@@ -13,7 +13,7 @@
  * platform's HUMAN-GATED / DETERMINISTIC chrome.
  */
 import { useEffect, useMemo, useState } from "react";
-import { cps as cpApi, disbursement, fmt, origination } from "../api";
+import { cps as cpApi, disbursement, fmt, origination, pf as pfApi } from "../api";
 import { useApp } from "../app-context";
 import {
   Badge,
@@ -55,7 +55,33 @@ export default function Disbursement() {
     () => (ref ? disbursement.history(ref, facilityRef) : Promise.resolve([])),
     [ref, facilityRef]);
 
+  // PF mechanics — milestones + reserves (only populated for project-finance facilities).
+  const milestones = useAsync(
+    () => (ref && facilityRef ? pfApi.milestones(ref, facilityRef) : Promise.resolve([])),
+    [ref, facilityRef]);
+  const reserves = useAsync(
+    () => (ref ? pfApi.reserves(ref) : Promise.resolve([])),
+    [ref]);
+
   const facility = facilities.find((f: any) => f.reference === facilityRef);
+  const isPf = (milestones.data ?? []).length > 0 || (reserves.data ?? []).length > 0;
+
+  async function certifyMilestone(id: number) {
+    const certRef = prompt("LIE certification reference (e.g. LIE-CERT-003)") || "";
+    if (!certRef) return;
+    try { await pfApi.certify(id, { certificationRef: certRef }, actor);
+      notify("Milestone LIE-certified"); milestones.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function fundReserve(id: number) {
+    const amtStr = prompt("Funding amount") || "";
+    const amt = parseFloat(amtStr.replace(/[, ]/g, ""));
+    if (!amt || amt <= 0) return;
+    try { await pfApi.fund(id, { amount: amt }, actor);
+      notify("Reserve funded"); reserves.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
 
   async function seed() {
     if (!ref) return;
@@ -88,10 +114,17 @@ export default function Disbursement() {
     const amtStr = prompt(`Drawdown amount (${facility.currency})`) || "";
     const amt = parseFloat(amtStr.replace(/[, ]/g, ""));
     if (!amt || amt <= 0) return;
+    // PF facilities draw against a milestone — capture the sequence.
+    let milestoneSequence: number | undefined;
+    if (isPf) {
+      const seqStr = prompt("Milestone sequence this tranche draws against (e.g. 1)") || "";
+      const seq = parseInt(seqStr, 10);
+      if (!Number.isNaN(seq)) milestoneSequence = seq;
+    }
     try {
       await disbursement.request(ref, {
         facilityRef, amount: amt, currency: facility.currency,
-        purpose: "drawdown", narrative: "via UI",
+        purpose: "drawdown", narrative: "via UI", milestoneSequence,
       }, actor);
       notify("Drawdown requested");
       history.reload();
@@ -259,6 +292,63 @@ export default function Disbursement() {
               </tbody>
             </table>
           )}
+        </Card>
+      )}
+
+      {ref && facilityRef && isPf && (
+        <Card title="Project-finance milestones · LIE gate"
+          sub="Each tranche draws against a construction milestone that the Lender's Independent Engineer must certify first.">
+          <table>
+            <thead>
+              <tr><th>#</th><th>Milestone</th><th className="num">Planned</th><th>Status</th><th>LIE cert</th><th /></tr>
+            </thead>
+            <tbody>
+              {(milestones.data ?? []).map((m: any) => (
+                <tr key={m.id}>
+                  <td>#{m.sequence}</td>
+                  <td>{m.name}</td>
+                  <td className="num">{fmt.money(m.plannedAmount, m.currency)}</td>
+                  <td>
+                    <Badge kind={m.status === "DRAWN" ? "ok" : m.status === "LIE_CERTIFIED" ? "info" : "warn"}>
+                      {m.status}
+                    </Badge>
+                  </td>
+                  <td className="muted" style={{ fontSize: 12 }}>
+                    {m.certificationRef ? `${m.certificationRef} · ${m.lieCertifiedBy}` : "—"}
+                  </td>
+                  <td>
+                    {m.status === "PLANNED" && (
+                      <Button kind="subtle" onClick={() => certifyMilestone(m.id)}>LIE certify</Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      {ref && isPf && (reserves.data ?? []).length > 0 && (
+        <Card title="Reserve accounts · DSRA / TRA"
+          sub="Required reserves must be funded before drawdowns proceed — a shortfall blocks the PF gate.">
+          <table>
+            <thead>
+              <tr><th>Account</th><th className="num">Required</th><th className="num">Balance</th><th>Status</th><th /></tr>
+            </thead>
+            <tbody>
+              {(reserves.data ?? []).map((r: any) => (
+                <tr key={r.id}>
+                  <td className="mono">{r.accountType}</td>
+                  <td className="num">{fmt.money(r.requiredAmount, r.currency)}</td>
+                  <td className="num">{fmt.money(r.currentBalance, r.currency)}</td>
+                  <td>
+                    <Badge kind={r.status === "FUNDED" ? "ok" : "bad"}>{r.status}</Badge>
+                  </td>
+                  <td><Button kind="subtle" onClick={() => fundReserve(r.id)}>Fund</Button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </Card>
       )}
 

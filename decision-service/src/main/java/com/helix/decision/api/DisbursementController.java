@@ -38,7 +38,7 @@ public class DisbursementController {
                                 @Valid @RequestBody RequestDrawdownRequest req,
                                 @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
         return disb.request(reference, req.facilityRef(), req.amount(), req.currency(),
-                req.purpose(), req.narrative(), actor);
+                req.purpose(), req.narrative(), req.milestoneSequence(), actor);
     }
 
     @PostMapping("/{id}/authorize")

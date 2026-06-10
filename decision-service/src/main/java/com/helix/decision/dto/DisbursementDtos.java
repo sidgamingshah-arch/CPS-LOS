@@ -6,7 +6,8 @@ import jakarta.validation.constraints.Positive;
 public class DisbursementDtos {
 
     public record RequestDrawdownRequest(@NotBlank String facilityRef, @Positive double amount,
-                                         String currency, String purpose, String narrative) {
+                                         String currency, String purpose, String narrative,
+                                         Integer milestoneSequence) {
     }
 
     public record RejectRequest(@NotBlank String reason) {

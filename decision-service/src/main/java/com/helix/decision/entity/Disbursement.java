@@ -55,6 +55,9 @@ public class Disbursement {
     @Column(nullable = false)
     private int drawdownNo;
 
+    /** For PF tranches: the construction milestone this draw is against (else null). */
+    private Integer milestoneSequence;
+
     @Column(nullable = false)
     private double amount;
 
