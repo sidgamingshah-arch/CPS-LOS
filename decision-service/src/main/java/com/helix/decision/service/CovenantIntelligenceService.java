@@ -88,23 +88,34 @@ public class CovenantIntelligenceService {
     private final CovenantService covenantService;
     private final UpstreamClient upstream;
     private final AuditService audit;
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
     public CovenantIntelligenceService(CovenantExtractionRepository extractions,
                                        CertificateAssessmentRepository assessments,
                                        CovenantRepository covenants, CovenantService covenantService,
-                                       UpstreamClient upstream, AuditService audit) {
+                                       UpstreamClient upstream, AuditService audit,
+                                       com.helix.common.governance.AiGovernanceClient governance) {
         this.extractions = extractions;
         this.assessments = assessments;
         this.covenants = covenants;
         this.covenantService = covenantService;
         this.upstream = upstream;
         this.audit = audit;
+        this.governance = governance;
+    }
+
+    /** Both extract paths share the same gate — resolve once. */
+    private void enforceGate(String reference) {
+        UpstreamClient.DealEnvelopeDto env = upstream.envelopeOrNull(reference);
+        governance.enforce(com.helix.common.governance.AiCapability.COVENANT_INTEL,
+                env == null ? null : env.jurisdiction());
     }
 
     // ====================================================== 1. extraction from CP free text
 
     @Transactional
     public List<CovenantExtraction> extract(String reference, String text, String actor) {
+        enforceGate(reference);
         List<CovenantExtraction> out = new ArrayList<>();
         for (String chunk : splitClauses(text)) {
             CovenantExtraction e = parseClause(reference, chunk);
@@ -242,6 +253,7 @@ public class CovenantIntelligenceService {
 
     @Transactional
     public List<CertificateAssessment> assessCertificate(String reference, String text, String actor) {
+        enforceGate(reference);
         // The deterministic spread ratios used to recompute each covenant. We distinguish
         // three states so consumers (API + audit) can tell them apart:
         //   - UPSTREAM_OK + non-empty ratios  → recompute ran

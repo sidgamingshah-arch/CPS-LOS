@@ -51,18 +51,25 @@ public class ClientPlanningTemplateService {
     private final ClientPlanningTemplateRepository templates;
     private final UpstreamClient upstream;
     private final AuditService audit;
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
     public ClientPlanningTemplateService(ClientPlanningTemplateRepository templates,
-                                         UpstreamClient upstream, AuditService audit) {
+                                         UpstreamClient upstream, AuditService audit,
+                                         com.helix.common.governance.AiGovernanceClient governance) {
         this.templates = templates;
         this.upstream = upstream;
         this.audit = audit;
+        this.governance = governance;
     }
 
     @Transactional
     public ClientPlanningTemplate generate(String counterpartyReference,
                                            Double trendOverride, String actor) {
         CounterpartyDto cp = upstream.counterpartyByReference(counterpartyReference);
+        // CPT works on the counterparty, not a specific deal. The country acts as a
+        // reasonable jurisdiction proxy for per-jurisdiction governance overrides;
+        // when absent we fall through to the default AI_GOVERNANCE record.
+        governance.enforce(com.helix.common.governance.AiCapability.CPT, cp == null ? null : cp.country());
         List<LoanApplicationRefDto> apps = upstream.applicationsForCounterparty(counterpartyReference);
 
         // ---------- aggregate live applications: exposure / facilities / weighted figures ----------

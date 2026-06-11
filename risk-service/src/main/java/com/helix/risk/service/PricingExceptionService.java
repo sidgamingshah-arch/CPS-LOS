@@ -39,10 +39,12 @@ public class PricingExceptionService {
     private final AuditService audit;
 
     private final FtpService ftpService;
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
     public PricingExceptionService(PricingExceptionRepository exceptions, PricingResultRepository pricingResults,
                                    RiskService risk, ConfigClient config, OriginationClient origination,
-                                   FtpService ftpService, AuditService audit) {
+                                   FtpService ftpService, AuditService audit,
+                                   com.helix.common.governance.AiGovernanceClient governance) {
         this.exceptions = exceptions;
         this.pricingResults = pricingResults;
         this.risk = risk;
@@ -50,6 +52,7 @@ public class PricingExceptionService {
         this.origination = origination;
         this.ftpService = ftpService;
         this.audit = audit;
+        this.governance = governance;
     }
 
     @Transactional
@@ -60,6 +63,7 @@ public class PricingExceptionService {
         Rating rating = risk.latestRating(reference);
         CapitalResult capital = risk.latestCapital(reference);
         CreditInputsDto in = origination.creditInputs(reference);
+        governance.enforce(com.helix.common.governance.AiCapability.PRICING_EXCEPTION, in.jurisdiction());
         RulePackDto pack = config.activePack(in.jurisdiction(), "PRICING");
 
         double recommended = pricing.getRecommendedRate();

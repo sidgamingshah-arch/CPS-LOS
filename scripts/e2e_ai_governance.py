@@ -167,5 +167,57 @@ check("AE-CBUAE deal blocked by jurisdiction override", st == 403, f"{st} {body}
 # clean up: turn AE-CBUAE override back on so the e2e_smoke run isn't affected
 set_capability("AE-CBUAE", "collateral-intel", True)
 
+print("\n== 7. Newly-wired gates: every remaining AI capability is enforced ==")
+# The deal from section 2 ('Atlas Industries Ltd') is fully rated/capitalised/priced,
+# so each gate below has the upstream state it needs.
+
+# 7a. PRICING_EXCEPTION — proposing a concession requires the deal to be priced;
+# section 4 only rated it, so compute capital + pricing explicitly here.
+call("POST", f"/risk/api/risk/{ref}/capital", actor="analyst.user")
+call("POST", f"/risk/api/risk/{ref}/pricing", actor="analyst.user")
+
+set_capability(None, "pricing-exception", False)
+time.sleep(6)
+st, body = call("POST", f"/risk/api/risk/{ref}/pricing/exception",
+                {"proposedRate": 0.08, "reason": "strategic client"}, actor="rm.user")
+check("pricing-exception blocked when disabled", st == 403, f"{st} {body}")
+set_capability(None, "pricing-exception", True)
+time.sleep(6)
+
+# 7b. COVENANT_INTEL — extraction from CP free text.
+set_capability(None, "covenant-intel", False)
+time.sleep(6)
+st, body = call("POST", f"/decision/api/covenants/intel/{ref}/extract",
+                {"text": "Maintain DSCR >= 1.25 throughout."}, actor="analyst.user")
+check("covenant-intel blocked when disabled", st == 403, f"{st} {body}")
+set_capability(None, "covenant-intel", True)
+time.sleep(6)
+
+# 7c. CPT — generated on the counterparty, not a deal.
+set_capability(None, "cpt", False)
+time.sleep(6)
+st, body = call("POST", f"/decision/api/cpt/{cp_ref}/generate", {}, actor="rm.user")
+check("cpt blocked when disabled", st == 403, f"{st} {body}")
+set_capability(None, "cpt", True)
+time.sleep(6)
+
+# 7d. GROUP_SUGGEST — counterparty-service.
+set_capability(None, "group-suggest", False)
+time.sleep(6)
+st, body = call("POST", f"/counterparty/api/initiation/counterparties/{cp_id}/group/suggest",
+                {}, actor="rm.user")
+check("group-suggest blocked when disabled", st == 403, f"{st} {body}")
+set_capability(None, "group-suggest", True)
+time.sleep(6)
+
+# 7e. COPILOT — copilot-service.
+set_capability(None, "copilot", False)
+time.sleep(6)
+st, body = call("POST", "/copilot/api/copilot/ask",
+                {"persona": "rm.user", "question": "what is my book exposure?"}, actor="rm.user")
+check("copilot blocked when disabled", st == 403, f"{st} {body}")
+set_capability(None, "copilot", True)
+time.sleep(6)
+
 print(f"\n== AI governance e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

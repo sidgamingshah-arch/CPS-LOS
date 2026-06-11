@@ -50,18 +50,22 @@ public class GroupIdentificationService {
     private final CounterpartyRepository counterparties;
     private final CounterpartyGroupRepository groups;
     private final AuditService audit;
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
     public GroupIdentificationService(CounterpartyRepository counterparties,
-                                      CounterpartyGroupRepository groups, AuditService audit) {
+                                      CounterpartyGroupRepository groups, AuditService audit,
+                                      com.helix.common.governance.AiGovernanceClient governance) {
         this.counterparties = counterparties;
         this.groups = groups;
         this.audit = audit;
+        this.governance = governance;
     }
 
     @Transactional
     public GroupSuggestionResult suggest(Long counterpartyId, String actor) {
         Counterparty subject = counterparties.findById(counterpartyId)
                 .orElseThrow(() -> ApiException.notFound("No counterparty: " + counterpartyId));
+        governance.enforce(com.helix.common.governance.AiCapability.GROUP_SUGGEST, subject.getJurisdiction());
 
         Set<String> subjectTokens = nameTokens(subject.getLegalName());
         String subjectRegPrefix = registrationPrefix(subject.getRegistrationNo());
