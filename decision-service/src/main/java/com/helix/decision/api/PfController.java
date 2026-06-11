@@ -41,8 +41,13 @@ public class PfController {
     public PfMilestone defineMilestone(@PathVariable String reference,
                                        @Valid @RequestBody DefineMilestoneRequest req,
                                        @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+        java.time.LocalDate planned = null;
+        if (req.plannedDate() != null && !req.plannedDate().isBlank()) {
+            try { planned = java.time.LocalDate.parse(req.plannedDate()); }
+            catch (Exception ignored) { /* leave null on parse failure */ }
+        }
         return pf.defineMilestone(reference, req.facilityRef(), req.sequence(), req.name(),
-                req.plannedAmount(), req.currency(), actor);
+                req.plannedAmount(), req.currency(), planned, actor);
     }
 
     @GetMapping("/{reference}/milestones")

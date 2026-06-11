@@ -91,4 +91,42 @@ public class LimitClient {
             return null;
         }
     }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record FxView(String base, Map<String, Double> rates) {
+    }
+
+    /** A single FX quote derived from limit-service's rate table (base = INR). */
+    public record FxQuote(String from, String to, double rate, double convertedAmount) { }
+
+    /**
+     * Cross-currency conversion for the disbursement path. limit-service's FxService
+     * is the platform's source of truth for FX rates; it stores rates as
+     * (base-currency per unit of foreign currency) on an INR base. We compose
+     * arbitrary cross-rates as: {@code amount * rate(from) / rate(to)}.
+     */
+    public FxQuote fxQuote(String from, String to, double amount) {
+        if (from == null || to == null) throw new IllegalArgumentException("from and to required");
+        if (from.equalsIgnoreCase(to)) return new FxQuote(from.toUpperCase(), to.toUpperCase(), 1.0, amount);
+        FxView fx;
+        try {
+            fx = client.get().uri("/api/limits/eod/fx").retrieve().body(FxView.class);
+        } catch (Exception e) {
+            log.warn("limit-service /eod/fx unavailable ({}); cannot quote {}->{}", e.getMessage(), from, to);
+            throw com.helix.common.web.ApiException.conflict(
+                    "FX rates unavailable from limit-service; cannot convert " + from + " to " + to);
+        }
+        if (fx == null || fx.rates() == null) {
+            throw com.helix.common.web.ApiException.conflict("Empty FX rates from limit-service");
+        }
+        Double rFrom = fx.rates().get(from.toUpperCase());
+        Double rTo = fx.rates().get(to.toUpperCase());
+        if (rFrom == null || rTo == null || rTo == 0) {
+            throw com.helix.common.web.ApiException.badRequest(
+                    "Unknown FX pair " + from + "/" + to + " — neither leg in the rate table");
+        }
+        double rate = rFrom / rTo;
+        double converted = Math.round(amount * rate * 100.0) / 100.0;
+        return new FxQuote(from.toUpperCase(), to.toUpperCase(), rate, converted);
+    }
 }

@@ -249,5 +249,96 @@ check("CP_CLEARED is stamped HUMAN",
 check("DISBURSEMENT_RELEASED is stamped HUMAN",
       any(a.get("eventType") == "DISBURSEMENT_RELEASED" and a.get("actorType") == "HUMAN" for a in audit), "")
 
+print("\n== 9. Amend: requester edits a fresh DRAFT ==")
+st, da = call("POST", f"/decision/api/disbursement/{ref}/request",
+              {"facilityRef": facility_ref, "amount": 50_000_000, "currency": "INR",
+               "purpose": "tranche A", "narrative": "initial"},
+              actor="credit.ops")
+da = must(st, da, "request amendable")
+check("amend works for the requester", True, "")
+st, amended = call("POST", f"/decision/api/disbursement/{da['id']}/amend",
+                   {"amount": 75_000_000, "purpose": "tranche A (revised up)",
+                    "narrative": "updated per RM request"}, actor="credit.ops")
+check("amend by requester returns 200", st == 200, f"{st} {amended}")
+check("amount reflects amendment", amended["amount"] == 75_000_000, str(amended["amount"]))
+check("purpose reflects amendment", amended["purpose"] == "tranche A (revised up)", str(amended["purpose"]))
+st, body = call("POST", f"/decision/api/disbursement/{da['id']}/amend",
+                 {"amount": 80_000_000}, actor="credit.officer")
+check("amend by non-requester blocked (403 SoD)", st == 403, f"{st} {body}")
+# Amend only on DRAFT
+call("POST", f"/decision/api/disbursement/{da['id']}/authorize", {}, actor="credit.officer")
+st, body = call("POST", f"/decision/api/disbursement/{da['id']}/amend",
+                 {"amount": 60_000_000}, actor="credit.ops")
+check("amend after AUTHORIZED rejected (409)", st == 409, f"{st} {body}")
+
+print("\n== 10. Cancel: requester voluntarily withdraws ==")
+# Cancel from AUTHORIZED — allowed, requester only
+st, body = call("POST", f"/decision/api/disbursement/{da['id']}/cancel",
+                 {"reason": "withdraw"}, actor="credit.officer")
+check("cancel by non-requester blocked (403 SoD)", st == 403, f"{st} {body}")
+st, cancelled = call("POST", f"/decision/api/disbursement/{da['id']}/cancel",
+                      {"reason": "borrower changed mind"}, actor="credit.ops")
+check("cancel by requester succeeds", st == 200 and cancelled["status"] == "CANCELLED", f"{st} {cancelled}")
+check("cancelledBy/Reason captured", cancelled["cancelledBy"] == "credit.ops"
+      and "changed mind" in (cancelled.get("cancelledReason") or ""), str(cancelled))
+# A CANCELLED draw can't be re-cancelled / authorised / rejected
+st, body = call("POST", f"/decision/api/disbursement/{da['id']}/authorize", {}, actor="credit.officer")
+check("CANCELLED can't be re-authorised", st in (409, 400), f"{st}")
+# Cancellation freed the headroom (no longer counts toward used)
+st, fresh = call("POST", f"/decision/api/disbursement/{ref}/request",
+                 {"facilityRef": facility_ref, "amount": 75_000_000, "currency": "INR",
+                  "purpose": "post-cancel"}, actor="credit.ops")
+check("cancelled drawdown freed facility headroom",
+      st == 200 and fresh["status"] == "DRAFT", f"{st} {fresh}")
+
+print("\n== 11. Cross-currency: USD drawdown on an INR facility (FX converted) ==")
+st, fx = call("POST", f"/decision/api/disbursement/{ref}/request",
+              {"facilityRef": facility_ref, "amount": 1_000_000, "currency": "USD",
+               "purpose": "USD draw", "narrative": "cross-ccy"},
+              actor="credit.ops")
+fx_d = must(st, fx, "cross-ccy request")
+check("status DRAFT", fx_d["status"] == "DRAFT")
+check("requestedCurrency = USD", fx_d.get("requestedCurrency") == "USD", str(fx_d.get("requestedCurrency")))
+check("requestedAmount = 1,000,000", fx_d.get("requestedAmount") == 1_000_000, str(fx_d.get("requestedAmount")))
+check("facility currency stays INR", fx_d["currency"] == "INR", str(fx_d["currency"]))
+check("amount > requestedAmount (USD → INR at ~83)",
+      fx_d["amount"] > fx_d["requestedAmount"] * 50, f"amount={fx_d['amount']} req={fx_d['requestedAmount']}")
+check("fxRate stamped on the row", fx_d.get("fxRate") and fx_d["fxRate"] > 0, str(fx_d.get("fxRate")))
+print(f"    {fx_d['requestedAmount']:,.0f} USD @ {fx_d['fxRate']:.4f} = {fx_d['amount']:,.2f} INR")
+
+print("\n== 12. Per-jurisdiction CP_MASTER override: IN-RBI uses Indian-specific CPs ==")
+# The seed has both a default TERM_LOAN pack and an IN-RBI override. The picker
+# should choose the override for an IN-RBI deal (our Surya Steel app).
+in_codes = {c["code"] for c in reg}
+check("IN-RBI override picked (CERSAI present)", "CP-CERSAI" in in_codes, str(in_codes))
+check("IN-RBI override picked (ROC charge filing)", "CP-ROC" in in_codes, str(in_codes))
+check("IN-RBI override picked (revenue stamping)", "CP-STAMP" in in_codes, str(in_codes))
+check("default-only codes not present (CP-VAL still here, CP-BR still here)",
+      "CP-BR" in in_codes and "CP-VAL" in in_codes, str(in_codes))
+
+# Now seed an AE-CBUAE deal and confirm a different pack is applied.
+st, cp_ae = call("POST", "/counterparty/api/counterparties", {
+    "legalName": "Falcon Trading LLC", "legalForm": "LLC", "registrationNo": "AE-CR-CP-1",
+    "jurisdiction": "AE-CBUAE", "segment": "MID_CORPORATE", "sector": "TRADE", "country": "AE",
+    "listedEntity": False, "regulatedFi": False, "pep": False, "adverseMedia": False,
+    "highRiskJurisdiction": False, "complexOwnership": False}, actor="rm.user")
+cp_ae = must(st, cp_ae, "cp ae")
+st, app_ae = call("POST", "/origination/api/applications", {
+    "counterpartyId": cp_ae["id"], "counterpartyRef": cp_ae["reference"], "counterpartyName": cp_ae["legalName"],
+    "jurisdiction": "AE-CBUAE", "segment": "MID_CORPORATE", "facilityType": "TERM_LOAN",
+    "requestedAmount": 100_000_000, "currency": "AED", "tenorMonths": 60, "purpose": "Plant",
+    "collateralType": "PROPERTY", "collateralValue": 130_000_000, "secured": True}, actor="rm.user")
+app_ae = must(st, app_ae, "app ae")
+ref_ae = app_ae["reference"]
+call("POST", f"/decision/api/cps/{ref_ae}/seed", actor="credit.ops")
+st, reg_ae = call("GET", f"/decision/api/cps/{ref_ae}")
+ae_codes = {c["code"] for c in reg_ae}
+check("AE-CBUAE override picked (Mortgage with Land Dept)", "CP-MOR-LD" in ae_codes, str(ae_codes))
+check("AE-CBUAE override picked (Emirates ID)", "CP-EID" in ae_codes, str(ae_codes))
+check("AE-CBUAE override picked (Al Etihad bureau)", "CP-AECB" in ae_codes, str(ae_codes))
+check("AE-CBUAE override picked (Economic Substance)", "CP-ESR" in ae_codes, str(ae_codes))
+check("AE-CBUAE does NOT carry India-specific CPs",
+      "CP-CERSAI" not in ae_codes and "CP-ROC" not in ae_codes and "CP-STAMP" not in ae_codes, str(ae_codes))
+
 print(f"\n== Pre-disbursement e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

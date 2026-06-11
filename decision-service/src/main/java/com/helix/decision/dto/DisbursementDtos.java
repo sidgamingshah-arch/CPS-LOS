@@ -15,4 +15,12 @@ public class DisbursementDtos {
 
     public record AuthoriseRequest(String note) {
     }
+
+    /** Edit a DRAFT drawdown. Any null field is left unchanged. */
+    public record AmendRequest(Double amount, String currency, String purpose, String narrative,
+                               Integer milestoneSequence) {
+    }
+
+    public record CancelRequest(String reason) {
+    }
 }

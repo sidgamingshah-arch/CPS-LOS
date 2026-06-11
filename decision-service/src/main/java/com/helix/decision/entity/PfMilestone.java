@@ -55,6 +55,9 @@ public class PfMilestone {
     @Column(nullable = false, length = 8)
     private String currency;
 
+    /** Target date for this milestone — drives the milestone-schedule view. */
+    private java.time.LocalDate plannedDate;
+
     /** PLANNED · LIE_CERTIFIED · DRAWN */
     @Column(nullable = false, length = 20)
     private String status = "PLANNED";

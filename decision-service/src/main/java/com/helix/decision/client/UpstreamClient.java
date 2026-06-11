@@ -96,7 +96,8 @@ public class UpstreamClient {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record MasterRecordDto(Long id, String masterType, String recordKey, Map<String, Object> payload) {
+    public record MasterRecordDto(Long id, String masterType, String recordKey, String jurisdiction,
+                                  Map<String, Object> payload) {
     }
 
     /** Active master records of a type (e.g. CHECKLIST_MASTER) from config-service. */

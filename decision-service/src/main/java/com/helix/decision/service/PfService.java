@@ -52,7 +52,8 @@ public class PfService {
 
     @Transactional
     public PfMilestone defineMilestone(String ref, String facilityRef, int sequence, String name,
-                                       double plannedAmount, String currency, String actor) {
+                                       double plannedAmount, String currency,
+                                       java.time.LocalDate plannedDate, String actor) {
         milestones.findByApplicationReferenceAndFacilityRefAndSequence(ref, facilityRef, sequence)
                 .ifPresent(m -> { throw ApiException.conflict("Milestone seq " + sequence
                         + " already exists for " + facilityRef); });
@@ -63,6 +64,7 @@ public class PfService {
         m.setName(name);
         m.setPlannedAmount(plannedAmount);
         m.setCurrency(currency == null || currency.isBlank() ? "INR" : currency.toUpperCase());
+        m.setPlannedDate(plannedDate);
         PfMilestone saved = milestones.save(m);
         audit.human(actor, "PF_MILESTONE_DEFINED", "PfMilestone", String.valueOf(saved.getId()),
                 "Defined milestone #%d '%s' (%.2f %s) on %s".formatted(sequence, name, plannedAmount,

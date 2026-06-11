@@ -1,6 +1,8 @@
 package com.helix.decision.api;
 
+import com.helix.decision.dto.DisbursementDtos.AmendRequest;
 import com.helix.decision.dto.DisbursementDtos.AuthoriseRequest;
+import com.helix.decision.dto.DisbursementDtos.CancelRequest;
 import com.helix.decision.dto.DisbursementDtos.RejectRequest;
 import com.helix.decision.dto.DisbursementDtos.RequestDrawdownRequest;
 import com.helix.decision.entity.Disbursement;
@@ -58,6 +60,26 @@ public class DisbursementController {
     public Disbursement reject(@PathVariable Long id, @Valid @RequestBody RejectRequest req,
                                @RequestHeader(value = "X-Actor", defaultValue = "credit.officer") String actor) {
         return disb.reject(id, req.reason(), actor);
+    }
+
+    /** Edit a DRAFT drawdown — requester-only. */
+    @PostMapping("/{id}/amend")
+    public Disbursement amend(@PathVariable Long id, @RequestBody(required = false) AmendRequest req,
+                              @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+        return disb.amend(id,
+                req == null ? null : req.amount(),
+                req == null ? null : req.currency(),
+                req == null ? null : req.purpose(),
+                req == null ? null : req.narrative(),
+                req == null ? null : req.milestoneSequence(),
+                actor);
+    }
+
+    /** Voluntary cancellation by the requester. */
+    @PostMapping("/{id}/cancel")
+    public Disbursement cancel(@PathVariable Long id, @RequestBody(required = false) CancelRequest req,
+                               @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+        return disb.cancel(id, req == null ? null : req.reason(), actor);
     }
 
     @GetMapping("/{reference}")

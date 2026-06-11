@@ -148,6 +148,46 @@ public class MasterSeeder implements CommandLineRunner {
                 map("code", "CP-MILES",   "title", "Milestone certification",          "mandatory", true,  "description", "LIE / lender's engineer certifies the milestone for the tranche being drawn."),
                 map("code", "CP-INS",     "title", "Construction & operating insurance", "mandatory", true,  "description", "CAR/EAR + operating insurance with lender as loss-payee."))));
 
+        // ---- CP_MASTER jurisdiction overrides ----
+        // Layered ON TOP of the default-keyed records above. The ConditionPrecedentService
+        // picker prefers a {facilityType}:{jurisdiction} key over the plain default — so
+        // when a deal is jurisdiction=IN-RBI on a TERM_LOAN, this overrides the seed.
+        // IN-RBI specifics: ROC charge filing (Indian Companies Act §77/78), CERSAI
+        // registration (SARFAESI §20A), revenue-stamping, India-specific KYC refresh.
+        masters.seedActive("CP_MASTER", "TERM_LOAN", "IN-RBI", map("items", List.of(
+                map("code", "CP-FA",       "title", "Executed facility agreement",     "mandatory", true),
+                map("code", "CP-BR",       "title", "Board resolution",                "mandatory", true),
+                map("code", "CP-STAMP",    "title", "Revenue stamping per state",      "mandatory", true,  "description", "Facility + security documents stamped per the borrower's state Stamp Act."),
+                map("code", "CP-ROC",      "title", "ROC charge filing (Form CHG-1)",  "mandatory", true,  "description", "Charge on company assets filed with Registrar of Companies within 30 days."),
+                map("code", "CP-CERSAI",   "title", "CERSAI registration (SARFAESI)",  "mandatory", true,  "description", "Security interest registered on the CERSAI portal under SARFAESI §20A."),
+                map("code", "CP-INS",      "title", "Insurance assignment to bank",    "mandatory", true),
+                map("code", "CP-VAL",      "title", "Empanelled valuer report ≤90d",   "mandatory", true,  "description", "Valuation by an RBI-empanelled valuer not older than 90 days."),
+                map("code", "CP-CIBIL",    "title", "CIBIL refresh + flagging check",  "mandatory", true,  "description", "Fresh CIBIL commercial report; willful-defaulter / SMA flag check."),
+                map("code", "CP-MAC",      "title", "No material adverse change",      "mandatory", true))));
+        masters.seedActive("CP_MASTER", "WORKING_CAPITAL", "IN-RBI", map("items", List.of(
+                map("code", "CP-FA",       "title", "Executed WC agreement",           "mandatory", true),
+                map("code", "CP-DPN",      "title", "Demand promissory note + stamp",  "mandatory", true,  "description", "DPN executed and revenue-stamped per state."),
+                map("code", "CP-HYPO",     "title", "Hypothecation of current assets", "mandatory", true,  "description", "Charge on book debts + inventory perfected via ROC + CERSAI."),
+                map("code", "CP-DP",       "title", "Drawing-power computation signed","mandatory", true,  "description", "Borrower signs the drawing-power working from latest stock statement."),
+                map("code", "CP-MAC",      "title", "No material adverse change",      "mandatory", true))));
+        // AE-CBUAE specifics: Emirates ID + UAE mortgage at the Land Department, no Indian
+        // CERSAI/ROC; UAE-specific KYC (AECB Al Etihad) + economic-substance.
+        masters.seedActive("CP_MASTER", "TERM_LOAN", "AE-CBUAE", map("items", List.of(
+                map("code", "CP-FA",       "title", "Executed facility agreement",     "mandatory", true),
+                map("code", "CP-EID",      "title", "Authorised-signatory Emirates ID","mandatory", true,  "description", "Emirates IDs of signing officers + power of attorney on file."),
+                map("code", "CP-MOR-LD",   "title", "Mortgage with Land Department",   "mandatory", true,  "description", "Registered mortgage at the relevant emirate's Land Department / Tabu."),
+                map("code", "CP-INS",      "title", "Insurance assigned to bank",      "mandatory", true),
+                map("code", "CP-VAL",      "title", "RICS-equivalent valuation ≤90d",  "mandatory", true),
+                map("code", "CP-AECB",     "title", "Al Etihad bureau report fresh",   "mandatory", true,  "description", "AECB commercial bureau report pulled within 30 days."),
+                map("code", "CP-ESR",      "title", "Economic substance compliance",   "mandatory", true,  "description", "ESR notification + report filing evidenced where applicable."),
+                map("code", "CP-MAC",      "title", "No material adverse change",      "mandatory", true))));
+        masters.seedActive("CP_MASTER", "WORKING_CAPITAL", "AE-CBUAE", map("items", List.of(
+                map("code", "CP-FA",       "title", "Executed WC agreement",           "mandatory", true),
+                map("code", "CP-CHQ",      "title", "Security cheques on file",        "mandatory", true,  "description", "Undated security cheques per UAE practice, in line with bank policy."),
+                map("code", "CP-CHARGE",   "title", "Charge on receivables (UAE)",     "mandatory", true,  "description", "Movable-collateral pledge registered with the Emirates Movable Collateral Registry."),
+                map("code", "CP-AECB",     "title", "Al Etihad bureau report fresh",   "mandatory", true),
+                map("code", "CP-MAC",      "title", "No material adverse change",      "mandatory", true))));
+
         // ---- FTP_CURVE master — funds-transfer-pricing curve per currency ----
         // The pricing path reads this to derive a term-structured, behaviourally-adjusted
         // cost of funds instead of a flat number. recordKey = currency; jurisdiction

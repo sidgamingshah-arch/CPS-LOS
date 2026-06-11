@@ -68,19 +68,29 @@ public class DisbursementService {
             throw ApiException.badRequest("No facility '" + facilityRef + "' on " + applicationReference);
         }
         if (currency == null || currency.isBlank()) currency = facility.currency();
-        if (!currency.equalsIgnoreCase(facility.currency())) {
-            throw ApiException.badRequest("Disbursement currency " + currency
-                    + " differs from facility currency " + facility.currency()
-                    + "; cross-currency disbursements need an FX conversion step");
+        // Cross-currency: if the request is in a non-facility currency, convert to
+        // facility currency at the platform FX rate. The limit ledger, headroom check,
+        // and downstream booking all stay in facility currency; we keep the original
+        // requested amount + currency + applied rate on the row for the audit trail.
+        String requestedCurrency = currency.toUpperCase();
+        double requestedAmount = amount;
+        Double fxRate = null;
+        double facilityAmount = amount;
+        String facilityCcy = facility.currency() == null ? "INR" : facility.currency().toUpperCase();
+        if (!requestedCurrency.equalsIgnoreCase(facilityCcy)) {
+            LimitClient.FxQuote q = limits.fxQuote(requestedCurrency, facilityCcy, requestedAmount);
+            facilityAmount = q.convertedAmount();
+            fxRate = q.rate();
         }
         double used = repo.findByApplicationReferenceAndFacilityRefOrderByDrawdownNoAsc(applicationReference, facilityRef)
                 .stream()
-                .filter(d -> !"REJECTED".equals(d.getStatus()))
+                .filter(d -> !"REJECTED".equals(d.getStatus()) && !"CANCELLED".equals(d.getStatus()))
                 .mapToDouble(Disbursement::getAmount)
                 .sum();
-        if (used + amount > facility.amount() + 0.01) {
-            throw ApiException.badRequest("Drawdown of " + amount + " would exceed facility "
-                    + facilityRef + " (sanctioned " + facility.amount() + ", used " + used + ")");
+        if (used + facilityAmount > facility.amount() + 0.01) {
+            throw ApiException.badRequest("Drawdown of " + facilityAmount + " " + facilityCcy
+                    + " would exceed facility " + facilityRef + " (sanctioned " + facility.amount()
+                    + ", used " + used + ")");
         }
         int nextNo = repo.findFirstByApplicationReferenceAndFacilityRefOrderByDrawdownNoDesc(applicationReference, facilityRef)
                 .map(Disbursement::getDrawdownNo).orElse(0) + 1;
@@ -89,19 +99,127 @@ public class DisbursementService {
         d.setApplicationReference(applicationReference);
         d.setFacilityRef(facilityRef);
         d.setDrawdownNo(nextNo);
-        d.setAmount(amount);
-        d.setCurrency(currency.toUpperCase());
-        d.setBaseAmount(amount);  // updated on release
+        d.setAmount(round2(facilityAmount));
+        d.setCurrency(facilityCcy);
+        d.setRequestedAmount(round2(requestedAmount));
+        d.setRequestedCurrency(requestedCurrency);
+        d.setFxRate(fxRate);
+        d.setBaseAmount(round2(facilityAmount));  // updated on release
         d.setPurpose(purpose);
         d.setNarrative(narrative);
         d.setStatus("DRAFT");
         d.setRequestedBy(actor);
         d.setMilestoneSequence(milestoneSequence);
         Disbursement saved = repo.save(d);
+        String fxNote = fxRate == null ? ""
+                : " (converted from %.2f %s @ %.4f)".formatted(requestedAmount, requestedCurrency, fxRate);
         audit.human(actor, "DISBURSEMENT_REQUESTED", "Disbursement", String.valueOf(saved.getId()),
-                "Drawdown #%d of %.2f %s requested on %s".formatted(nextNo, amount, currency, facilityRef),
+                "Drawdown #%d of %.2f %s requested on %s%s".formatted(nextNo, facilityAmount, facilityCcy, facilityRef, fxNote),
                 Map.of("applicationReference", applicationReference, "facilityRef", facilityRef,
-                        "amount", amount, "currency", currency, "drawdownNo", nextNo));
+                        "amount", facilityAmount, "currency", facilityCcy,
+                        "requestedAmount", requestedAmount, "requestedCurrency", requestedCurrency,
+                        "fxRate", fxRate == null ? "" : fxRate,
+                        "drawdownNo", nextNo));
+        return saved;
+    }
+
+    private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+
+    // ============================================================ amend / cancel
+
+    /**
+     * Edits a DRAFT drawdown. Only the original requester may amend their own draft;
+     * any null field is left unchanged. Amount/currency changes re-run the FX
+     * conversion + headroom check from scratch.
+     */
+    @Transactional
+    public Disbursement amend(Long id, Double amount, String currency, String purpose,
+                              String narrative, Integer milestoneSequence, String actor) {
+        Disbursement d = get(id);
+        if (!"DRAFT".equals(d.getStatus())) {
+            throw ApiException.conflict("Amend is only allowed on DRAFT — current status " + d.getStatus());
+        }
+        if (actor == null || !actor.equals(d.getRequestedBy())) {
+            throw ApiException.forbiddenAutonomy(
+                    "Only the original requester (" + d.getRequestedBy() + ") may amend this draft");
+        }
+        // If amount/currency moves, recompute against the facility (FX + headroom).
+        boolean monetaryChange = amount != null || (currency != null && !currency.isBlank()
+                && !currency.equalsIgnoreCase(d.getRequestedCurrency()));
+        if (monetaryChange) {
+            DealEnvelopeDto env = upstream.envelope(d.getApplicationReference());
+            FacilityViewDto facility = findFacility(env, d.getFacilityRef());
+            if (facility == null) throw ApiException.badRequest("Facility gone");
+            String reqCcy = currency == null || currency.isBlank()
+                    ? d.getRequestedCurrency() : currency.toUpperCase();
+            double reqAmt = amount == null ? d.getRequestedAmount() : amount;
+            String facCcy = facility.currency() == null ? "INR" : facility.currency().toUpperCase();
+            double facAmt = reqAmt;
+            Double fx = null;
+            if (!reqCcy.equalsIgnoreCase(facCcy)) {
+                LimitClient.FxQuote q = limits.fxQuote(reqCcy, facCcy, reqAmt);
+                facAmt = q.convertedAmount();
+                fx = q.rate();
+            }
+            // Re-check headroom excluding this row.
+            double used = repo.findByApplicationReferenceAndFacilityRefOrderByDrawdownNoAsc(
+                    d.getApplicationReference(), d.getFacilityRef()).stream()
+                    .filter(other -> !other.getId().equals(d.getId()))
+                    .filter(other -> !"REJECTED".equals(other.getStatus())
+                            && !"CANCELLED".equals(other.getStatus()))
+                    .mapToDouble(Disbursement::getAmount).sum();
+            if (used + facAmt > facility.amount() + 0.01) {
+                throw ApiException.badRequest("Amended drawdown of " + facAmt + " " + facCcy
+                        + " would exceed facility (sanctioned " + facility.amount() + ", other used " + used + ")");
+            }
+            d.setRequestedAmount(round2(reqAmt));
+            d.setRequestedCurrency(reqCcy);
+            d.setFxRate(fx);
+            d.setAmount(round2(facAmt));
+            d.setCurrency(facCcy);
+            d.setBaseAmount(round2(facAmt));
+        }
+        if (purpose != null) d.setPurpose(purpose);
+        if (narrative != null) d.setNarrative(narrative);
+        if (milestoneSequence != null) d.setMilestoneSequence(milestoneSequence);
+        Disbursement saved = repo.save(d);
+        audit.human(actor, "DISBURSEMENT_AMENDED", "Disbursement", String.valueOf(id),
+                "Amended drawdown #%d on %s — new %.2f %s".formatted(
+                        d.getDrawdownNo(), d.getFacilityRef(), d.getAmount(), d.getCurrency()),
+                Map.of("facilityRef", d.getFacilityRef(), "amount", d.getAmount(),
+                        "currency", d.getCurrency()));
+        return saved;
+    }
+
+    /**
+     * Voluntary cancellation by the requester. Distinct from {@link #reject} — that's
+     * the checker's veto. Allowed in DRAFT or AUTHORIZED (before money moves); a
+     * RELEASED draw needs a reversal, not a cancel.
+     */
+    @Transactional
+    public Disbursement cancel(Long id, String reason, String actor) {
+        Disbursement d = get(id);
+        if ("RELEASED".equals(d.getStatus())) {
+            throw ApiException.conflict("Cannot cancel a RELEASED drawdown — use a reversal");
+        }
+        if ("CANCELLED".equals(d.getStatus()) || "REJECTED".equals(d.getStatus())) {
+            throw ApiException.conflict("Drawdown already " + d.getStatus());
+        }
+        if (actor == null || !actor.equals(d.getRequestedBy())) {
+            throw ApiException.forbiddenAutonomy(
+                    "Only the original requester (" + d.getRequestedBy()
+                    + ") may cancel this drawdown; a checker should use /reject");
+        }
+        d.setStatus("CANCELLED");
+        d.setCancelledBy(actor);
+        d.setCancelledReason(reason);
+        d.setCancelledAt(Instant.now());
+        Disbursement saved = repo.save(d);
+        audit.human(actor, "DISBURSEMENT_CANCELLED", "Disbursement", String.valueOf(id),
+                "Cancelled drawdown #%d on %s — %s".formatted(
+                        d.getDrawdownNo(), d.getFacilityRef(), reason == null ? "(no reason)" : reason),
+                Map.of("facilityRef", d.getFacilityRef(),
+                        "reason", reason == null ? "" : reason));
         return saved;
     }
 
@@ -233,6 +351,9 @@ public class DisbursementService {
         Disbursement d = get(id);
         if ("RELEASED".equals(d.getStatus())) {
             throw ApiException.conflict("Cannot reject a RELEASED disbursement — use a reversal instead");
+        }
+        if ("CANCELLED".equals(d.getStatus()) || "REJECTED".equals(d.getStatus())) {
+            throw ApiException.conflict("Drawdown already " + d.getStatus());
         }
         d.setStatus("REJECTED");
         d.setRejectedBy(actor);

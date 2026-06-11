@@ -154,6 +154,32 @@ export default function Disbursement() {
     } catch (e: any) { notify(e.message, true); }
   }
 
+  async function amend(id: number, current: any) {
+    const amtStr = prompt(`New amount (current ${current.amount} ${current.currency})`,
+      String(current.amount));
+    if (!amtStr) return;
+    const amt = parseFloat(amtStr.replace(/[, ]/g, ""));
+    if (!amt || amt <= 0) return;
+    const newPurpose = prompt("Purpose (blank = keep)", current.purpose ?? "");
+    try {
+      await disbursement.amend(id, {
+        amount: amt,
+        purpose: newPurpose && newPurpose !== current.purpose ? newPurpose : null,
+      }, actor);
+      notify("Drawdown amended");
+      history.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function cancel(id: number) {
+    const reason = prompt("Cancellation reason") || "";
+    if (!reason) return;
+    try { await disbursement.cancel(id, { reason }, actor);
+      notify("Drawdown cancelled");
+      history.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
   return (
     <div className="grid">
       <Card title="Pre-disbursement workflow"
@@ -296,33 +322,57 @@ export default function Disbursement() {
       )}
 
       {ref && facilityRef && isPf && (
-        <Card title="Project-finance milestones · LIE gate"
-          sub="Each tranche draws against a construction milestone that the Lender's Independent Engineer must certify first.">
+        <Card title="Construction milestone schedule"
+          sub="Planned tranches with their LIE-certified gate. The PF gate blocks a drawdown until its milestone is certified; reserve shortfalls block too.">
           <table>
             <thead>
-              <tr><th>#</th><th>Milestone</th><th className="num">Planned</th><th>Status</th><th>LIE cert</th><th /></tr>
+              <tr>
+                <th>#</th>
+                <th>Milestone</th>
+                <th className="num">Planned</th>
+                <th>Planned date</th>
+                <th>Progress</th>
+                <th>LIE cert</th>
+                <th />
+              </tr>
             </thead>
             <tbody>
-              {(milestones.data ?? []).map((m: any) => (
-                <tr key={m.id}>
-                  <td>#{m.sequence}</td>
-                  <td>{m.name}</td>
-                  <td className="num">{fmt.money(m.plannedAmount, m.currency)}</td>
-                  <td>
-                    <Badge kind={m.status === "DRAWN" ? "ok" : m.status === "LIE_CERTIFIED" ? "info" : "warn"}>
-                      {m.status}
-                    </Badge>
-                  </td>
-                  <td className="muted" style={{ fontSize: 12 }}>
-                    {m.certificationRef ? `${m.certificationRef} · ${m.lieCertifiedBy}` : "—"}
-                  </td>
-                  <td>
-                    {m.status === "PLANNED" && (
-                      <Button kind="subtle" onClick={() => certifyMilestone(m.id)}>LIE certify</Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {(milestones.data ?? []).map((m: any) => {
+                const pct = m.status === "DRAWN" ? 100
+                          : m.status === "LIE_CERTIFIED" ? 60
+                          : 10;
+                const tone = m.status === "DRAWN" ? "var(--ok)"
+                          : m.status === "LIE_CERTIFIED" ? "var(--ai)"
+                          : "var(--warn, #c79a37)";
+                return (
+                  <tr key={m.id}>
+                    <td>#{m.sequence}</td>
+                    <td>{m.name}</td>
+                    <td className="num">{fmt.money(m.plannedAmount, m.currency)}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{m.plannedDate ?? "—"}</td>
+                    <td style={{ minWidth: 220 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ flex: 1, height: 6, borderRadius: 3,
+                                      background: "rgba(0,0,0,0.08)", overflow: "hidden" }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: tone }} />
+                        </div>
+                        <Badge kind={m.status === "DRAWN" ? "ok"
+                                    : m.status === "LIE_CERTIFIED" ? "info" : "warn"}>
+                          {m.status}
+                        </Badge>
+                      </div>
+                    </td>
+                    <td className="muted" style={{ fontSize: 12 }}>
+                      {m.certificationRef ? `${m.certificationRef} · ${m.lieCertifiedBy}` : "—"}
+                    </td>
+                    <td>
+                      {m.status === "PLANNED" && (
+                        <Button kind="subtle" onClick={() => certifyMilestone(m.id)}>LIE certify</Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </Card>
@@ -370,6 +420,7 @@ export default function Disbursement() {
                 <tr>
                   <th>#</th>
                   <th>Amount</th>
+                  <th>Requested (orig.)</th>
                   <th>Status</th>
                   <th>Requested · authorised · released</th>
                   <th>Utilisation ref</th>
@@ -382,28 +433,43 @@ export default function Disbursement() {
                     <td>#{d.drawdownNo}</td>
                     <td className="mono">{fmt.money(d.amount, d.currency)}</td>
                     <td>
+                      {d.fxRate ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <span className="mono">{fmt.money(d.requestedAmount, d.requestedCurrency)}</span>
+                          <Badge kind="info">FX @ {Number(d.fxRate).toFixed(4)}</Badge>
+                        </div>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>
                       <Badge kind={d.status === "RELEASED" ? "ok"
                                   : d.status === "AUTHORIZED" ? "info"
-                                  : d.status === "REJECTED" ? "bad" : "warn"}>
+                                  : d.status === "REJECTED" || d.status === "CANCELLED" ? "bad" : "warn"}>
                         {d.status}
                       </Badge>
                     </td>
                     <td className="muted" style={{ fontSize: 12 }}>
                       <div>{d.requestedBy ?? "—"}</div>
                       <div>{d.authorizedBy ?? "—"}</div>
-                      <div>{d.releasedBy ?? "—"}</div>
+                      <div>{d.releasedBy ?? d.cancelledBy ?? d.rejectedBy ?? "—"}</div>
                     </td>
                     <td className="mono" style={{ fontSize: 12 }}>{d.utilisationRef ?? "—"}</td>
                     <td>
-                      <div style={{ display: "flex", gap: 4 }}>
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                         {d.status === "DRAFT" && (
                           <>
                             <Button kind="primary" onClick={() => authorize(d.id)}>Authorise</Button>
+                            <Button kind="subtle" onClick={() => amend(d.id, d)}>Amend</Button>
+                            <Button kind="ghost" onClick={() => cancel(d.id)}>Cancel</Button>
                             <Button kind="ghost" onClick={() => reject(d.id)}>Reject</Button>
                           </>
                         )}
                         {d.status === "AUTHORIZED" && (
-                          <Button kind="primary" onClick={() => release(d.id)}>Release</Button>
+                          <>
+                            <Button kind="primary" onClick={() => release(d.id)}>Release</Button>
+                            <Button kind="ghost" onClick={() => cancel(d.id)}>Cancel</Button>
+                          </>
                         )}
                       </div>
                     </td>

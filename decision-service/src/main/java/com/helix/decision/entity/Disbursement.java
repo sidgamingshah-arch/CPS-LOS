@@ -64,6 +64,18 @@ public class Disbursement {
     @Column(nullable = false, length = 8)
     private String currency;
 
+    /**
+     * For cross-currency drawdowns: the amount the requester actually asked for
+     * (e.g. 1,000 USD on an INR-denominated facility). {@link #amount} is the
+     * facility-currency normalised value used for headroom and limit booking;
+     * {@code requestedAmount} + {@code requestedCurrency} are kept for audit /
+     * statement printing. {@code fxRate} is the conversion that was applied
+     * (requestedCcy → facilityCcy).
+     */
+    private Double requestedAmount;
+    @Column(length = 8) private String requestedCurrency;
+    private Double fxRate;
+
     /** Amount in base currency, captured at release-time for the audit row. */
     @Column(nullable = false)
     private double baseAmount;
@@ -95,6 +107,11 @@ public class Disbursement {
     @Column(length = 80)  private String rejectedBy;
     @Column(length = 400) private String rejectedReason;
     private Instant rejectedAt;
+
+    /** Voluntary cancellation by the requester (distinct from a checker's REJECTED). */
+    @Column(length = 80)  private String cancelledBy;
+    @Column(length = 400) private String cancelledReason;
+    private Instant cancelledAt;
 
     @UpdateTimestamp
     private Instant updatedAt;

@@ -459,6 +459,10 @@ export const disbursement = {
     call<any>(`/decision/api/disbursement/${id}/release`, "POST", undefined, actor),
   reject: (id: number, body: any, actor: string) =>
     call<any>(`/decision/api/disbursement/${id}/reject`, "POST", body, actor),
+  amend: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/amend`, "POST", body, actor),
+  cancel: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/cancel`, "POST", body, actor),
   history: (ref: string, facilityRef?: string) =>
     call<any[]>(`/decision/api/disbursement/${ref}${facilityRef ? `?facilityRef=${facilityRef}` : ""}`, "GET"),
 };

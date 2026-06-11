@@ -81,14 +81,18 @@ print(f"    PF deal {ref}, facility {fref}, CPs cleared")
 
 print("\n== 1. Define milestones + reserves ==")
 st, m1 = call("POST", f"/decision/api/pf/{ref}/milestones",
-              {"facilityRef": fref, "sequence": 1, "name": "Land + financial close", "plannedAmount": 1_000_000_000},
+              {"facilityRef": fref, "sequence": 1, "name": "Land + financial close",
+               "plannedAmount": 1_000_000_000, "plannedDate": "2026-09-30"},
               actor="credit.ops")
 m1 = must(st, m1, "milestone 1")
 st, m2 = call("POST", f"/decision/api/pf/{ref}/milestones",
-              {"facilityRef": fref, "sequence": 2, "name": "EPC 50% complete", "plannedAmount": 2_000_000_000},
+              {"facilityRef": fref, "sequence": 2, "name": "EPC 50% complete",
+               "plannedAmount": 2_000_000_000, "plannedDate": "2027-03-31"},
               actor="credit.ops")
 m2 = must(st, m2, "milestone 2")
 check("milestones start PLANNED", m1["status"] == "PLANNED" and m2["status"] == "PLANNED")
+check("plannedDate captured on milestone 1", m1.get("plannedDate") == "2026-09-30", str(m1.get("plannedDate")))
+check("plannedDate captured on milestone 2", m2.get("plannedDate") == "2027-03-31", str(m2.get("plannedDate")))
 st, dsra = call("POST", f"/decision/api/pf/{ref}/reserves",
                 {"accountType": "DSRA", "requiredAmount": 250_000_000}, actor="credit.ops")
 dsra = must(st, dsra, "dsra")

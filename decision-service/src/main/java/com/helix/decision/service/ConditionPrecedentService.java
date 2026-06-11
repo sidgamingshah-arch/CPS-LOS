@@ -90,16 +90,23 @@ public class ConditionPrecedentService {
         return seeded;
     }
 
-    /** Pick the most-specific CP_MASTER record: {facilityType:jurisdiction} → {facilityType}. */
+    /**
+     * Picks the most-specific CP_MASTER record for the facility. Master rows are
+     * keyed by {@code recordKey=<facilityType>} plus an optional {@code jurisdiction}
+     * column; a row with a matching jurisdiction wins over the default (null
+     * jurisdiction) row.
+     */
     private MasterRecordDto pickPack(List<MasterRecordDto> masters, String facilityType, String jurisdiction) {
         if (facilityType == null || masters == null) return null;
-        String specific = facilityType + ":" + (jurisdiction == null ? "" : jurisdiction);
-        MasterRecordDto best = null;
+        MasterRecordDto override = null;
+        MasterRecordDto def = null;
         for (MasterRecordDto m : masters) {
-            if (specific.equals(m.recordKey())) return m;
-            if (facilityType.equals(m.recordKey())) best = m;
+            if (!facilityType.equals(m.recordKey())) continue;
+            String j = m.jurisdiction();
+            if (jurisdiction != null && jurisdiction.equals(j)) override = m;
+            else if (j == null || j.isBlank()) def = m;
         }
-        return best;
+        return override != null ? override : def;
     }
 
     // ============================================================ register operations

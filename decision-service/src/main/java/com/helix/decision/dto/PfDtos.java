@@ -8,7 +8,8 @@ import java.util.List;
 public class PfDtos {
 
     public record DefineMilestoneRequest(@NotBlank String facilityRef, int sequence, @NotBlank String name,
-                                         @Positive double plannedAmount, String currency) {
+                                         @Positive double plannedAmount, String currency,
+                                         String plannedDate) {
     }
 
     public record CertifyRequest(@NotBlank String certificationRef, String note) {
