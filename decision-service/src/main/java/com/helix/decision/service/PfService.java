@@ -109,6 +109,28 @@ public class PfService {
                 });
     }
 
+    /**
+     * Reinstate a milestone whose draw was reversed: DRAWN → LIE_CERTIFIED, so the
+     * tranche can be re-drawn. Only the disbursement that drew it may un-draw it.
+     */
+    @Transactional
+    public void unmarkDrawn(String ref, String facilityRef, Integer sequence, Long disbursementId) {
+        if (sequence == null) return;
+        milestones.findByApplicationReferenceAndFacilityRefAndSequence(ref, facilityRef, sequence)
+                .filter(m -> "DRAWN".equals(m.getStatus())
+                        && disbursementId != null && disbursementId.equals(m.getDrawnByDisbursementId()))
+                .ifPresent(m -> {
+                    m.setStatus("LIE_CERTIFIED");
+                    m.setDrawnByDisbursementId(null);
+                    milestones.save(m);
+                    audit.engine("PF_MILESTONE_REINSTATED", "PfMilestone", String.valueOf(m.getId()),
+                            "Milestone #%d on %s reinstated to LIE_CERTIFIED after reversal of disbursement %d"
+                                    .formatted(sequence, facilityRef, disbursementId),
+                            Map.of("facilityRef", facilityRef, "sequence", sequence,
+                                    "disbursementId", disbursementId));
+                });
+    }
+
     @Transactional(readOnly = true)
     public List<PfMilestone> milestonesFor(String ref, String facilityRef) {
         return facilityRef == null || facilityRef.isBlank()

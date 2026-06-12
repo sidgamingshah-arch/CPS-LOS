@@ -170,5 +170,31 @@ check("withdraw by different actor succeeds", st == 200, f"{st} {wd}")
 check("withdrawal drops DSRA back to SHORTFALL", wd["status"] == "SHORTFALL"
       and abs(wd["currentBalance"] - 200_000_000) < 1, str(wd))
 
+print("\n== 8. Reversal reinstates the milestone — the tranche becomes re-drawable ==")
+# d1 (tranche 1, RELEASED by treasury.ops against milestone 1) is reversed; the
+# milestone must go DRAWN -> LIE_CERTIFIED so the draw can be re-run.
+st, body = call("POST", f"/decision/api/disbursement/{d1['id']}/reverse",
+                {"reason": "funding error"}, actor="treasury.ops")
+check("reversal by the releaser blocked (403 SoD)", st == 403, f"{st} {body}")
+st, d1v = call("POST", f"/decision/api/disbursement/{d1['id']}/reverse",
+               {"reason": "funding error — wrong escrow account"}, actor="ops.checker")
+check("reversal succeeds with a distinct actor", st == 200 and d1v["status"] == "REVERSED", f"{st} {d1v}")
+
+st, ms2 = call("GET", f"/decision/api/pf/{ref}/milestones?facilityRef={fref}")
+m1_after = next(m for m in ms2 if m["sequence"] == 1)
+check("milestone 1 reinstated to LIE_CERTIFIED", m1_after["status"] == "LIE_CERTIFIED",
+      str(m1_after["status"]))
+
+# Re-fund the DSRA (section 7 left it SHORTFALL) so the PF gate can open again.
+call("POST", f"/decision/api/pf/reserves/{dsra['id']}/fund",
+     {"amount": 50_000_000, "note": "top-up after sweep"}, actor="treasury.ops")
+st, d1b = call("POST", f"/decision/api/disbursement/{ref}/request",
+               {"facilityRef": fref, "amount": 1_000_000_000, "currency": "INR",
+                "purpose": "tranche 1 re-draw", "milestoneSequence": 1}, actor="credit.ops")
+d1b = must(st, d1b, "re-draw request")
+st, d1ba = call("POST", f"/decision/api/disbursement/{d1b['id']}/authorize", {}, actor="credit.officer")
+check("milestone 1 re-draw authorises after reversal (was ALREADY_DRAWN)",
+      st == 200 and d1ba["status"] == "AUTHORIZED", f"{st} {d1ba}")
+
 print(f"\n== PF mechanics e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

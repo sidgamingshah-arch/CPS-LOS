@@ -225,6 +225,38 @@ public class UpstreamClient {
         }
     }
 
+    /**
+     * Best-effort syndication allocation reversal when a released drawdown is
+     * reversed. Same outcome semantics as {@link #allocateSyndicationOrSkip}:
+     * 400/404 (not a syndication) is a silent skip; any other failure is WARN +
+     * audited so the agency desk can re-trigger.
+     */
+    public void reverseSyndicationOrSkip(String reference, String drawdownRef, String actor) {
+        try {
+            origination.post().uri("/api/syndication/{ref}/allocations/reverse", reference)
+                    .header("X-Actor", actor == null ? "agency.desk" : actor)
+                    .body(Map.of("drawdownRef", drawdownRef))
+                    .retrieve().toBodilessEntity();
+        } catch (HttpClientErrorException.BadRequest | HttpClientErrorException.NotFound expected) {
+            log.debug("syndication reverse skipped for {} draw {} (not a syndication: {})",
+                    reference, drawdownRef, expected.getMessage());
+        } catch (Exception e) {
+            log.warn("syndication reverse FAILED for {} draw {} — agency desk must re-trigger ({})",
+                    reference, drawdownRef, e.getMessage());
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("drawdownRef", drawdownRef);
+            details.put("error", e.getMessage());
+            try {
+                audit.engine("SYNDICATION_REVERSAL_SKIPPED", "Application", reference,
+                        "Syndication allocation reversal failed for " + drawdownRef
+                                + " — agency desk must re-trigger (" + e.getMessage() + ")",
+                        details);
+            } catch (Exception auditErr) {
+                log.warn("could not stamp SYNDICATION_REVERSAL_SKIPPED audit ({})", auditErr.getMessage());
+            }
+        }
+    }
+
     // ---- group / counterparty / per-counterparty applications lookup ----
 
     @JsonIgnoreProperties(ignoreUnknown = true)

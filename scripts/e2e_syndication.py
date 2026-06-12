@@ -139,6 +139,24 @@ call("POST", f"/origination/api/syndication/{ref}/allocate",
 st, b3 = call("GET", f"/origination/api/syndication/{ref}/book")
 check("total funded = 3bn after two draws", abs(b3["totalFunded"] - 3_000_000_000) < 1, str(b3["totalFunded"]))
 
+print("\n== 4b. Allocation reversal: rows kept for audit, funded-to-date drops ==")
+st, rev = call("POST", f"/origination/api/syndication/{ref}/allocations/reverse",
+               {"drawdownRef": "DRAW-2"}, actor="agency.desk")
+rev = must(st, rev, "reverse DRAW-2")
+st, b4 = call("GET", f"/origination/api/syndication/{ref}/book")
+check("funded back to 1bn after DRAW-2 reversed", abs(b4["totalFunded"] - 1_000_000_000) < 1,
+      str(b4["totalFunded"]))
+st, ledger2 = call("GET", f"/origination/api/syndication/{ref}/allocations")
+rev_rows = [a for a in ledger2 if a["drawdownRef"] == "DRAW-2"]
+check("DRAW-2 rows retained and marked REVERSED",
+      len(rev_rows) == 3 and all(a["status"] == "REVERSED" for a in rev_rows), str(rev_rows)[:200])
+st, rev2 = call("POST", f"/origination/api/syndication/{ref}/allocations/reverse",
+                {"drawdownRef": "DRAW-2"}, actor="agency.desk")
+check("re-reversal is idempotent (reused=true)", st == 200 and rev2["reused"] is True, f"{st} {rev2}")
+st, body = call("POST", f"/origination/api/syndication/{ref}/allocations/reverse",
+                {"drawdownRef": "NO-SUCH-DRAW"}, actor="agency.desk")
+check("reversing an unknown drawdown is a 404", st == 404, f"{st}")
+
 print("\n== 5. Participant feed (canonical downstream statement) ==")
 st, feed = call("GET", f"/origination/api/syndication/{ref}/feed")
 feed = must(st, feed, "feed")

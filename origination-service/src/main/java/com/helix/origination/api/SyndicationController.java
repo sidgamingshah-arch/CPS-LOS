@@ -51,6 +51,18 @@ public class SyndicationController {
         return syndication.allocationLedger(reference);
     }
 
+    /** Reverse an allocated drawdown (idempotent) — rows marked REVERSED, funded-to-date drops. */
+    @PostMapping("/{reference}/allocations/reverse")
+    public AllocationResult reverseAllocation(@PathVariable String reference,
+                                              @RequestBody java.util.Map<String, String> req,
+                                              @RequestHeader(value = "X-Actor", defaultValue = "agency.desk") String actor) {
+        String drawdownRef = req.get("drawdownRef");
+        if (drawdownRef == null || drawdownRef.isBlank()) {
+            throw com.helix.common.web.ApiException.badRequest("drawdownRef is required");
+        }
+        return syndication.reverseAllocation(reference, drawdownRef, actor);
+    }
+
     /** Canonical downstream participant-statement feed — persisted as a SyndicationFeedBatch. */
     @GetMapping("/{reference}/feed")
     public Export.Envelope<Export.SyndicationParticipantLine> feed(@PathVariable String reference,

@@ -46,11 +46,28 @@ public class LimitClient {
     public record UtilisationResponseDto(String cif, boolean success, List<ActionResultDto> results) {
     }
 
-    /** Books a UTILISE against the limit node identified by {@code lineId} (the node's code). */
+    /** Books a UTILISE against the limit node identified by {@code lineId} (the node's reference). */
     public UtilisationResponseDto utilise(String cif, String lineId, double amount, String currency,
                                           String transactionRef, String actor) {
+        return book("UTILISE", cif, lineId, amount, currency, transactionRef, actor);
+    }
+
+    /** Books a RELEASE (repayment reduces outstanding) against the limit node. */
+    public UtilisationResponseDto release(String cif, String lineId, double amount, String currency,
+                                          String transactionRef, String actor) {
+        return book("RELEASE", cif, lineId, amount, currency, transactionRef, actor);
+    }
+
+    /** Books a REVERSAL (undoes a prior UTILISE: outstanding AND cumulative drawn) against the node. */
+    public UtilisationResponseDto reversal(String cif, String lineId, double amount, String currency,
+                                           String transactionRef, String actor) {
+        return book("REVERSAL", cif, lineId, amount, currency, transactionRef, actor);
+    }
+
+    private UtilisationResponseDto book(String action, String cif, String lineId, double amount,
+                                        String currency, String transactionRef, String actor) {
         UtilisationRequestDto body = new UtilisationRequestDto(cif,
-                List.of(new UtilisationActionDto(lineId, "UTILISE", amount, currency, transactionRef)),
+                List.of(new UtilisationActionDto(lineId, action, amount, currency, transactionRef)),
                 "disbursement-service", false);
         try {
             return client.post().uri("/api/limits/utilise")
@@ -59,9 +76,9 @@ public class LimitClient {
                     .retrieve()
                     .body(UtilisationResponseDto.class);
         } catch (Exception e) {
-            log.warn("limit-service unavailable for utilise {}/{} ({})", cif, lineId, e.getMessage());
+            log.warn("limit-service unavailable for {} {}/{} ({})", action, cif, lineId, e.getMessage());
             return new UtilisationResponseDto(cif, false, List.of(
-                    new ActionResultDto(lineId, "UTILISE", false,
+                    new ActionResultDto(lineId, action, false,
                             "limit-service unavailable: " + e.getMessage(), 0, 0)));
         }
     }

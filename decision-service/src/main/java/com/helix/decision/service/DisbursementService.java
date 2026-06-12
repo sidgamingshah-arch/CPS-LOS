@@ -11,6 +11,7 @@ import com.helix.decision.dto.CpDtos.CpBlocker;
 import com.helix.decision.dto.CpDtos.CpGateResult;
 import com.helix.decision.entity.Disbursement;
 import com.helix.decision.repo.DisbursementRepository;
+import com.helix.decision.repo.RepaymentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,15 +37,18 @@ import java.util.Map;
 public class DisbursementService {
 
     private final DisbursementRepository repo;
+    private final RepaymentRepository repayments;
     private final ConditionPrecedentService cps;
     private final PfService pf;
     private final UpstreamClient upstream;
     private final LimitClient limits;
     private final AuditService audit;
 
-    public DisbursementService(DisbursementRepository repo, ConditionPrecedentService cps, PfService pf,
+    public DisbursementService(DisbursementRepository repo, RepaymentRepository repayments,
+                               ConditionPrecedentService cps, PfService pf,
                                UpstreamClient upstream, LimitClient limits, AuditService audit) {
         this.repo = repo;
+        this.repayments = repayments;
         this.cps = cps;
         this.pf = pf;
         this.upstream = upstream;
@@ -88,7 +92,8 @@ public class DisbursementService {
         }
         double used = repo.findByApplicationReferenceAndFacilityRefOrderByDrawdownNoAsc(applicationReference, facilityRef)
                 .stream()
-                .filter(d -> !"REJECTED".equals(d.getStatus()) && !"CANCELLED".equals(d.getStatus()))
+                .filter(d -> !"REJECTED".equals(d.getStatus()) && !"CANCELLED".equals(d.getStatus())
+                        && !"REVERSED".equals(d.getStatus()))
                 .mapToDouble(Disbursement::getAmount)
                 .sum();
         if (used + facilityAmount > facility.amount() + 0.01) {
@@ -182,7 +187,8 @@ public class DisbursementService {
                     d.getApplicationReference(), d.getFacilityRef()).stream()
                     .filter(other -> !other.getId().equals(d.getId()))
                     .filter(other -> !"REJECTED".equals(other.getStatus())
-                            && !"CANCELLED".equals(other.getStatus()))
+                            && !"CANCELLED".equals(other.getStatus())
+                            && !"REVERSED".equals(other.getStatus()))
                     .mapToDouble(Disbursement::getAmount).sum();
             if (used + facAmt > facility.amount() + 0.01) {
                 throw ApiException.badRequest("Amended drawdown of " + facAmt + " " + facCcy
@@ -382,6 +388,89 @@ public class DisbursementService {
                         "facilityRef", d.getFacilityRef(),
                         "amount", d.getAmount(), "drawdownNo", d.getDrawdownNo(),
                         "utilisationRef", txnRef));
+        return saved;
+    }
+
+    // ============================================================ reverse (post-RELEASED correction)
+
+    /**
+     * Reverses a RELEASED drawdown — the correction lane for money that already
+     * moved. Books a {@code REVERSAL} on the limit node (undoing both outstanding
+     * and cumulative drawn), reinstates a PF milestone the draw consumed, and asks
+     * the syndication agent to reverse the pro-rata allocation.
+     *
+     * <p>SoD: the reverser must differ from the releaser — the actor whose booking
+     * is being undone cannot quietly undo it. A reason is mandatory.</p>
+     *
+     * <p>Repayment interplay: confirmed repayments have already reduced the limit
+     * ledger, so a reversal is only allowed while the facility's REMAINING released
+     * draws still cover the repaid principal — otherwise the ledger would go
+     * negative and the arithmetic no longer supports a full-draw reversal.</p>
+     */
+    @Transactional
+    public Disbursement reverse(Long id, String reason, String actor) {
+        requireActor(actor);
+        Disbursement d = get(id);
+        if (!"RELEASED".equals(d.getStatus())) {
+            throw ApiException.conflict("Only a RELEASED drawdown can be reversed — this one is " + d.getStatus());
+        }
+        if (reason == null || reason.isBlank()) {
+            throw ApiException.badRequest("A reversal reason is mandatory");
+        }
+        if (actor.equals(d.getReleasedBy())) {
+            throw ApiException.forbiddenAutonomy(
+                    "Reversal must be made by a different actor than the releaser (" + d.getReleasedBy() + ")");
+        }
+        double repaidPrincipal = repayments
+                .findByApplicationReferenceAndFacilityRefAndStatusIn(
+                        d.getApplicationReference(), d.getFacilityRef(), List.of("CONFIRMED"))
+                .stream().mapToDouble(r -> r.getPrincipalComponent()).sum();
+        double releasedOther = repo
+                .findByApplicationReferenceAndFacilityRefOrderByDrawdownNoAsc(
+                        d.getApplicationReference(), d.getFacilityRef())
+                .stream()
+                .filter(other -> !other.getId().equals(d.getId()))
+                .filter(other -> "RELEASED".equals(other.getStatus()))
+                .mapToDouble(Disbursement::getAmount).sum();
+        if (repaidPrincipal > releasedOther + 0.01) {
+            throw ApiException.conflict(("Facility %s has %.2f of confirmed principal repayments but only %.2f"
+                    + " would remain released after this reversal — the ledger would go negative;"
+                    + " adjust the repayments first").formatted(
+                            d.getFacilityRef(), repaidPrincipal, releasedOther));
+        }
+
+        LimitClient.LimitNodeDto node = limits.nodeForFacility(d.getApplicationReference(), d.getFacilityRef());
+        if (node == null) {
+            throw ApiException.conflict("No limit node for facility " + d.getFacilityRef()
+                    + " on " + d.getApplicationReference());
+        }
+        String revRef = "REV-" + d.getUtilisationRef();
+        UtilisationResponseDto response = limits.reversal(node.cif(), node.reference(),
+                d.getAmount(), d.getCurrency(), revRef, actor);
+        if (response == null || !response.success()) {
+            String cause = response == null ? "no response from limit-service"
+                    : (response.results() == null || response.results().isEmpty()
+                            ? "no result rows" : response.results().get(0).message());
+            throw ApiException.conflict("Limit reversal failed: " + cause);
+        }
+        d.setStatus("REVERSED");
+        d.setReversedBy(actor);
+        d.setReversedReason(reason);
+        d.setReversedAt(Instant.now());
+        d.setReversalRef(revRef);
+        Disbursement saved = repo.save(d);
+
+        // Reinstate the PF milestone this draw consumed (no-op for non-PF).
+        pf.unmarkDrawn(d.getApplicationReference(), d.getFacilityRef(), d.getMilestoneSequence(), d.getId());
+        // Best-effort + idempotent — never blocks the reversal.
+        upstream.reverseSyndicationOrSkip(d.getApplicationReference(), d.getUtilisationRef(), actor);
+
+        audit.human(actor, "DISBURSEMENT_REVERSED", "Disbursement", String.valueOf(id),
+                "Reversed drawdown #%d of %.2f %s on %s — %s (reversal %s)".formatted(
+                        d.getDrawdownNo(), d.getAmount(), d.getCurrency(), d.getFacilityRef(), reason, revRef),
+                Map.of("applicationReference", d.getApplicationReference(),
+                        "facilityRef", d.getFacilityRef(), "amount", d.getAmount(),
+                        "drawdownNo", d.getDrawdownNo(), "reason", reason, "reversalRef", revRef));
         return saved;
     }
 

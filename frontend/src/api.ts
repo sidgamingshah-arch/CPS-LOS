@@ -469,8 +469,26 @@ export const disbursement = {
     call<any>(`/decision/api/disbursement/${id}/amend`, "POST", body, actor),
   cancel: (id: number, body: any, actor: string) =>
     call<any>(`/decision/api/disbursement/${id}/cancel`, "POST", body, actor),
+  reverse: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/reverse`, "POST", body, actor),
   history: (ref: string, facilityRef?: string) =>
     call<any[]>(`/decision/api/disbursement/${ref}${facilityRef ? `?facilityRef=${facilityRef}` : ""}`, "GET"),
+};
+
+// ---- repayments (inbound money leg: schedule + maker-checker + connector) ----
+export const repayments = {
+  schedule: (ref: string, facilityRef: string, method = "EMI", frequency = "MONTHLY") =>
+    call<any>(`/decision/api/repayments/${ref}/schedule?facilityRef=${facilityRef}&method=${method}&frequency=${frequency}`, "GET"),
+  history: (ref: string, facilityRef?: string) =>
+    call<any[]>(`/decision/api/repayments/${ref}${facilityRef ? `?facilityRef=${facilityRef}` : ""}`, "GET"),
+  outstanding: (ref: string, facilityRef: string) =>
+    call<any>(`/decision/api/repayments/${ref}/outstanding?facilityRef=${facilityRef}`, "GET"),
+  record: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/repayments/${ref}/record`, "POST", body, actor),
+  confirm: (id: number, actor: string) =>
+    call<any>(`/decision/api/repayments/${id}/confirm`, "POST", undefined, actor),
+  reject: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/repayments/${id}/reject`, "POST", body, actor),
 };
 
 // ---- client planning template (CPT) ----

@@ -86,7 +86,7 @@ public class Disbursement {
     @Column(length = 200)
     private String narrative;
 
-    /** DRAFT · AUTHORIZED · RELEASED · REJECTED */
+    /** DRAFT · AUTHORIZED · RELEASED · REJECTED · CANCELLED · REVERSED */
     @Column(nullable = false, length = 20)
     private String status = "DRAFT";
 
@@ -112,6 +112,13 @@ public class Disbursement {
     @Column(length = 80)  private String cancelledBy;
     @Column(length = 400) private String cancelledReason;
     private Instant cancelledAt;
+
+    /** Post-release reversal — undoes the limit booking via a REVERSAL action. */
+    @Column(length = 80)  private String reversedBy;
+    @Column(length = 400) private String reversedReason;
+    private Instant reversedAt;
+    /** The limit-service REVERSAL transactionRef (audit pointer, REV-<utilisationRef>). */
+    @Column(length = 90)  private String reversalRef;
 
     @UpdateTimestamp
     private Instant updatedAt;

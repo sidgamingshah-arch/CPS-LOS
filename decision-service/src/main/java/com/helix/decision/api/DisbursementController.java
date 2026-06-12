@@ -5,6 +5,7 @@ import com.helix.decision.dto.DisbursementDtos.AuthoriseRequest;
 import com.helix.decision.dto.DisbursementDtos.CancelRequest;
 import com.helix.decision.dto.DisbursementDtos.RejectRequest;
 import com.helix.decision.dto.DisbursementDtos.RequestDrawdownRequest;
+import com.helix.decision.dto.DisbursementDtos.ReverseRequest;
 import com.helix.decision.entity.Disbursement;
 import com.helix.decision.service.DisbursementService;
 import jakarta.validation.Valid;
@@ -80,6 +81,13 @@ public class DisbursementController {
     public Disbursement cancel(@PathVariable Long id, @RequestBody(required = false) CancelRequest req,
                                @RequestHeader("X-Actor") String actor) {
         return disb.cancel(id, req == null ? null : req.reason(), actor);
+    }
+
+    /** Post-release correction: undoes the limit booking. SoD: reverser ≠ releaser. */
+    @PostMapping("/{id}/reverse")
+    public Disbursement reverse(@PathVariable Long id, @Valid @RequestBody ReverseRequest req,
+                                @RequestHeader("X-Actor") String actor) {
+        return disb.reverse(id, req.reason(), actor);
     }
 
     @GetMapping("/{reference}")

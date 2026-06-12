@@ -13,7 +13,7 @@
  * platform's HUMAN-GATED / DETERMINISTIC chrome.
  */
 import { useEffect, useMemo, useState } from "react";
-import { cps as cpApi, disbursement, fmt, origination, pf as pfApi } from "../api";
+import { cps as cpApi, disbursement, fmt, origination, pf as pfApi, repayments as rpmtApi } from "../api";
 import { useApp } from "../app-context";
 import {
   Badge,
@@ -65,6 +65,20 @@ export default function Disbursement() {
 
   const facility = facilities.find((f: any) => f.reference === facilityRef);
   const isPf = (milestones.data ?? []).length > 0 || (reserves.data ?? []).length > 0;
+
+  // Repayments — the inbound money leg, visible once any draw has been released.
+  const rpmts = useAsync(
+    () => (ref && facilityRef ? rpmtApi.history(ref, facilityRef) : Promise.resolve([])),
+    [ref, facilityRef, history.data]);
+  const [scheduleMethod, setScheduleMethod] = useState("EMI");
+  const schedule = useAsync(
+    () => {
+      const released = (history.data ?? []).some((d: any) => d.status === "RELEASED");
+      return ref && facilityRef && released
+        ? rpmtApi.schedule(ref, facilityRef, scheduleMethod).catch(() => null)
+        : Promise.resolve(null);
+    },
+    [ref, facilityRef, scheduleMethod, history.data, rpmts.data]);
 
   async function certifyMilestone(id: number) {
     const certRef = prompt("LIE certification reference (e.g. LIE-CERT-003)") || "";
@@ -177,6 +191,48 @@ export default function Disbursement() {
     try { await disbursement.cancel(id, { reason }, actor);
       notify("Drawdown cancelled");
       history.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function reverse(id: number) {
+    const reason = prompt("Reversal reason (mandatory — this undoes the limit booking)") || "";
+    if (!reason) return;
+    try { await disbursement.reverse(id, { reason }, actor);
+      notify("Drawdown reversed — limit ledger restored");
+      history.reload(); rpmts.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function recordRepayment() {
+    const amtStr = prompt(`Repayment amount (${facility?.currency ?? ""})`) || "";
+    const amt = parseFloat(amtStr.replace(/[, ]/g, ""));
+    if (!amt || amt <= 0) return;
+    const prinStr = prompt("Principal component (blank = all principal)", String(amt)) || "";
+    const prin = parseFloat(prinStr.replace(/[, ]/g, ""));
+    const body: any = { facilityRef, amount: amt };
+    if (!Number.isNaN(prin) && prin !== amt) {
+      body.principalComponent = prin;
+      body.interestComponent = Math.round((amt - prin) * 100) / 100;
+    }
+    try { await rpmtApi.record(ref, body, actor);
+      notify("Repayment recorded — a different actor must confirm");
+      rpmts.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function confirmRepayment(id: number) {
+    try { await rpmtApi.confirm(id, actor);
+      notify("Repayment confirmed — principal released on the limit ledger");
+      rpmts.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function rejectRepayment(id: number) {
+    const reason = prompt("Rejection reason") || "";
+    if (!reason) return;
+    try { await rpmtApi.reject(id, { reason }, actor);
+      notify("Repayment entry rejected");
+      rpmts.reload();
     } catch (e: any) { notify(e.message, true); }
   }
 
@@ -471,6 +527,9 @@ export default function Disbursement() {
                             <Button kind="ghost" onClick={() => cancel(d.id)}>Cancel</Button>
                           </>
                         )}
+                        {d.status === "RELEASED" && (
+                          <Button kind="ghost" onClick={() => reverse(d.id)}>Reverse</Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -478,6 +537,101 @@ export default function Disbursement() {
               </tbody>
             </table>
           )}
+        </Card>
+      )}
+
+      {ref && facilityRef && (history.data ?? []).some((d: any) => d.status === "RELEASED") && (
+        <Card title="Repayments — the inbound leg"
+          sub="Record (maker) → Confirm (checker ≠ recorder) books a limit RELEASE for the principal. Core-banking events arrive via the idempotent connector and confirm as SYSTEM."
+          right={<DeterministicBadge label="SCHEDULE · DETERMINISTIC" />}>
+          <div className="grid cols-2">
+            <div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                <Field label="Schedule method">
+                  <select value={scheduleMethod} onChange={(e) => setScheduleMethod(e.target.value)}>
+                    <option value="EMI">EMI (annuity)</option>
+                    <option value="EQUAL_PRINCIPAL">Equal principal</option>
+                    <option value="BULLET">Bullet</option>
+                  </select>
+                </Field>
+                <Button kind="primary" onClick={recordRepayment}>Record repayment</Button>
+              </div>
+              {schedule.data ? (
+                <>
+                  <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>
+                    Outstanding <b>{fmt.money(schedule.data.principal)}</b> · rate{" "}
+                    <b>{(schedule.data.annualRate * 100).toFixed(2)}%</b>{" "}
+                    <span className="mono">({schedule.data.rateSource})</span> ·{" "}
+                    {schedule.data.periods} periods · total interest {fmt.money(schedule.data.totalInterest)}
+                  </div>
+                  <table>
+                    <thead>
+                      <tr><th>#</th><th>Due</th><th>Payment</th><th>Principal</th><th>Interest</th><th>Balance</th></tr>
+                    </thead>
+                    <tbody>
+                      {schedule.data.rows.slice(0, 6).map((r: any) => (
+                        <tr key={r.periodNo}>
+                          <td>{r.periodNo}</td>
+                          <td className="mono">{r.dueDate}</td>
+                          <td>{fmt.money(r.payment)}</td>
+                          <td>{fmt.money(r.principal)}</td>
+                          <td>{fmt.money(r.interest)}</td>
+                          <td>{fmt.money(r.closingBalance)}</td>
+                        </tr>
+                      ))}
+                      {schedule.data.rows.length > 6 && (
+                        <tr><td colSpan={6} style={{ opacity: 0.6 }}>
+                          … {schedule.data.rows.length - 6} more periods
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </>
+              ) : (
+                <EmptyState glyph="▦" title="No schedule yet"
+                  sub="Release a drawdown to generate the deterministic repayment plan." />
+              )}
+            </div>
+            <div>
+              {(rpmts.data ?? []).length === 0 ? (
+                <EmptyState glyph="↩" title="No repayments yet"
+                  sub="Record a repayment, or let the core-banking connector feed one in." />
+              ) : (
+                <table>
+                  <thead>
+                    <tr><th>#</th><th>Amount</th><th>Principal</th><th>Source</th><th>Status</th><th>By</th><th /></tr>
+                  </thead>
+                  <tbody>
+                    {(rpmts.data ?? []).map((p: any) => (
+                      <tr key={p.id}>
+                        <td>{p.id}</td>
+                        <td>{fmt.money(p.amount)}</td>
+                        <td>{fmt.money(p.principalComponent)}</td>
+                        <td><Badge kind={p.source === "CORE_BANKING" ? "info" : "ok"}>{p.source}</Badge></td>
+                        <td>
+                          <Badge kind={p.status === "CONFIRMED" ? "ok"
+                                      : p.status === "REJECTED" ? "bad" : "warn"}>
+                            {p.status}
+                          </Badge>
+                        </td>
+                        <td className="mono" style={{ fontSize: 12 }}>
+                          {p.confirmedBy ?? p.recordedBy}
+                        </td>
+                        <td>
+                          {p.status === "RECORDED" && (
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <Button kind="subtle" onClick={() => confirmRepayment(p.id)}>Confirm</Button>
+                              <Button kind="ghost" onClick={() => rejectRepayment(p.id)}>Reject</Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
         </Card>
       )}
     </div>

@@ -23,4 +23,8 @@ public class DisbursementDtos {
 
     public record CancelRequest(String reason) {
     }
+
+    /** Post-release correction — reason is mandatory. */
+    public record ReverseRequest(@NotBlank String reason) {
+    }
 }

@@ -94,9 +94,10 @@ public class SyndicationService {
         double totalCommitment = lenders.stream().mapToDouble(DealParticipant::getCommittedAmount).sum();
         Map<String, Object> fees = masters.syndicationFees(jurisdictionFor(reference));
 
-        // funded-to-date per participant from the allocation ledger
+        // funded-to-date per participant from the allocation ledger (reversed rows excluded)
         Map<Long, Double> fundedByParticipant = new java.util.HashMap<>();
         for (SyndicationAllocation a : allocations.findByApplicationReferenceOrderByIdAsc(reference)) {
+            if ("REVERSED".equals(a.getStatus())) continue;
             fundedByParticipant.merge(a.getParticipantId(), a.getAllocatedAmount(), Double::sum);
         }
 
@@ -185,6 +186,35 @@ public class SyndicationService {
                         drawdownRef, amount, ccy, lenders.size()),
                 Map.of("drawdownRef", drawdownRef, "amount", amount, "lenders", lenders.size()));
         return toResult(reference, drawdownRef, amount, saved, false);
+    }
+
+    /**
+     * Reverses an allocated drawdown — every participant row for the drawdownRef is
+     * marked REVERSED (kept for the audit trail, excluded from funded-to-date).
+     * Idempotent: already-reversed rows are left alone; unknown drawdownRef is a 404.
+     */
+    @Transactional
+    public AllocationResult reverseAllocation(String reference, String drawdownRef, String actor) {
+        List<SyndicationAllocation> rows =
+                allocations.findByApplicationReferenceAndDrawdownRefOrderByIdAsc(reference, drawdownRef);
+        if (rows.isEmpty()) {
+            throw ApiException.notFound("No allocation for drawdown " + drawdownRef + " on " + reference);
+        }
+        boolean anyFlipped = false;
+        for (SyndicationAllocation a : rows) {
+            if ("REVERSED".equals(a.getStatus())) continue;
+            a.setStatus("REVERSED");
+            a.setReversedBy(actor);
+            a.setReversedAt(java.time.Instant.now());
+            allocations.save(a);
+            anyFlipped = true;
+        }
+        if (anyFlipped) {
+            audit.engine("SYNDICATION_ALLOCATION_REVERSED", "Application", reference,
+                    "Reversed allocation of drawdown %s across %d lender(s)".formatted(drawdownRef, rows.size()),
+                    Map.of("drawdownRef", drawdownRef, "lenders", rows.size()));
+        }
+        return toResult(reference, drawdownRef, rows.get(0).getDrawdownAmount(), rows, !anyFlipped);
     }
 
     private AllocationResult toResult(String reference, String drawdownRef, double amount,

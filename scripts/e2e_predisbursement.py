@@ -107,7 +107,7 @@ call("POST", f"/origination/api/applications/{ref}/spread", {"periods": [
 call("POST", f"/origination/api/applications/{ref}/spread/confirm", actor="analyst.user")
 call("POST", f"/risk/api/risk/{ref}/rate", actor="analyst.user")
 call("POST", f"/risk/api/risk/{ref}/capital", actor="analyst.user")
-call("POST", f"/risk/api/risk/{ref}/price", actor="analyst.user")
+call("POST", f"/risk/api/risk/{ref}/pricing", actor="analyst.user")
 
 # Build the limit tree from the deal (so /utilise has a node to hit).
 st, tree = call("POST", f"/limits/api/limits/build/{ref}", actor="credit.ops")

@@ -60,6 +60,13 @@ public class SyndicationAllocation {
     @Column(nullable = false, length = 8)
     private String currency;
 
+    /** ACTIVE | REVERSED — reversed rows stay for the audit trail but drop out of funded-to-date. */
+    @Column(nullable = false, length = 20)
+    private String status = "ACTIVE";
+
+    @Column(length = 80) private String reversedBy;
+    private Instant reversedAt;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;
