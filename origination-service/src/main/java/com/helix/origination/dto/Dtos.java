@@ -121,6 +121,8 @@ public final class Dtos {
     public record FacilityView(Long id, String reference, int ordinal, boolean primary,
                                String facilityType, double amount, String currency,
                                int tenorMonths, String purpose, Double indicativeRate,
+                               String rateType, String benchmarkCode, Double spreadBps,
+                               Integer resetFrequencyMonths,
                                List<SublimitView> sublimits, List<InterchangeabilityGroupView> interchangeabilityGroups,
                                double sublimitTotal, double sublimitHeadroom) {
     }

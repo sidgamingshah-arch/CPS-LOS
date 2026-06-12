@@ -12,6 +12,9 @@ import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.helix.common.money.Money;
+
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 
@@ -60,11 +63,12 @@ public class LimitNode {
     @Column(nullable = false)
     private boolean revolving;
 
-    @Column(nullable = false)
-    private double sanctionedAmount;
+    @Column(nullable = false, precision = 22, scale = 2)
+    private BigDecimal sanctionedAmount = Money.ZERO;
     @Column(nullable = false, length = 5)
     private String currency;
-    private double baseAmount;       // sanctioned converted to platform base currency
+    @Column(precision = 22, scale = 2)
+    private BigDecimal baseAmount = Money.ZERO;     // sanctioned converted to platform base currency
 
     private Integer tenorMonths;
     private LocalDate expiryDate;
@@ -78,10 +82,13 @@ public class LimitNode {
     @Column(nullable = false, length = 20)
     private String status = "ACTIVE"; // ACTIVE | FROZEN | CLOSED
 
-    // ---- balances ----
-    private double outstanding;       // current utilised (revolving view)
-    private double cumulativeDrawn;   // lifetime drawn (non-revolving view)
-    private double reserved;
+    // ---- balances (BigDecimal: scale-2 ledger, no double accumulation drift) ----
+    @Column(precision = 22, scale = 2)
+    private BigDecimal outstanding = Money.ZERO;     // current utilised (revolving view)
+    @Column(precision = 22, scale = 2)
+    private BigDecimal cumulativeDrawn = Money.ZERO; // lifetime drawn (non-revolving view)
+    @Column(precision = 22, scale = 2)
+    private BigDecimal reserved = Money.ZERO;
 
     // ---- classification for exposure norms ----
     private String segment;
@@ -102,8 +109,8 @@ public class LimitNode {
      * Available headroom in the platform base currency (balances are stored in base
      * for cross-currency roll-up), honouring revolving vs non-revolving semantics.
      */
-    public double available() {
-        double used = revolving ? outstanding : cumulativeDrawn;
-        return Math.max(0.0, baseAmount - used - reserved);
+    public BigDecimal available() {
+        BigDecimal used = revolving ? outstanding : cumulativeDrawn;
+        return Money.nonNegative(Money.sub(Money.sub(baseAmount, used), reserved));
     }
 }

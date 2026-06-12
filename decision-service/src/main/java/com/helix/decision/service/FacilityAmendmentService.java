@@ -73,6 +73,21 @@ public class FacilityAmendmentService {
             throw ApiException.forbiddenAutonomy("A named human actor is required to propose an amendment");
         }
         roles.require(actor, ProtectedAction.FACILITY_AMEND_PROPOSE);
+        return proposeInternal(applicationReference, facilityRef, newAmount, newTenorMonths, reason, actor);
+    }
+
+    /**
+     * RBAC-bypassing internal entry point. Called from CollectionsService when a
+     * restructure flows through the amendment lane — the caller's own role check
+     * (COLLECTIONS_UPDATE) already gates access. The amendment still routes through
+     * the same DoA approver, so the actual approval signature is unchanged.
+     */
+    public FacilityAmendment proposeInternal(String applicationReference, String facilityRef,
+                                             Double newAmount, Integer newTenorMonths,
+                                             String reason, String actor) {
+        if (actor == null || actor.isBlank()) {
+            throw ApiException.forbiddenAutonomy("A named human actor is required to propose an amendment");
+        }
         DealEnvelopeDto env = upstream.envelope(applicationReference);
         if (env == null) throw ApiException.notFound("No deal envelope for " + applicationReference);
         FacilityViewDto facility = findFacility(env, facilityRef);

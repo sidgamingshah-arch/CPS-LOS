@@ -1,6 +1,7 @@
 package com.helix.limit.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.money.Money;
 import com.helix.common.web.ApiException;
 import com.helix.limit.client.LimitUpstreamClient;
 import com.helix.limit.client.LimitUpstreamClient.CreditInputsDto;
@@ -17,6 +18,7 @@ import com.helix.limit.repo.LimitNodeRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -69,9 +71,9 @@ public class LimitService {
         n.setLevel(0);
         n.setCode(req.code());
         n.setRevolving(false);
-        n.setSanctionedAmount(req.sanctionedAmount());
+        n.setSanctionedAmount(Money.of(req.sanctionedAmount()));
         n.setCurrency(req.currency());
-        n.setBaseAmount(fx.toBase(req.sanctionedAmount(), req.currency()));
+        n.setBaseAmount(Money.of(fx.toBase(req.sanctionedAmount(), req.currency())));
         n.setTenorMonths(req.tenorMonths());
         n.setSegment(req.segment());
         n.setSector(req.sector());
@@ -98,11 +100,11 @@ public class LimitService {
             throw ApiException.badRequest("Maximum %d sub-limits per parent".formatted(MAX_CHILDREN));
         }
         double childBase = fx.toBase(req.sanctionedAmount(), req.currency());
-        double allocated = siblings.stream().mapToDouble(LimitNode::getBaseAmount).sum();
-        if (allocated + childBase > parent.getBaseAmount() + 1e-6) {
+        double allocated = siblings.stream().map(LimitNode::getBaseAmount).reduce(Money.ZERO, Money::add).doubleValue();
+        if (allocated + childBase > Money.asDouble(parent.getBaseAmount()) + 1e-6) {
             throw ApiException.badRequest(
                     "Sub-limit breaches parent cap: allocated %.0f + new %.0f > parent %.0f (base)"
-                            .formatted(allocated, childBase, parent.getBaseAmount()));
+                            .formatted(allocated, childBase, Money.asDouble(parent.getBaseAmount())));
         }
         LimitNode n = new LimitNode();
         n.setReference(ref());
@@ -117,9 +119,9 @@ public class LimitService {
         n.setProductType(req.productType());
         n.setClassification(req.classification());
         n.setRevolving(req.revolving());
-        n.setSanctionedAmount(req.sanctionedAmount());
+        n.setSanctionedAmount(Money.of(req.sanctionedAmount()));
         n.setCurrency(req.currency());
-        n.setBaseAmount(childBase);
+        n.setBaseAmount(Money.of(childBase));
         n.setTenorMonths(req.tenorMonths() == null ? parent.getTenorMonths() : req.tenorMonths());
         n.setSeniority(req.seniority());
         n.setFungible(req.fungible());
@@ -157,9 +159,9 @@ public class LimitService {
         root.setApplicationRef(applicationRef);
         root.setLevel(0);
         root.setCode("OBLIGOR");
-        root.setSanctionedAmount(total);
+        root.setSanctionedAmount(Money.of(total));
         root.setCurrency(ccy);
-        root.setBaseAmount(fx.toBase(total, ccy));
+        root.setBaseAmount(Money.of(fx.toBase(total, ccy)));
         root.setSegment(ci.segment());
         root.setSector(ci.segment());
         root.setCountry(ci.jurisdiction());
@@ -203,9 +205,9 @@ public class LimitService {
         n.setProductType(productType);
         n.setClassification(classification);
         n.setRevolving(revolving);
-        n.setSanctionedAmount(amount);
+        n.setSanctionedAmount(Money.of(amount));
         n.setCurrency(currency);
-        n.setBaseAmount(fx.toBase(amount, currency));
+        n.setBaseAmount(Money.of(fx.toBase(amount, currency)));
         n.setTenorMonths(tenor == null ? parent.getTenorMonths() : tenor);
         n.setSeniority(seniority);
         n.setFungible(fungible);
@@ -222,9 +224,9 @@ public class LimitService {
     public TreeView treeView(String cif) {
         List<LimitNode> all = nodes.findByCifOrderByLevelAscOrdinalAsc(cif);
         List<NodeView> views = all.stream().map(this::view).toList();
-        double sanctioned = all.stream().filter(n -> n.getLevel() == 0).mapToDouble(LimitNode::getBaseAmount).sum();
-        double outstanding = all.stream().filter(n -> n.getLevel() == 0).mapToDouble(LimitNode::getOutstanding).sum();
-        double available = all.stream().filter(n -> n.getLevel() == 0).mapToDouble(LimitNode::available).sum();
+        double sanctioned = all.stream().filter(n -> n.getLevel() == 0).map(LimitNode::getBaseAmount).reduce(Money.ZERO, Money::add).doubleValue();
+        double outstanding = all.stream().filter(n -> n.getLevel() == 0).map(LimitNode::getOutstanding).reduce(Money.ZERO, Money::add).doubleValue();
+        double available = all.stream().filter(n -> n.getLevel() == 0).map(LimitNode::available).reduce(Money.ZERO, Money::add).doubleValue();
 
         Map<String, List<LimitNode>> groups = new LinkedHashMap<>();
         for (LimitNode n : all) {
@@ -234,8 +236,8 @@ public class LimitService {
         }
         List<RollupGroup> groupViews = groups.entrySet().stream().map(e -> new RollupGroup(
                 e.getKey(),
-                round(e.getValue().stream().mapToDouble(LimitNode::getBaseAmount).sum()),
-                round(e.getValue().stream().mapToDouble(LimitNode::getOutstanding).sum()),
+                round(e.getValue().stream().map(LimitNode::getBaseAmount).reduce(Money.ZERO, Money::add).doubleValue()),
+                round(e.getValue().stream().map(LimitNode::getOutstanding).reduce(Money.ZERO, Money::add).doubleValue()),
                 e.getValue().stream().map(LimitNode::getCode).toList())).toList();
 
         return new TreeView(cif, FxService.BASE, round(sanctioned), round(outstanding), round(available),
@@ -270,24 +272,24 @@ public class LimitService {
     public LimitNode resyncFacility(String applicationRef, String facilityRef, Double newAmount,
                                     Integer newTenorMonths, String amendmentRef, String actor) {
         LimitNode node = nodeByFacility(applicationRef, facilityRef);
-        double oldAmount = node.getSanctionedAmount();
-        double delta = newAmount == null ? 0.0 : newAmount - oldAmount;
-        if (newAmount != null && Math.abs(delta) > 1e-9) {
-            node.setSanctionedAmount(newAmount);
-            node.setBaseAmount(fx.toBase(newAmount, node.getCurrency()));
+        BigDecimal oldAmount = node.getSanctionedAmount();
+        BigDecimal delta = newAmount == null ? Money.ZERO : Money.sub(Money.of(newAmount), oldAmount);
+        if (newAmount != null && delta.signum() != 0) {
+            node.setSanctionedAmount(Money.of(newAmount));
+            node.setBaseAmount(Money.of(fx.toBase(newAmount, node.getCurrency())));
         }
         if (newTenorMonths != null && newTenorMonths > 0) {
             node.setTenorMonths(newTenorMonths);
         }
         nodes.save(node);
-        if (Math.abs(delta) > 1e-9) {
-            double deltaBase = fx.toBase(delta, node.getCurrency());
+        if (delta.signum() != 0) {
+            BigDecimal deltaBase = Money.of(fx.toBase(delta.doubleValue(), node.getCurrency()));
             Long pid = node.getParentId();
             while (pid != null) {
                 LimitNode parent = nodes.findById(pid).orElse(null);
                 if (parent == null) break;
-                parent.setSanctionedAmount(parent.getSanctionedAmount() + delta);
-                parent.setBaseAmount(parent.getBaseAmount() + deltaBase);
+                parent.setSanctionedAmount(Money.add(parent.getSanctionedAmount(), delta));
+                parent.setBaseAmount(Money.add(parent.getBaseAmount(), deltaBase));
                 nodes.save(parent);
                 pid = parent.getParentId();
             }
@@ -295,18 +297,19 @@ public class LimitService {
         audit.human(actor, "LIMIT_RESYNCED", "Limit", node.getReference(),
                 "Facility %s re-synced after amendment %s: sanctioned %.2f -> %.2f, tenor %s".formatted(
                         facilityRef, amendmentRef == null ? "-" : amendmentRef,
-                        oldAmount, node.getSanctionedAmount(),
+                        Money.asDouble(oldAmount), Money.asDouble(node.getSanctionedAmount()),
                         newTenorMonths == null ? "unchanged" : String.valueOf(newTenorMonths)),
                 Map.of("applicationRef", applicationRef, "facilityRef", facilityRef,
-                        "oldAmount", oldAmount, "newAmount", node.getSanctionedAmount(),
+                        "oldAmount", Money.asDouble(oldAmount),
+                        "newAmount", Money.asDouble(node.getSanctionedAmount()),
                         "amendmentRef", amendmentRef == null ? "" : amendmentRef));
         return node;
     }
 
     private NodeView view(LimitNode n) {
         return new NodeView(n.getId(), n.getReference(), n.getParentId(), n.getRootId(), n.getLevel(),
-                n.getCode(), n.getProductType(), n.isRevolving(), n.getSanctionedAmount(), n.getCurrency(),
-                round(n.getBaseAmount()), round(n.getOutstanding()), round(n.getReserved()), round(n.available()),
+                n.getCode(), n.getProductType(), n.isRevolving(), Money.asDouble(n.getSanctionedAmount()), n.getCurrency(),
+                round(Money.asDouble(n.getBaseAmount())), round(Money.asDouble(n.getOutstanding())), round(Money.asDouble(n.getReserved())), round(Money.asDouble(n.available())),
                 n.isFungible(), n.getInterchangeableGroup(), n.getStatus(), n.getTenorMonths(),
                 n.getExpiryDate() == null ? null : n.getExpiryDate().toString(), n.getSeniority());
     }
@@ -344,12 +347,12 @@ public class LimitService {
         double singleNamePct = num(norms, "single_name_pct_capital", 0.15);
         double sectorPct = num(norms, "sector_cap_pct_portfolio", 0.20);
 
-        double bookTotal = nodes.findByLevel(0).stream().mapToDouble(LimitNode::getBaseAmount).sum();
+        double bookTotal = nodes.findByLevel(0).stream().map(LimitNode::getBaseAmount).reduce(Money.ZERO, Money::add).doubleValue();
         double sectorTotal = nodes.findByLevel(0).stream()
                 .filter(n -> root.getSector() != null && root.getSector().equals(n.getSector()))
-                .mapToDouble(LimitNode::getBaseAmount).sum();
+                .map(LimitNode::getBaseAmount).reduce(Money.ZERO, Money::add).doubleValue();
 
-        double projectedSingle = root.getOutstanding() + incrementalBase;
+        double projectedSingle = Money.asDouble(root.getOutstanding()) + incrementalBase;
         List<ValidationCheck> checks = new ArrayList<>();
         checks.add(new ValidationCheck("single_name",
                 projectedSingle <= singleNamePct * capital,

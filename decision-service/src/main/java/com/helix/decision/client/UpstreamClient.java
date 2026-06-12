@@ -72,6 +72,8 @@ public class UpstreamClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record FacilityViewDto(Long id, String reference, int ordinal, boolean primary, String facilityType,
                                   double amount, String currency, int tenorMonths, String purpose, Double indicativeRate,
+                                  String rateType, String benchmarkCode, Double spreadBps,
+                                  Integer resetFrequencyMonths,
                                   List<SublimitViewDto> sublimits, List<InterchangeabilityGroupViewDto> interchangeabilityGroups,
                                   double sublimitTotal, double sublimitHeadroom) {
     }
@@ -104,6 +106,29 @@ public class UpstreamClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record MasterRecordDto(Long id, String masterType, String recordKey, String jurisdiction,
                                   Map<String, Object> payload) {
+    }
+
+    /**
+     * Looks up the current benchmark rate from the BENCHMARK master. Decimal (e.g.
+     * 0.087 for EBLR), null when the benchmark is not present.
+     */
+    public Double benchmarkRate(String code) {
+        if (code == null || code.isBlank()) return null;
+        try {
+            MasterRecordDto[] arr = config.get().uri("/api/masters/BENCHMARK").retrieve().body(MasterRecordDto[].class);
+            if (arr == null) return null;
+            for (MasterRecordDto m : arr) {
+                if (!code.equalsIgnoreCase(m.recordKey())) continue;
+                Object v = m.payload().get("currentRate");
+                if (v instanceof Number n) return n.doubleValue();
+                if (v instanceof String s) try { return Double.parseDouble(s); } catch (Exception ignored) { }
+                return null;
+            }
+            return null;
+        } catch (Exception e) {
+            log.warn("BENCHMARK lookup failed for {} ({})", code, e.getMessage());
+            return null;
+        }
     }
 
     /** Active master records of a type (e.g. CHECKLIST_MASTER) from config-service. */

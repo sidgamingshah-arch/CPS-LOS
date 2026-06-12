@@ -20,9 +20,10 @@ public class RepaymentDtos {
     public record RejectRepaymentRequest(@NotBlank String reason) {
     }
 
-    /** One row of the deterministic repayment schedule. */
+    /** One row of the deterministic repayment schedule. Floating rows carry the per-period rate. */
     public record ScheduleRow(int periodNo, String dueDate, double openingBalance, double payment,
-                              double principal, double interest, double closingBalance) {
+                              double principal, double interest, double closingBalance,
+                              Double periodRate) {
     }
 
     /**

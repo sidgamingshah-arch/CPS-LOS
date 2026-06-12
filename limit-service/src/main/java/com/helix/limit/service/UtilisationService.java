@@ -1,6 +1,9 @@
 package com.helix.limit.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.money.Money;
+
+import java.math.BigDecimal;
 import com.helix.common.web.ApiException;
 import com.helix.limit.dto.Dtos.ActionResult;
 import com.helix.limit.dto.Dtos.ExposureCheckResult;
@@ -62,13 +65,13 @@ public class UtilisationService {
         boolean tenorOk = tenorMonths == null || n.getTenorMonths() == null || tenorMonths <= n.getTenorMonths();
         checks.add(new ValidationCheck("tenor_within_facility", tenorOk,
                 "requested=%s facility=%s".formatted(tenorMonths, n.getTenorMonths())));
-        boolean nodeAvail = amtBase <= n.available() + 1e-6;
+        boolean nodeAvail = Money.of(amtBase).compareTo(Money.add(n.available(), Money.of(1e-6))) <= 0;
         checks.add(new ValidationCheck("line_available", nodeAvail,
-                "need %.0f, available %.0f (base)".formatted(amtBase, n.available())));
+                "need %.0f, available %.0f (base)".formatted(amtBase, Money.asDouble(n.available()))));
         LimitNode root = root(n);
-        boolean rootAvail = amtBase <= root.available() + 1e-6;
+        boolean rootAvail = Money.of(amtBase).compareTo(Money.add(root.available(), Money.of(1e-6))) <= 0;
         checks.add(new ValidationCheck("obligor_available", rootAvail,
-                "need %.0f, obligor available %.0f (base)".formatted(amtBase, root.available())));
+                "need %.0f, obligor available %.0f (base)".formatted(amtBase, Money.asDouble(root.available()))));
 
         // Per-transaction exposure uses the single-name (obligor) norm only; sector/
         // geography concentration is a portfolio/sanction-level review (see /exposure
@@ -82,7 +85,7 @@ public class UtilisationService {
                 "Facility status must be ACTIVE",
                 "Country/sector exposure norms apply");
         String msg = success ? "All validations passed" : "One or more validations failed";
-        return new ValidationResult(success, lineId, msg, checks, round(n.available()), FxService.BASE, terms);
+        return new ValidationResult(success, lineId, msg, checks, round(Money.asDouble(n.available())), FxService.BASE, terms);
     }
 
     @Transactional
@@ -117,7 +120,7 @@ public class UtilisationService {
             if (existing != null) {
                 return new ActionResult(a.lineId(), action, true,
                         "Idempotent — existing booking (txnRef " + a.transactionRef() + ")",
-                        round(n.getOutstanding()), round(n.available()));
+                        round(Money.asDouble(n.getOutstanding())), round(Money.asDouble(n.available())));
             }
         }
 
@@ -147,16 +150,16 @@ public class UtilisationService {
             case "RESERVE" -> adjust(n, 0, 0, amtBase);
             case "REVERSAL" -> adjust(n, -amtBase, -amtBase, 0);
             default -> {
-                return new ActionResult(a.lineId(), action, false, "Unknown action", round(n.getOutstanding()), round(n.available()));
+                return new ActionResult(a.lineId(), action, false, "Unknown action", round(Money.asDouble(n.getOutstanding())), round(Money.asDouble(n.available())));
             }
         }
         Utilisation u = new Utilisation();
         u.setLimitNodeId(n.getId());
         u.setCif(n.getCif());
         u.setAction(action);
-        u.setAmount(a.amount());
+        u.setAmount(Money.of(a.amount()));
         u.setCurrency(a.currency() == null ? n.getCurrency() : a.currency());
-        u.setBaseAmount(amtBase);
+        u.setBaseAmount(Money.of(amtBase));
         u.setProductProcessor(pp);
         u.setTransactionRef(a.transactionRef());
         u.setOverrideApplied(overrideApplied);
@@ -168,7 +171,7 @@ public class UtilisationService {
                 Map.of("action", action, "baseAmount", amtBase, "override", overrideApplied, "pp", String.valueOf(pp)));
         return new ActionResult(a.lineId(), action, true,
                 overrideApplied ? "Confirmed (override applied)" : "Confirmed",
-                round(n.getOutstanding()), round(n.available()));
+                round(Money.asDouble(n.getOutstanding())), round(Money.asDouble(n.available())));
     }
 
     private ActionResult reject(LimitNode n, UtilisationAction a, double amtBase, String pp, String reason) {
@@ -176,24 +179,27 @@ public class UtilisationService {
         u.setLimitNodeId(n.getId());
         u.setCif(n.getCif());
         u.setAction(a.action().toUpperCase());
-        u.setAmount(a.amount());
+        u.setAmount(Money.of(a.amount()));
         u.setCurrency(a.currency() == null ? n.getCurrency() : a.currency());
-        u.setBaseAmount(amtBase);
+        u.setBaseAmount(Money.of(amtBase));
         u.setProductProcessor(pp);
         u.setTransactionRef(a.transactionRef());
         u.setStatus("REJECTED");
         u.setMessage(reason);
         ledger.save(u);
-        return new ActionResult(a.lineId(), a.action(), false, reason, round(n.getOutstanding()), round(n.available()));
+        return new ActionResult(a.lineId(), a.action(), false, reason, round(Money.asDouble(n.getOutstanding())), round(Money.asDouble(n.available())));
     }
 
     /** Applies a delta to the node and rolls it up the ancestor chain to the root. */
     private void adjust(LimitNode n, double outstandingDelta, double drawnDelta, double reservedDelta) {
+        BigDecimal odelta = Money.of(outstandingDelta);
+        BigDecimal ddelta = Money.of(Math.max(0, drawnDelta));
+        BigDecimal rdelta = Money.of(reservedDelta);
         LimitNode cur = n;
         while (cur != null) {
-            cur.setOutstanding(Math.max(0, cur.getOutstanding() + outstandingDelta));
-            cur.setCumulativeDrawn(Math.max(0, cur.getCumulativeDrawn() + Math.max(0, drawnDelta)));
-            cur.setReserved(Math.max(0, cur.getReserved() + reservedDelta));
+            cur.setOutstanding(Money.nonNegative(Money.add(cur.getOutstanding(), odelta)));
+            cur.setCumulativeDrawn(Money.nonNegative(Money.add(cur.getCumulativeDrawn(), ddelta)));
+            cur.setReserved(Money.nonNegative(Money.add(cur.getReserved(), rdelta)));
             nodes.save(cur);
             cur = cur.getParentId() == null ? null : nodes.findById(cur.getParentId()).orElse(null);
         }

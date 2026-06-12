@@ -245,6 +245,16 @@ public class MasterSeeder implements CommandLineRunner {
                     map("enabled", true, "description", cap.description()));
         }
 
+        // ---- floating-rate benchmarks ----
+        // currentRate = the rate the next reset boundary will apply. history is for
+        // back-testing/audit (decision-service reads from it when the schedule's
+        // reset date is in the past).
+        seedBenchmark("EBLR", "INR", 0.0870, "Reserve Bank of India External Benchmark Lending Rate");
+        seedBenchmark("MCLR_1Y", "INR", 0.0895, "1-year Marginal Cost of Funds Lending Rate");
+        seedBenchmark("SOFR_3M", "USD", 0.0530, "3-month Secured Overnight Financing Rate");
+        seedBenchmark("EIBOR_3M", "AED", 0.0460, "3-month Emirates Interbank Offered Rate");
+        seedBenchmark("EURIBOR_3M", "EUR", 0.0375, "3-month Euro Interbank Offered Rate");
+
         // ---- actor-role directory (RBAC layer over name-equality SoD) ----
         // recordKey = actor name, payload.roles = the roles the actor holds. The
         // ProtectedAction catalogue (helix-common) maps each money-movement action to
@@ -266,17 +276,34 @@ public class MasterSeeder implements CommandLineRunner {
         seedActor("loan.ops", "Loan Servicing Ops", "LOAN_OPS");
         seedActor("loan.checker", "Loan Servicing Control", "LOAN_OPS");
         seedActor("lie.engineer", "Lender's Independent Engineer", "LIE");
+        seedActor("collections.ops", "Collections Officer", "COLLECTIONS_OPS");
+        seedActor("collections.head", "Collections Head", "COLLECTIONS_HEAD", "COLLECTIONS_OPS",
+                "CREDIT_OFFICER");
+        seedActor("legal.counsel", "Legal Counsel", "LEGAL");
         // The frontend's default actor — a demo super-user holding every operational
         // role so the UI walkthrough is frictionless. SoD still applies on top: even
         // with every role, the same person cannot be maker AND checker.
         seedActor("demo.user", "Demo Super User",
                 "CREDIT_OPS", "CREDIT_OFFICER", "TREASURY_OPS", "LOAN_OPS",
-                "CAD_OPS", "CREDIT_COMMITTEE", "BOARD_COMMITTEE", "LIE", "RM");
+                "CAD_OPS", "CREDIT_COMMITTEE", "BOARD_COMMITTEE", "LIE", "RM",
+                "COLLECTIONS_OPS", "COLLECTIONS_HEAD", "LEGAL");
     }
 
     private void seedActor(String actor, String displayName, String... roles) {
         masters.seedActive("ACTOR_ROLE", actor, null,
                 map("displayName", displayName, "roles", java.util.List.of(roles)));
+    }
+
+    private void seedBenchmark(String code, String currency, double currentRate, String displayName) {
+        masters.seedActive("BENCHMARK", code, null,
+                map("displayName", displayName, "currency", currency, "currentRate", currentRate,
+                        "history", java.util.List.of(
+                                map("asOf", java.time.LocalDate.now().minusMonths(6).toString(),
+                                        "rate", currentRate - 0.0025),
+                                map("asOf", java.time.LocalDate.now().minusMonths(3).toString(),
+                                        "rate", currentRate - 0.0010),
+                                map("asOf", java.time.LocalDate.now().toString(),
+                                        "rate", currentRate))));
     }
 
     private Map<String, Object> hier(String group, String subGroup, String type, String subType, double rw, String valMethod) {

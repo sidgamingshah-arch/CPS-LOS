@@ -31,7 +31,14 @@ public enum ProtectedAction {
     REPAYMENT_CONFIRM("repayment-confirm", Set.of("LOAN_OPS")),
     REPAYMENT_REJECT("repayment-reject", Set.of("LOAN_OPS")),
     /** Approval of an amendment is rank-checked against the DoA authority, not this set. */
-    FACILITY_AMEND_PROPOSE("facility-amend-propose", Set.of("RM", "CREDIT_OPS"));
+    FACILITY_AMEND_PROPOSE("facility-amend-propose", Set.of("RM", "CREDIT_OPS")),
+    COLLECTIONS_OPEN("collections-open", Set.of("COLLECTIONS_OPS", "CREDIT_OPS")),
+    COLLECTIONS_UPDATE("collections-update", Set.of("COLLECTIONS_OPS", "CREDIT_OPS")),
+    COLLECTIONS_LEGAL("collections-legal", Set.of("COLLECTIONS_HEAD", "LEGAL")),
+    COLLECTIONS_CURE("collections-cure", Set.of("COLLECTIONS_OPS", "CREDIT_OPS")),
+    /** Write-off proposal — approval is rank-checked against the DoA authority, not this set. */
+    COLLECTIONS_WRITEOFF_PROPOSE("collections-writeoff-propose",
+            Set.of("COLLECTIONS_OPS", "COLLECTIONS_HEAD", "CREDIT_OPS"));
 
     private final String key;
     private final Set<String> allowedRoles;

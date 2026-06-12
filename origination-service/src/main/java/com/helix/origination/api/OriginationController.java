@@ -138,6 +138,18 @@ public class OriginationController {
         origination.removeFacility(id, actor);
     }
 
+    /** Set the facility's rate type (FIXED / FLOATING with benchmark + spread + reset frequency). */
+    @PostMapping("/{reference}/facilities/{facilityRef}/rate-type")
+    public ProposedFacility setRateType(@PathVariable String reference, @PathVariable String facilityRef,
+                                        @RequestBody Map<String, Object> req,
+                                        @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
+        String rateType = req.get("rateType") == null ? "FIXED" : String.valueOf(req.get("rateType"));
+        String benchmark = req.get("benchmarkCode") == null ? null : String.valueOf(req.get("benchmarkCode"));
+        Double spread = req.get("spreadBps") == null ? null : ((Number) req.get("spreadBps")).doubleValue();
+        Integer reset = req.get("resetFrequencyMonths") == null ? null : ((Number) req.get("resetFrequencyMonths")).intValue();
+        return origination.setRateType(reference, facilityRef, rateType, benchmark, spread, reset, actor);
+    }
+
     /** Apply an APPROVED post-sanction amendment (called by decision-service; retry-safe). */
     @PostMapping("/{reference}/facilities/{facilityRef}/amend")
     public ProposedFacility applyAmendment(@PathVariable String reference, @PathVariable String facilityRef,

@@ -520,6 +520,48 @@ public class OriginationService {
         return saved;
     }
 
+    /**
+     * Sets the facility's rate type. FIXED carries no benchmark; FLOATING needs
+     * benchmark code + spread + reset frequency. The actual rate at each reset is
+     * resolved at schedule-time against the BENCHMARK master, so a benchmark move
+     * (EBLR/SOFR update) flows through to the next period automatically.
+     */
+    @Transactional
+    public ProposedFacility setRateType(String reference, String facilityRef, String rateType,
+                                        String benchmarkCode, Double spreadBps,
+                                        Integer resetFrequencyMonths, String actor) {
+        ProposedFacility f = facilities.findByApplicationIdOrderByOrdinalAsc(get(reference).getId()).stream()
+                .filter(x -> facilityRef.equals(x.getReference())).findFirst()
+                .orElseThrow(() -> ApiException.notFound("No facility " + facilityRef + " on " + reference));
+        String rt = rateType == null ? "FIXED" : rateType.toUpperCase();
+        if (!"FIXED".equals(rt) && !"FLOATING".equals(rt)) {
+            throw ApiException.badRequest("rateType must be FIXED or FLOATING");
+        }
+        if ("FLOATING".equals(rt)) {
+            if (benchmarkCode == null || benchmarkCode.isBlank()) {
+                throw ApiException.badRequest("FLOATING requires benchmarkCode");
+            }
+            if (spreadBps == null) {
+                throw ApiException.badRequest("FLOATING requires spreadBps");
+            }
+        }
+        f.setRateType(rt);
+        f.setBenchmarkCode("FLOATING".equals(rt) ? benchmarkCode.toUpperCase() : null);
+        f.setSpreadBps("FLOATING".equals(rt) ? spreadBps : null);
+        f.setResetFrequencyMonths("FLOATING".equals(rt)
+                ? (resetFrequencyMonths == null ? 3 : resetFrequencyMonths) : null);
+        ProposedFacility saved = facilities.save(f);
+        audit.human(actor, "FACILITY_RATE_TYPE_SET", "ProposedFacility", String.valueOf(f.getId()),
+                "Rate type %s on %s%s".formatted(rt, facilityRef,
+                        "FLOATING".equals(rt)
+                                ? " — " + benchmarkCode + " + " + spreadBps + "bps, reset " + saved.getResetFrequencyMonths() + "m"
+                                : ""),
+                Map.of("facilityRef", facilityRef, "rateType", rt,
+                        "benchmarkCode", saved.getBenchmarkCode() == null ? "" : saved.getBenchmarkCode(),
+                        "spreadBps", saved.getSpreadBps() == null ? 0.0 : saved.getSpreadBps()));
+        return saved;
+    }
+
     @Transactional
     public void removeFacility(Long facilityId, String actor) {
         ProposedFacility f = facilities.findById(facilityId)
@@ -683,6 +725,8 @@ public class OriginationService {
         double headroom = Math.max(0.0, f.getAmount() - sublimitTotal);
         return new FacilityView(f.getId(), f.getReference(), f.getOrdinal(), f.isPrimary(),
                 f.getFacilityType(), f.getAmount(), f.getCurrency(), f.getTenorMonths(),
-                f.getPurpose(), f.getIndicativeRate(), subViews, groupViews, sublimitTotal, headroom);
+                f.getPurpose(), f.getIndicativeRate(),
+                f.getRateType(), f.getBenchmarkCode(), f.getSpreadBps(), f.getResetFrequencyMonths(),
+                subViews, groupViews, sublimitTotal, headroom);
     }
 }

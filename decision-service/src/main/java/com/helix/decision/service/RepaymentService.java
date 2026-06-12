@@ -96,18 +96,36 @@ public class RepaymentService {
         };
         int n = Math.max(1, facility.tenorMonths() / periodMonths);
 
+        // Resolve the base annual rate and decide whether it's fixed across the
+        // schedule (FIXED) or recomputed per reset period (FLOATING). The benchmark
+        // master is the source of truth at the reset boundary; periods between
+        // resets carry the rate from the previous boundary.
+        boolean floating = "FLOATING".equalsIgnoreCase(facility.rateType());
+        int resetMonths = floating && facility.resetFrequencyMonths() != null
+                ? facility.resetFrequencyMonths() : periodMonths;
+        Double benchmarkRate = null;
         double annualRate;
         String rateSource;
-        RiskSummaryDto risk = upstream.riskSummaryOrNull(applicationReference);
-        if (risk != null && risk.pricing() != null && risk.pricing().recommendedRate() > 0) {
-            annualRate = risk.pricing().recommendedRate();
-            rateSource = "PRICING_OF_RECORD";
-        } else if (facility.indicativeRate() != null && facility.indicativeRate() > 0) {
-            annualRate = facility.indicativeRate();
-            rateSource = "FACILITY_INDICATIVE";
+        if (floating && facility.benchmarkCode() != null) {
+            benchmarkRate = upstream.benchmarkRate(facility.benchmarkCode());
+            if (benchmarkRate == null) {
+                throw ApiException.conflict("Benchmark " + facility.benchmarkCode()
+                        + " not found in the BENCHMARK master — cannot price floating facility");
+            }
+            annualRate = benchmarkRate + (facility.spreadBps() == null ? 0.0 : facility.spreadBps() / 10_000.0);
+            rateSource = "BENCHMARK:" + facility.benchmarkCode() + "+" + facility.spreadBps() + "bps";
         } else {
-            annualRate = 0.10;
-            rateSource = "DEFAULT";
+            RiskSummaryDto risk = upstream.riskSummaryOrNull(applicationReference);
+            if (risk != null && risk.pricing() != null && risk.pricing().recommendedRate() > 0) {
+                annualRate = risk.pricing().recommendedRate();
+                rateSource = "PRICING_OF_RECORD";
+            } else if (facility.indicativeRate() != null && facility.indicativeRate() > 0) {
+                annualRate = facility.indicativeRate();
+                rateSource = "FACILITY_INDICATIVE";
+            } else {
+                annualRate = 0.10;
+                rateSource = "DEFAULT";
+            }
         }
         double r = annualRate * periodMonths / 12.0;
 
@@ -116,16 +134,33 @@ public class RepaymentService {
         LocalDate start = LocalDate.now();
         switch (m) {
             case "EMI" -> {
-                double pmt = r == 0 ? principal / n : principal * r / (1 - Math.pow(1 + r, -n));
+                // For FLOATING with a flat benchmark, EMI is recomputed on the
+                // remaining balance whenever the period rate changes. That keeps
+                // the schedule honest even if a future benchmark update lands on
+                // a reset boundary in the past (replayed schedule call picks it up).
+                double currentR = r;
+                int remaining = n;
+                double pmt = currentR == 0 ? principal / n : principal * currentR / (1 - Math.pow(1 + currentR, -n));
                 for (int k = 1; k <= n; k++) {
-                    double interest = round2(bal * r);
+                    double interest = round2(bal * currentR);
                     double prin = k == n ? round2(bal) : round2(pmt - interest);
                     double payment = round2(prin + interest);
                     rows.add(new ScheduleRow(k, start.plusMonths((long) k * periodMonths).toString(),
-                            round2(bal), payment, prin, interest, round2(bal - prin)));
+                            round2(bal), payment, prin, interest, round2(bal - prin),
+                            annualRate));
                     bal -= prin;
                     totalPayment += payment;
                     totalInterest += interest;
+                    remaining--;
+                    // FLOATING + reset boundary: recompute EMI on remaining balance.
+                    // (The first cut treats the benchmark as held flat across the
+                    // schedule; the path is here for when a per-reset benchmark
+                    // lookup is wired in via #benchmarkRateOn(asOf).)
+                    if (floating && remaining > 0 && (k * periodMonths) % resetMonths == 0) {
+                        currentR = annualRate * periodMonths / 12.0;
+                        pmt = currentR == 0 ? bal / remaining
+                                : bal * currentR / (1 - Math.pow(1 + currentR, -remaining));
+                    }
                 }
             }
             case "EQUAL_PRINCIPAL" -> {
@@ -135,7 +170,7 @@ public class RepaymentService {
                     double prin = k == n ? round2(bal) : round2(prinConst);
                     double payment = round2(prin + interest);
                     rows.add(new ScheduleRow(k, start.plusMonths((long) k * periodMonths).toString(),
-                            round2(bal), payment, prin, interest, round2(bal - prin)));
+                            round2(bal), payment, prin, interest, round2(bal - prin), annualRate));
                     bal -= prin;
                     totalPayment += payment;
                     totalInterest += interest;
@@ -147,7 +182,8 @@ public class RepaymentService {
                     double prin = k == n ? round2(principal) : 0.0;
                     double payment = round2(prin + interest);
                     rows.add(new ScheduleRow(k, start.plusMonths((long) k * periodMonths).toString(),
-                            round2(principal), payment, prin, interest, k == n ? 0.0 : round2(principal)));
+                            round2(principal), payment, prin, interest, k == n ? 0.0 : round2(principal),
+                            annualRate));
                     totalPayment += payment;
                     totalInterest += interest;
                 }

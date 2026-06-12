@@ -264,5 +264,42 @@ check("DISBURSEMENT_REVERSED stamped HUMAN",
 check("REPAYMENT_INGESTED stamped as engine/system event",
       any(a.get("eventType") == "REPAYMENT_INGESTED" for a in audit_rows), "")
 
+print("\n== 6. Floating-rate schedule (EBLR + 200bps, reset quarterly) ==")
+# Flip d1's facility to FLOATING and re-pull the schedule. Same outstanding (the
+# 222M left after repayments + reversal), but the rate now comes from the
+# BENCHMARK master, not the pricing of record.
+st, ft = call("POST", f"/origination/api/applications/{ref}/facilities/{fref}/rate-type",
+              {"rateType": "FLOATING", "benchmarkCode": "EBLR",
+               "spreadBps": 200, "resetFrequencyMonths": 3}, actor="rm.user")
+ft = must(st, ft, "set FLOATING")
+check("facility now FLOATING with EBLR + 200bps",
+      ft["rateType"] == "FLOATING" and ft["benchmarkCode"] == "EBLR" and ft["spreadBps"] == 200, str(ft))
+st, fs = call("GET", f"/decision/api/repayments/{ref}/schedule?facilityRef={fref}&method=EMI&frequency=MONTHLY")
+fs = must(st, fs, "FLOATING schedule")
+check("rateSource references the benchmark", fs["rateSource"].startswith("BENCHMARK:EBLR"), str(fs["rateSource"]))
+check("annualRate = EBLR (8.7%) + 200bps = 10.7%", abs(fs["annualRate"] - 0.107) < 1e-6, str(fs["annualRate"]))
+check("rows carry periodRate", all(r.get("periodRate") is not None for r in fs["rows"]), str(fs["rows"][0]))
+
+# Toggling the benchmark feeds through immediately on the next schedule call.
+rec_id = None
+st, rec_arr = call("GET", "/config/api/masters/BENCHMARK")
+for r in rec_arr or []:
+    if r["recordKey"] == "EBLR":
+        rec_id = r["id"]; break
+must(200, rec_arr, "benchmark master")
+st, prop = call("POST", "/config/api/masters/BENCHMARK",
+                {"recordKey": "EBLR", "jurisdiction": None,
+                 "payload": {"currency": "INR", "currentRate": 0.0920,
+                             "displayName": "EBLR (hiked)"}},
+                actor="config.admin")
+prop = must(st, prop, "propose new EBLR")
+call("POST", f"/config/api/masters/records/{prop['id']}/approve", actor="config.checker")
+st, fs2 = call("GET", f"/decision/api/repayments/{ref}/schedule?facilityRef={fref}&method=EMI&frequency=MONTHLY")
+fs2 = must(st, fs2, "FLOATING schedule after EBLR hike")
+check("schedule reflects the new EBLR (9.2 + 2.0 = 11.2%)",
+      abs(fs2["annualRate"] - 0.112) < 1e-6, str(fs2["annualRate"]))
+check("payment rose with the higher rate", fs2["rows"][0]["payment"] > fs["rows"][0]["payment"],
+      f"old {fs['rows'][0]['payment']} vs new {fs2['rows'][0]['payment']}")
+
 print(f"\n== Post-disbursement e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

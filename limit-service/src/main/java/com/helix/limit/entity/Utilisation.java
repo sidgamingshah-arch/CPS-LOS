@@ -11,6 +11,9 @@ import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 
+import com.helix.common.money.Money;
+
+import java.math.BigDecimal;
 import java.time.Instant;
 
 /** Immutable utilisation ledger entry from a product processor (PRD Utilisation API). */
@@ -37,11 +40,12 @@ public class Utilisation {
     @Column(nullable = false, length = 20)
     private String action;            // UTILISE | RELEASE | RESERVE | REVERSAL
 
-    @Column(nullable = false)
-    private double amount;
+    @Column(nullable = false, precision = 22, scale = 2)
+    private BigDecimal amount = Money.ZERO;
     @Column(nullable = false, length = 5)
     private String currency;
-    private double baseAmount;
+    @Column(precision = 22, scale = 2)
+    private BigDecimal baseAmount = Money.ZERO;
 
     private String productProcessor;
     private String transactionRef;

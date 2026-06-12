@@ -10,6 +10,7 @@ import { Badge, Button, Card, Field, useAsync } from "../ui";
  */
 const TYPES: { key: string; label: string }[] = [
   { key: "ACTOR_ROLE", label: "Actor roles (RBAC)" },
+  { key: "BENCHMARK", label: "Floating-rate benchmarks" },
   { key: "DEDUP_RULES", label: "Dedup rules" },
   { key: "NEGATIVE_LIST", label: "Negative list" },
   { key: "FACILITY_MASTER", label: "Facility master" },
