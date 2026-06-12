@@ -52,11 +52,13 @@ export default function Governance() {
     setBusy(`pending-${rec.id}`);
     try {
       await (approve ? masters.approve(rec.id, actor) : masters.reject(rec.id, actor));
-      notify(`${rec.recordKey} ${approve ? "approved" : "rejected"} by ${actor}`);
+      if (approve) {
+        // Drop every AI service's governance cache so the toggle is live NOW.
+        await governance.invalidateCaches();
+      }
+      notify(`${rec.recordKey} ${approve ? "approved — live immediately" : "rejected"} by ${actor}`);
       pending.reload();
-      // Give the AiGovernanceClient cache TTL on the AI services time to expire.
       resolved.reload();
-      setTimeout(() => resolved.reload(), 6000);
     } catch (e: any) {
       notify(e.message, true);
     } finally {

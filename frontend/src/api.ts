@@ -44,6 +44,12 @@ export const governance = {
       { recordKey: key, jurisdiction, payload: { enabled } }, actor),
   approve: (recordId: number, actor: string) =>
     call<any>(`/config/api/masters/records/${recordId}/approve`, "POST", undefined, actor),
+  // Drop the AiGovernanceClient snapshot on every AI service so an approved toggle
+  // takes effect immediately (instead of waiting out the cache TTL).
+  invalidateCaches: () =>
+    Promise.allSettled(
+      ["counterparty", "origination", "risk", "decision", "portfolio", "copilot", "limits"]
+        .map((s) => call<any>(`/${s}/api/governance/ai/cache/invalidate`, "POST"))),
 };
 
 // ---- counterparty ----

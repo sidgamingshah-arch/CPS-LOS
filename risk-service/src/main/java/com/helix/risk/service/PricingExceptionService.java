@@ -58,12 +58,14 @@ public class PricingExceptionService {
     @Transactional
     public PricingException propose(String reference, double proposedRate, String reason, String actor) {
         if (proposedRate <= 0) throw ApiException.badRequest("proposedRate must be positive");
+        // Governance gate first — the jurisdiction source (credit inputs) is the only
+        // upstream call allowed before the gate; nothing else runs when disabled.
+        CreditInputsDto in = origination.creditInputs(reference);
+        governance.enforce(com.helix.common.governance.AiCapability.PRICING_EXCEPTION, in.jurisdiction());
         PricingResult pricing = pricingResults.findFirstByApplicationReferenceOrderByCreatedAtDesc(reference)
                 .orElseThrow(() -> ApiException.notFound("No pricing for " + reference + " — price the deal first"));
         Rating rating = risk.latestRating(reference);
         CapitalResult capital = risk.latestCapital(reference);
-        CreditInputsDto in = origination.creditInputs(reference);
-        governance.enforce(com.helix.common.governance.AiCapability.PRICING_EXCEPTION, in.jurisdiction());
         RulePackDto pack = config.activePack(in.jurisdiction(), "PRICING");
 
         double recommended = pricing.getRecommendedRate();

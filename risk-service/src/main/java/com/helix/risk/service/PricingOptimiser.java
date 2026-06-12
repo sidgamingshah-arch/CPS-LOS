@@ -51,10 +51,12 @@ public class PricingOptimiser {
 
     @Transactional
     public OptimisationResult optimise(String reference, OptimiseRequest req, String actor) {
-        Rating rating = risk.latestRating(reference);
-        CapitalResult capital = risk.latestCapital(reference);
+        // Governance gate first — the jurisdiction source (credit inputs) is the only
+        // upstream call allowed before the gate; nothing else runs when disabled.
         CreditInputsDto in = origination.creditInputs(reference);
         governance.enforce(com.helix.common.governance.AiCapability.PRICING_OPTIMISER, in.jurisdiction());
+        Rating rating = risk.latestRating(reference);
+        CapitalResult capital = risk.latestCapital(reference);
         RulePackDto pack = config.activePack(in.jurisdiction(), "PRICING");
 
         double hurdle = pack.number("hurdle_raroc", 0.15);

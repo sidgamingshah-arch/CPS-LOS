@@ -61,9 +61,19 @@ public class MultiDimConcentrationService {
                         "PORTFOLIO", 0.12));
     }
 
+    /**
+     * Computes the multi-dimensional cut. By default the book is <em>scoped to the
+     * named jurisdiction</em> — the local regulatory view: that regime's limit pack
+     * applied to that regime's exposures, and no cross-jurisdiction counterparty
+     * names leak into the dimension labels. {@code global=true} is the group-CRO
+     * view: the whole book cut with the named jurisdiction's thresholds (this is
+     * where the GEOGRAPHY and SECTOR_x_GEOGRAPHY dimensions earn their keep).
+     */
     @Transactional(readOnly = true)
-    public MultiDimConcentrationView concentration(String jurisdiction) {
-        List<ExposureRecord> all = exposures.findAll();
+    public MultiDimConcentrationView concentration(String jurisdiction, boolean global) {
+        List<ExposureRecord> all = global || jurisdiction == null || jurisdiction.isBlank()
+                ? exposures.findAll()
+                : exposures.findByJurisdiction(jurisdiction);
         RulePackDto pack = upstream.pack(jurisdiction, "CONCENTRATION_LIMITS", fallbackPack());
         double capitalBase = pack.number("capital_base", 50_000_000_000d);
         Map<String, Object> dims = pack.map("dimensions");

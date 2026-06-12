@@ -13,7 +13,6 @@ Exercises the AI_GOVERNANCE master + AiGovernanceClient enforcement:
 """
 import json
 import sys
-import time
 import urllib.error
 import urllib.request
 
@@ -60,11 +59,13 @@ def set_capability(jurisdiction, key, enabled, actor="config.admin"):
     # checker (must differ from maker for SoD)
     st2, _ = call("POST", f"/config/api/masters/records/{rec['id']}/approve", actor="config.checker")
     assert st2 == 200, f"approve failed {st2}"
-    # Cache TTL in AiGovernanceClient is 60s — invalidate by waiting or using fresh
-    # capabilities. In the test we accept a small delay if needed; the in-process
-    # cache invalidate hook would be a follow-up. For our purposes the seed is on
-    # the default record (we always re-issue PROPOSE which makes a new ACTIVE row),
-    # but the client caches by (cap, jur). Wait a moment for safety.
+
+
+def invalidate(service):
+    """Drop the AiGovernanceClient snapshot on a service so the toggle is live now
+    (instead of waiting out the cache TTL)."""
+    st, body = call("POST", f"/{service}/api/governance/ai/cache/invalidate")
+    assert st == 200 and body and body.get("invalidated") is True, f"invalidate {service}: {st} {body}"
 
 
 print("== 1. Capability catalogue + default state ==")
@@ -103,9 +104,7 @@ check("collateral-intel works when enabled", st == 200, f"{st}")
 
 print("\n== 4. Disable COLLATERAL_INTEL globally -> 403; deterministic path still works ==")
 set_capability(None, "collateral-intel", False)
-# A clean way to bust the in-process cache: the test waits briefly. The TTL is
-# 60s; for a tighter loop a /governance/ai/invalidate endpoint would help.
-time.sleep(6)  # > default cache TTL (5s)
+invalidate("origination")
 st, body = call_collateral_extract()
 check("collateral-intel blocked with 403 when disabled", st == 403, f"{st} {body}")
 check("403 message names the capability", "collateral-intel" in str(body), str(body))
@@ -135,7 +134,7 @@ check("deterministic rating works while AI off", st_rate == 200, f"{st_rate}")
 
 print("\n== 5. Re-enable -> endpoint succeeds again ==")
 set_capability(None, "collateral-intel", True)
-time.sleep(6)  # > default cache TTL (5s)
+invalidate("origination")
 st, _ = call_collateral_extract()
 check("collateral-intel works after re-enable", st == 200, f"{st}")
 
@@ -143,7 +142,7 @@ print("\n== 6. Jurisdiction override: block only for AE-CBUAE, leave RBI on ==")
 # Disable doc-intel for AE-CBUAE only. The IN-RBI application above should still
 # be able to use doc-intel because the default for IN-RBI says enabled.
 set_capability("AE-CBUAE", "collateral-intel", False)
-time.sleep(6)  # > default cache TTL (5s)
+invalidate("origination")
 st, _ = call_collateral_extract()
 check("IN-RBI deal unaffected by AE-CBUAE override", st == 200, f"{st}")
 
@@ -166,6 +165,7 @@ check("AE-CBUAE deal blocked by jurisdiction override", st == 403, f"{st} {body}
 
 # clean up: turn AE-CBUAE override back on so the e2e_smoke run isn't affected
 set_capability("AE-CBUAE", "collateral-intel", True)
+invalidate("origination")
 
 print("\n== 7. Newly-wired gates: every remaining AI capability is enforced ==")
 # The deal from section 2 ('Atlas Industries Ltd') is fully rated/capitalised/priced,
@@ -177,47 +177,47 @@ call("POST", f"/risk/api/risk/{ref}/capital", actor="analyst.user")
 call("POST", f"/risk/api/risk/{ref}/pricing", actor="analyst.user")
 
 set_capability(None, "pricing-exception", False)
-time.sleep(6)
+invalidate("risk")
 st, body = call("POST", f"/risk/api/risk/{ref}/pricing/exception",
                 {"proposedRate": 0.08, "reason": "strategic client"}, actor="rm.user")
 check("pricing-exception blocked when disabled", st == 403, f"{st} {body}")
 set_capability(None, "pricing-exception", True)
-time.sleep(6)
+invalidate("risk")
 
 # 7b. COVENANT_INTEL — extraction from CP free text.
 set_capability(None, "covenant-intel", False)
-time.sleep(6)
+invalidate("decision")
 st, body = call("POST", f"/decision/api/covenants/intel/{ref}/extract",
                 {"text": "Maintain DSCR >= 1.25 throughout."}, actor="analyst.user")
 check("covenant-intel blocked when disabled", st == 403, f"{st} {body}")
 set_capability(None, "covenant-intel", True)
-time.sleep(6)
+invalidate("decision")
 
 # 7c. CPT — generated on the counterparty, not a deal.
 set_capability(None, "cpt", False)
-time.sleep(6)
+invalidate("decision")
 st, body = call("POST", f"/decision/api/cpt/{cp_ref}/generate", {}, actor="rm.user")
 check("cpt blocked when disabled", st == 403, f"{st} {body}")
 set_capability(None, "cpt", True)
-time.sleep(6)
+invalidate("decision")
 
 # 7d. GROUP_SUGGEST — counterparty-service.
 set_capability(None, "group-suggest", False)
-time.sleep(6)
+invalidate("counterparty")
 st, body = call("POST", f"/counterparty/api/initiation/counterparties/{cp_id}/group/suggest",
                 {}, actor="rm.user")
 check("group-suggest blocked when disabled", st == 403, f"{st} {body}")
 set_capability(None, "group-suggest", True)
-time.sleep(6)
+invalidate("counterparty")
 
 # 7e. COPILOT — copilot-service.
 set_capability(None, "copilot", False)
-time.sleep(6)
+invalidate("copilot")
 st, body = call("POST", "/copilot/api/copilot/ask",
                 {"persona": "rm.user", "question": "what is my book exposure?"}, actor="rm.user")
 check("copilot blocked when disabled", st == 403, f"{st} {body}")
 set_capability(None, "copilot", True)
-time.sleep(6)
+invalidate("copilot")
 
 print(f"\n== AI governance e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

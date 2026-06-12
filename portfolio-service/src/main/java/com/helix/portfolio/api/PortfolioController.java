@@ -101,11 +101,16 @@ public class PortfolioController {
         return portfolio.concentration(jurisdiction);
     }
 
-    /** Multi-dimensional concentration: 8 dimensions + 2 intersections, HHI per dim. */
+    /**
+     * Multi-dimensional concentration: 8 dimensions + 2 intersections, HHI per dim.
+     * Scoped to the jurisdiction's own book by default; {@code global=true} cuts the
+     * whole book with that jurisdiction's thresholds (group-CRO view).
+     */
     @GetMapping("/concentration/multi")
     public com.helix.portfolio.dto.Dtos.MultiDimConcentrationView concentrationMulti(
-            @RequestParam(defaultValue = "IN-RBI") String jurisdiction) {
-        return multiDim.concentration(jurisdiction);
+            @RequestParam(defaultValue = "IN-RBI") String jurisdiction,
+            @RequestParam(defaultValue = "false") boolean global) {
+        return multiDim.concentration(jurisdiction, global);
     }
 
     @GetMapping("/stress")

@@ -49,17 +49,18 @@ def must(st, b, label, status=200):
     return b
 
 
-def book(name, reg, sector, facility, tenor, amount, currency="INR"):
+def book(name, reg, sector, facility, tenor, amount, currency="INR",
+         jurisdiction="IN-RBI", country="IN"):
     """Drive a deal to a booked exposure with the given dimensions."""
     st, cp = call("POST", "/counterparty/api/counterparties", {
-        "legalName": name, "legalForm": "PUBLIC_LTD", "registrationNo": reg, "jurisdiction": "IN-RBI",
-        "segment": sector, "sector": sector, "country": "IN", "listedEntity": True, "regulatedFi": False,
+        "legalName": name, "legalForm": "PUBLIC_LTD", "registrationNo": reg, "jurisdiction": jurisdiction,
+        "segment": sector, "sector": sector, "country": country, "listedEntity": True, "regulatedFi": False,
         "pep": False, "adverseMedia": False, "highRiskJurisdiction": False, "complexOwnership": False},
         actor="rm.user")
     cp = must(st, cp, f"cp {name}")
     st, app = call("POST", "/origination/api/applications", {
         "counterpartyId": cp["id"], "counterpartyRef": cp["reference"], "counterpartyName": name,
-        "jurisdiction": "IN-RBI", "segment": sector, "facilityType": facility,
+        "jurisdiction": jurisdiction, "segment": sector, "facilityType": facility,
         "requestedAmount": amount, "currency": currency, "tenorMonths": tenor, "purpose": "x",
         "collateralType": "PROPERTY", "collateralValue": amount * 1.3, "secured": True}, actor="rm.user")
     app = must(st, app, f"app {name}")
@@ -147,6 +148,32 @@ st, legacy = call("GET", "/portfolio/api/portfolio/concentration?jurisdiction=IN
 legacy = must(st, legacy, "legacy concentration")
 check("legacy view still returns singleName/sector/segment",
       "singleName" in legacy and "sector" in legacy and "segment" in legacy, str(legacy.keys()))
+
+print("\n== 7. Jurisdiction scoping: the local view never leaks another regime's book ==")
+book("Gulf Star Trading FZE", "MD-AE-1", "TRADE", "WORKING_CAPITAL", 12, 900_000_000,
+     currency="AED", jurisdiction="AE-CBUAE", country="AE")
+print("    1 AE-CBUAE exposure booked")
+
+st, in_view = call("GET", "/portfolio/api/portfolio/concentration/multi?jurisdiction=IN-RBI")
+in_view = must(st, in_view, "IN-RBI scoped view")
+in_names = {l["key"] for d in in_view["dimensions"] if d["dimension"] == "SINGLE_NAME" for l in d["lines"]}
+check("IN-RBI view does NOT contain the AE counterparty", "Gulf Star Trading FZE" not in in_names, str(in_names))
+
+st, ae_view = call("GET", "/portfolio/api/portfolio/concentration/multi?jurisdiction=AE-CBUAE")
+ae_view = must(st, ae_view, "AE-CBUAE scoped view")
+ae_names = {l["key"] for d in ae_view["dimensions"] if d["dimension"] == "SINGLE_NAME" for l in d["lines"]}
+check("AE-CBUAE view contains its own counterparty", "Gulf Star Trading FZE" in ae_names, str(ae_names))
+check("AE-CBUAE view does NOT contain IN-RBI names", "Titan Mega Corp" not in ae_names, str(ae_names))
+
+st, global_view = call("GET", "/portfolio/api/portfolio/concentration/multi?jurisdiction=IN-RBI&global=true")
+global_view = must(st, global_view, "global view")
+g_names = {l["key"] for d in global_view["dimensions"] if d["dimension"] == "SINGLE_NAME" for l in d["lines"]}
+check("global=true (group-CRO) view spans both books",
+      "Gulf Star Trading FZE" in g_names and "Titan Mega Corp" in g_names, str(g_names))
+geo = next(d for d in global_view["dimensions"] if d["dimension"] == "GEOGRAPHY")
+check("global view GEOGRAPHY has both jurisdictions",
+      {"IN-RBI", "AE-CBUAE"}.issubset({l["key"] for l in geo["lines"]}),
+      str([l["key"] for l in geo["lines"]]))
 
 print(f"\n== Multi-dim concentration e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)
