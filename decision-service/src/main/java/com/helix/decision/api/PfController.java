@@ -40,7 +40,7 @@ public class PfController {
     @PostMapping("/{reference}/milestones")
     public PfMilestone defineMilestone(@PathVariable String reference,
                                        @Valid @RequestBody DefineMilestoneRequest req,
-                                       @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+                                       @RequestHeader("X-Actor") String actor) {
         java.time.LocalDate planned = null;
         if (req.plannedDate() != null && !req.plannedDate().isBlank()) {
             try { planned = java.time.LocalDate.parse(req.plannedDate()); }
@@ -58,7 +58,7 @@ public class PfController {
 
     @PostMapping("/milestones/{id}/certify")
     public PfMilestone certify(@PathVariable Long id, @Valid @RequestBody CertifyRequest req,
-                               @RequestHeader(value = "X-Actor", defaultValue = "lie.engineer") String actor) {
+                               @RequestHeader("X-Actor") String actor) {
         return pf.lieCertify(id, req.certificationRef(), req.note(), actor);
     }
 
@@ -67,7 +67,7 @@ public class PfController {
     @PostMapping("/{reference}/reserves")
     public PfReserveAccount defineReserve(@PathVariable String reference,
                                           @Valid @RequestBody DefineReserveRequest req,
-                                          @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+                                          @RequestHeader("X-Actor") String actor) {
         return pf.defineReserve(reference, req.accountType(), req.requiredAmount(), req.currency(), actor);
     }
 
@@ -78,13 +78,13 @@ public class PfController {
 
     @PostMapping("/reserves/{id}/fund")
     public PfReserveAccount fund(@PathVariable Long id, @Valid @RequestBody ReserveTxnRequest req,
-                                 @RequestHeader(value = "X-Actor", defaultValue = "treasury.ops") String actor) {
+                                 @RequestHeader("X-Actor") String actor) {
         return pf.fund(id, req.amount(), req.note(), actor);
     }
 
     @PostMapping("/reserves/{id}/withdraw")
     public PfReserveAccount withdraw(@PathVariable Long id, @Valid @RequestBody ReserveTxnRequest req,
-                                     @RequestHeader(value = "X-Actor", defaultValue = "treasury.ops") String actor) {
+                                     @RequestHeader("X-Actor") String actor) {
         return pf.withdraw(id, req.amount(), req.note(), actor);
     }
 

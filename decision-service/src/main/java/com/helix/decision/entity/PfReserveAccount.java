@@ -55,6 +55,9 @@ public class PfReserveAccount {
     @Column(length = 80) private String lastActionBy;
     private Instant lastActionAt;
 
+    /** Who last put money IN — a withdrawal by the same person is an SoD violation. */
+    @Column(length = 80) private String lastFundedBy;
+
     @CreationTimestamp
     private Instant createdAt;
 

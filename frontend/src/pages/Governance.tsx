@@ -8,8 +8,8 @@
  * hidden); the API also blocks the corresponding endpoint server-side with a 403,
  * so "AI off" is enforcement, not just UI discipline.
  */
-import { useEffect, useState } from "react";
-import { config, governance } from "../api";
+import { useState } from "react";
+import { config, governance, masters } from "../api";
 import { useApp } from "../app-context";
 import { AiBadge, Badge, Button, Card, EmptyState, Field, useAsync } from "../ui";
 
@@ -20,32 +20,43 @@ export default function Governance() {
   const resolved = useAsync(
     () => governance.resolved(jurisdiction || undefined),
     [jurisdiction]);
+  const pending = useAsync(
+    () => masters.pending().then((rows: any[]) =>
+      rows.filter((r) => r.masterType === "AI_GOVERNANCE")),
+    []);
   const [busy, setBusy] = useState<string | null>(null);
 
-  // Auto-select first jurisdiction once loaded.
-  useEffect(() => {
-    if (!jurisdiction && jurisdictions.data && jurisdictions.data.length > 0) {
-      // Empty string keeps "default" (cross-jurisdiction) view; let the user pick.
-    }
-  }, [jurisdictions.data, jurisdiction]);
-
+  // Maker lane: propose the toggle. The proposal lands as PENDING_APPROVAL and a
+  // DIFFERENT actor must approve it from the panel below — same SoD as every
+  // other master change. No self-approval shortcut.
   async function toggle(key: string, enabled: boolean) {
     setBusy(key);
     try {
       const rec = await governance.setEnabled(key, enabled, jurisdiction || null, actor);
-      // Maker-checker: the proposal needs a different actor to approve. We auto-
-      // approve here when the actor is "config.admin"; otherwise we surface the
-      // pending record id so a checker can confirm.
       if (rec?.status === "PENDING_APPROVAL") {
-        const checker = actor === "config.checker" ? "config.admin" : "config.checker";
-        await governance.approve(rec.id, checker);
-        notify(`${key} ${enabled ? "enabled" : "disabled"}${jurisdiction ? " for " + jurisdiction : " (default)"}`);
+        notify(`${key} → ${enabled ? "ENABLE" : "DISABLE"} proposed by ${actor} — switch actor to approve`);
       } else {
         notify(`${key} toggled (status=${rec?.status})`);
       }
-      // Wait briefly for the AiGovernanceClient cache TTL on the AI services to clear.
-      setTimeout(() => resolved.reload(), 6000);
+      pending.reload();
+    } catch (e: any) {
+      notify(e.message, true);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Checker lane: approve/reject a pending toggle. Server enforces maker ≠ checker;
+  // the button is also disabled client-side when the current actor is the maker.
+  async function decide(rec: any, approve: boolean) {
+    setBusy(`pending-${rec.id}`);
+    try {
+      await (approve ? masters.approve(rec.id, actor) : masters.reject(rec.id, actor));
+      notify(`${rec.recordKey} ${approve ? "approved" : "rejected"} by ${actor}`);
+      pending.reload();
+      // Give the AiGovernanceClient cache TTL on the AI services time to expire.
       resolved.reload();
+      setTimeout(() => resolved.reload(), 6000);
     } catch (e: any) {
       notify(e.message, true);
     } finally {
@@ -86,6 +97,53 @@ export default function Governance() {
           </select>
         </Field>
       </Card>
+
+      {(pending.data ?? []).length > 0 && (
+        <Card title="Pending approvals — maker-checker"
+          sub="A proposed toggle takes effect only after a DIFFERENT actor approves it. Switch the topbar actor to act as checker."
+          right={<Badge kind="warn">{(pending.data ?? []).length} PENDING</Badge>}>
+          <table>
+            <thead>
+              <tr>
+                <th>Capability</th>
+                <th>Jurisdiction</th>
+                <th>Change</th>
+                <th>Proposed by</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {(pending.data ?? []).map((rec: any) => {
+                const isMaker = rec.maker === actor;
+                return (
+                  <tr key={rec.id}>
+                    <td className="mono">{rec.recordKey}</td>
+                    <td>{rec.jurisdiction || "default"}</td>
+                    <td>
+                      <Badge kind={rec.payload?.enabled ? "ok" : "bad"}>
+                        {rec.payload?.enabled ? "ENABLE" : "DISABLE"}
+                      </Badge>
+                    </td>
+                    <td className="mono">{rec.maker}</td>
+                    <td>
+                      <span title={isMaker ? "SoD: the maker cannot approve their own change" : undefined}>
+                        <Button kind="subtle" busy={busy === `pending-${rec.id}`}
+                          disabled={isMaker} onClick={() => decide(rec, true)}>
+                          Approve
+                        </Button>{" "}
+                        <Button kind="ghost" busy={busy === `pending-${rec.id}`}
+                          disabled={isMaker} onClick={() => decide(rec, false)}>
+                          Reject
+                        </Button>
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      )}
 
       <Card title="AI capabilities"
         sub="Switch a capability off to block the endpoint and hide the surface. Re-enabling restores both."

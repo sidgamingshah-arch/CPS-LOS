@@ -7,10 +7,13 @@ Exercises the new ConditionPrecedent register and Disbursement workflow:
      rate -> capital -> price -> proposal -> decide -> CAD -> limit-tree built).
   2. Seed the CP register from CP_MASTER (TERM_LOAN template).
   3. Attempt drawdown authorise with CPs OPEN -> 403 with blocker list.
-  4. Clear / waive every mandatory CP (SoD: clearer != waiver != requester).
+  4. Clear / waive every mandatory CP (SoD: clearer != waiver != requester —
+     a drawdown requester cannot waive their own CPs).
   5. Authorise again -> succeeds.
   6. Release -> calls limit-service /utilise, exposure goes up.
-  7. SoD assertions: requester==authoriser blocked, authoriser==releaser blocked.
+  7. SoD assertions: requester==authoriser blocked, authoriser==releaser blocked,
+     requester==releaser blocked (three distinct humans per funded draw),
+     requester==rejecter blocked, missing/blank X-Actor blocked.
   8. A second tranche on the same facility doesn't need to re-clear the CPs
      (CPs were "pre-disbursement", not "every-disbursement").
 """
@@ -162,6 +165,11 @@ for c in reg:
     # Waive one to exercise that lane, clear the rest. Use a different actor than
     # the drawdown requester so SoD on authorise still works.
     if c["code"] == "CP-MAC":
+        # SoD: the requester of the in-flight drawdown (credit.ops drafted d1 in
+        # section 3) cannot waive their own conditions precedent.
+        st, body = call("POST", f"/decision/api/cps/{c['id']}/waive",
+                        {"reason": "self-serve waiver"}, actor="credit.ops")
+        check("waive by in-flight drawdown requester blocked (403 SoD)", st == 403, f"{st} {body}")
         st, _ = call("POST", f"/decision/api/cps/{c['id']}/waive",
                       {"reason": "RM letter dated " + "2026-05-01 confirms no MAC"},
                       actor="credit.committee")
@@ -195,6 +203,11 @@ check("authorise succeeds with distinct actor", st == 200 and d1a["status"] == "
 st, body = call("POST", f"/decision/api/disbursement/{d1['id']}/release", actor="credit.officer")
 check("self-release blocked by SoD", st == 403, f"{st} {body}")
 
+# SoD: the original requester (credit.ops) cannot release either — request,
+# authorise and release must be three distinct humans.
+st, body = call("POST", f"/decision/api/disbursement/{d1['id']}/release", actor="credit.ops")
+check("release by original requester blocked by SoD", st == 403, f"{st} {body}")
+
 # Capture exposure BEFORE release.
 st, exp_before = call("GET", f"/limits/api/limits/{cif}/exposure")
 out_before = exp_before["norms"].get("totalOutstanding", 0) if exp_before.get("norms") else 0
@@ -203,8 +216,8 @@ st, tv_before = call("GET", f"/limits/api/limits/view?cif={cif}")
 tree_out_before = tv_before["totalOutstandingBase"]
 
 # Release with a third actor — books limit utilisation.
-st, d1r = call("POST", f"/decision/api/disbursement/{d1['id']}/release", actor="credit.ops")
-check("release with distinct actor succeeds", st == 200 and d1r["status"] == "RELEASED", f"{st} {d1r}")
+st, d1r = call("POST", f"/decision/api/disbursement/{d1['id']}/release", actor="treasury.ops")
+check("release with distinct third actor succeeds", st == 200 and d1r["status"] == "RELEASED", f"{st} {d1r}")
 check("release stamps utilisationRef", d1r.get("utilisationRef", "").startswith("DISB-"), str(d1r.get("utilisationRef")))
 
 st, tv_after = call("GET", f"/limits/api/limits/view?cif={cif}")
@@ -255,7 +268,8 @@ st, da = call("POST", f"/decision/api/disbursement/{ref}/request",
                "purpose": "tranche A", "narrative": "initial"},
               actor="credit.ops")
 da = must(st, da, "request amendable")
-check("amend works for the requester", True, "")
+check("amendable draw drafted with requester stamped",
+      da["status"] == "DRAFT" and da["requestedBy"] == "credit.ops", str(da))
 st, amended = call("POST", f"/decision/api/disbursement/{da['id']}/amend",
                    {"amount": 75_000_000, "purpose": "tranche A (revised up)",
                     "narrative": "updated per RM request"}, actor="credit.ops")
@@ -271,25 +285,43 @@ st, body = call("POST", f"/decision/api/disbursement/{da['id']}/amend",
                  {"amount": 60_000_000}, actor="credit.ops")
 check("amend after AUTHORIZED rejected (409)", st == 409, f"{st} {body}")
 
-print("\n== 10. Cancel: requester voluntarily withdraws ==")
-# Cancel from AUTHORIZED — allowed, requester only
+print("\n== 10. Cancel: DRAFT is the requester's, AUTHORIZED needs the authoriser ==")
+# da is AUTHORIZED (by credit.officer at the end of section 9). The requester can
+# no longer unilaterally void the approval — only the authoriser may cancel.
 st, body = call("POST", f"/decision/api/disbursement/{da['id']}/cancel",
-                 {"reason": "withdraw"}, actor="credit.officer")
-check("cancel by non-requester blocked (403 SoD)", st == 403, f"{st} {body}")
+                 {"reason": "withdraw"}, actor="credit.ops")
+check("cancel of AUTHORIZED by requester blocked (403 SoD)", st == 403, f"{st} {body}")
+st, body = call("POST", f"/decision/api/disbursement/{da['id']}/cancel",
+                 {"reason": "withdraw"}, actor="rm.user")
+check("cancel of AUTHORIZED by third party blocked (403 SoD)", st == 403, f"{st} {body}")
 st, cancelled = call("POST", f"/decision/api/disbursement/{da['id']}/cancel",
-                      {"reason": "borrower changed mind"}, actor="credit.ops")
-check("cancel by requester succeeds", st == 200 and cancelled["status"] == "CANCELLED", f"{st} {cancelled}")
-check("cancelledBy/Reason captured", cancelled["cancelledBy"] == "credit.ops"
+                      {"reason": "borrower changed mind"}, actor="credit.officer")
+check("cancel of AUTHORIZED by authoriser succeeds",
+      st == 200 and cancelled["status"] == "CANCELLED", f"{st} {cancelled}")
+check("cancelledBy/Reason captured", cancelled["cancelledBy"] == "credit.officer"
       and "changed mind" in (cancelled.get("cancelledReason") or ""), str(cancelled))
 # A CANCELLED draw can't be re-cancelled / authorised / rejected
 st, body = call("POST", f"/decision/api/disbursement/{da['id']}/authorize", {}, actor="credit.officer")
 check("CANCELLED can't be re-authorised", st in (409, 400), f"{st}")
+# DRAFT lane: only the requester may cancel their own draft.
+st, draft = call("POST", f"/decision/api/disbursement/{ref}/request",
+                 {"facilityRef": facility_ref, "amount": 50_000_000, "currency": "INR",
+                  "purpose": "draft-cancel lane"}, actor="credit.ops")
+draft = must(st, draft, "request draft for cancel lane")
+st, body = call("POST", f"/decision/api/disbursement/{draft['id']}/cancel",
+                 {"reason": "not mine"}, actor="credit.officer")
+check("cancel of DRAFT by non-requester blocked (403 SoD)", st == 403, f"{st} {body}")
+st, dcan = call("POST", f"/decision/api/disbursement/{draft['id']}/cancel",
+                 {"reason": "requester withdraws"}, actor="credit.ops")
+check("cancel of DRAFT by requester succeeds", st == 200 and dcan["status"] == "CANCELLED", f"{st} {dcan}")
 # Cancellation freed the headroom (no longer counts toward used)
 st, fresh = call("POST", f"/decision/api/disbursement/{ref}/request",
                  {"facilityRef": facility_ref, "amount": 75_000_000, "currency": "INR",
                   "purpose": "post-cancel"}, actor="credit.ops")
 check("cancelled drawdown freed facility headroom",
       st == 200 and fresh["status"] == "DRAFT", f"{st} {fresh}")
+call("POST", f"/decision/api/disbursement/{fresh['id']}/cancel",
+     {"reason": "headroom probe only"}, actor="credit.ops")
 
 print("\n== 11. Cross-currency: USD drawdown on an INR facility (FX converted) ==")
 st, fx = call("POST", f"/decision/api/disbursement/{ref}/request",
@@ -339,6 +371,47 @@ check("AE-CBUAE override picked (Al Etihad bureau)", "CP-AECB" in ae_codes, str(
 check("AE-CBUAE override picked (Economic Substance)", "CP-ESR" in ae_codes, str(ae_codes))
 check("AE-CBUAE does NOT carry India-specific CPs",
       "CP-CERSAI" not in ae_codes and "CP-ROC" not in ae_codes and "CP-STAMP" not in ae_codes, str(ae_codes))
+
+print("\n== 13. Actor hygiene: anonymous writes are blocked, never defaulted ==")
+# No X-Actor header at all -> 400 (required header). The old behaviour silently
+# defaulted to per-endpoint actors that happened to satisfy SoD between them.
+def call_raw(method, path, body=None, headers=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(GW + path, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            txt = r.read().decode()
+            return r.status, (json.loads(txt) if txt else None)
+    except urllib.error.HTTPError as e:
+        txt = e.read().decode()
+        try:
+            return e.code, json.loads(txt) if txt else None
+        except Exception:
+            return e.code, txt
+
+st, body = call_raw("POST", f"/decision/api/disbursement/{ref}/request",
+                    {"facilityRef": facility_ref, "amount": 1_000_000, "currency": "INR",
+                     "purpose": "anonymous"})
+check("request without X-Actor header rejected (400)", st == 400, f"{st} {body}")
+st, body = call_raw("POST", f"/decision/api/disbursement/{ref}/request",
+                    {"facilityRef": facility_ref, "amount": 1_000_000, "currency": "INR",
+                     "purpose": "blank actor"}, headers={"X-Actor": ""})
+check("request with blank X-Actor rejected (400/403)", st in (400, 403), f"{st} {body}")
+
+print("\n== 14. Reject is the checker's lane — the requester withdraws via cancel ==")
+st, dr = call("POST", f"/decision/api/disbursement/{ref}/request",
+              {"facilityRef": facility_ref, "amount": 10_000_000, "currency": "INR",
+               "purpose": "reject lane"}, actor="credit.ops")
+dr = must(st, dr, "request for reject lane")
+st, body = call("POST", f"/decision/api/disbursement/{dr['id']}/reject",
+                 {"reason": "self-reject"}, actor="credit.ops")
+check("reject by own requester blocked (403 SoD)", st == 403, f"{st} {body}")
+st, drj = call("POST", f"/decision/api/disbursement/{dr['id']}/reject",
+                {"reason": "duplicate of tranche 2"}, actor="credit.officer")
+check("reject by a different actor succeeds", st == 200 and drj["status"] == "REJECTED", f"{st} {drj}")
 
 print(f"\n== Pre-disbursement e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

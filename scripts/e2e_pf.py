@@ -129,8 +129,11 @@ check("PF gate now open for milestone 1", gate2["canDrawdown"] is True, str(gate
 
 st, d1a = call("POST", f"/decision/api/disbursement/{d1['id']}/authorize", {}, actor="credit.officer")
 check("drawdown authorises once milestone certified + DSRA funded", st == 200 and d1a["status"] == "AUTHORIZED", f"{st} {d1a}")
-st, d1r = call("POST", f"/decision/api/disbursement/{d1['id']}/release", actor="credit.ops")
-check("tranche releases", st == 200 and d1r["status"] == "RELEASED", f"{st} {d1r}")
+# SoD: requester (credit.ops) can't also release — three distinct humans per draw.
+st, body = call("POST", f"/decision/api/disbursement/{d1['id']}/release", actor="credit.ops")
+check("release by requester blocked (403 SoD)", st == 403, f"{st} {body}")
+st, d1r = call("POST", f"/decision/api/disbursement/{d1['id']}/release", actor="treasury.ops")
+check("tranche releases with distinct third actor", st == 200 and d1r["status"] == "RELEASED", f"{st} {d1r}")
 
 print("\n== 5. Milestone 1 is now DRAWN and cannot be re-drawn ==")
 st, ms = call("GET", f"/decision/api/pf/{ref}/milestones?facilityRef={fref}")
@@ -154,6 +157,18 @@ call("POST", f"/decision/api/pf/milestones/{m2['id']}/certify",
      {"certificationRef": "LIE-CERT-002"}, actor="lie.engineer")
 st, d2a = call("POST", f"/decision/api/disbursement/{d2['id']}/authorize", {}, actor="credit.officer")
 check("tranche 2 authorises after milestone 2 certified", st == 200 and d2a["status"] == "AUTHORIZED", f"{st} {d2a}")
+
+print("\n== 7. Reserve withdrawal SoD: withdrawer must differ from the last funder ==")
+# DSRA was funded by treasury.ops in section 4 — the same actor pulling money
+# back out is exactly the fund-then-quietly-drain pattern the SoD exists to stop.
+st, body = call("POST", f"/decision/api/pf/reserves/{dsra['id']}/withdraw",
+                {"amount": 50_000_000, "note": "drain attempt"}, actor="treasury.ops")
+check("withdraw by last funder blocked (403 SoD)", st == 403, f"{st} {body}")
+st, wd = call("POST", f"/decision/api/pf/reserves/{dsra['id']}/withdraw",
+              {"amount": 50_000_000, "note": "approved sweep"}, actor="finance.ops")
+check("withdraw by different actor succeeds", st == 200, f"{st} {wd}")
+check("withdrawal drops DSRA back to SHORTFALL", wd["status"] == "SHORTFALL"
+      and abs(wd["currentBalance"] - 200_000_000) < 1, str(wd))
 
 print(f"\n== PF mechanics e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

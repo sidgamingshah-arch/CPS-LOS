@@ -25,9 +25,12 @@ import java.util.Map;
  * {@code Disbursement} row per draw — multi-tranche PF, partial WC, and revolver
  * use all map naturally to multiple sequential rows on the same facility.
  *
- * <p>SoD: requester ≠ authoriser ≠ releaser, each transition stamped against a
- * named actor on the audit trail. {@link ApiException#forbiddenAutonomy} fires
- * the moment a maker tries to be the checker, matching the platform convention.</p>
+ * <p>SoD: requester ≠ authoriser ≠ releaser — and the releaser must also differ
+ * from the requester, so no two-role shuffle can put the same person on both ends
+ * of a draw. Each transition is stamped against a named actor on the audit trail;
+ * a missing/blank actor is itself an SoD violation (we never fall back to an
+ * anonymous default on a money-moving path). {@link ApiException#forbiddenAutonomy}
+ * fires the moment a maker tries to be the checker, matching the platform convention.</p>
  */
 @Service
 public class DisbursementService {
@@ -61,6 +64,7 @@ public class DisbursementService {
     public Disbursement request(String applicationReference, String facilityRef,
                                 double amount, String currency, String purpose, String narrative,
                                 Integer milestoneSequence, String actor) {
+        requireActor(actor);
         DealEnvelopeDto env = upstream.envelope(applicationReference);
         if (env == null) throw ApiException.notFound("No deal envelope for " + applicationReference);
         FacilityViewDto facility = findFacility(env, facilityRef);
@@ -125,6 +129,17 @@ public class DisbursementService {
 
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
 
+    /**
+     * Every disbursement transition needs a named human. A blank actor would
+     * otherwise satisfy (or dodge) the equality-based SoD checks below.
+     */
+    private static void requireActor(String actor) {
+        if (actor == null || actor.isBlank()) {
+            throw ApiException.forbiddenAutonomy(
+                    "A named human actor (X-Actor header) is required on disbursement actions");
+        }
+    }
+
     // ============================================================ amend / cancel
 
     /**
@@ -135,11 +150,12 @@ public class DisbursementService {
     @Transactional
     public Disbursement amend(Long id, Double amount, String currency, String purpose,
                               String narrative, Integer milestoneSequence, String actor) {
+        requireActor(actor);
         Disbursement d = get(id);
         if (!"DRAFT".equals(d.getStatus())) {
             throw ApiException.conflict("Amend is only allowed on DRAFT — current status " + d.getStatus());
         }
-        if (actor == null || !actor.equals(d.getRequestedBy())) {
+        if (!actor.equals(d.getRequestedBy())) {
             throw ApiException.forbiddenAutonomy(
                     "Only the original requester (" + d.getRequestedBy() + ") may amend this draft");
         }
@@ -192,12 +208,17 @@ public class DisbursementService {
     }
 
     /**
-     * Voluntary cancellation by the requester. Distinct from {@link #reject} — that's
-     * the checker's veto. Allowed in DRAFT or AUTHORIZED (before money moves); a
-     * RELEASED draw needs a reversal, not a cancel.
+     * Voluntary cancellation. Distinct from {@link #reject} — that's the checker's
+     * veto. Allowed in DRAFT or AUTHORIZED (before money moves); a RELEASED draw
+     * needs a reversal, not a cancel.
+     *
+     * <p>SoD: a DRAFT belongs to its requester, so only they may withdraw it. Once
+     * AUTHORIZED, the draw carries a second actor's approval — the requester can no
+     * longer unilaterally void it; cancellation then requires the authoriser.</p>
      */
     @Transactional
     public Disbursement cancel(Long id, String reason, String actor) {
+        requireActor(actor);
         Disbursement d = get(id);
         if ("RELEASED".equals(d.getStatus())) {
             throw ApiException.conflict("Cannot cancel a RELEASED drawdown — use a reversal");
@@ -205,10 +226,17 @@ public class DisbursementService {
         if ("CANCELLED".equals(d.getStatus()) || "REJECTED".equals(d.getStatus())) {
             throw ApiException.conflict("Drawdown already " + d.getStatus());
         }
-        if (actor == null || !actor.equals(d.getRequestedBy())) {
+        if ("AUTHORIZED".equals(d.getStatus())) {
+            if (!actor.equals(d.getAuthorizedBy())) {
+                throw ApiException.forbiddenAutonomy(
+                        "An AUTHORIZED drawdown can only be cancelled by its authoriser ("
+                        + d.getAuthorizedBy() + ") — the approval cannot be voided unilaterally; "
+                        + "a checker may also use /reject");
+            }
+        } else if (!actor.equals(d.getRequestedBy())) {
             throw ApiException.forbiddenAutonomy(
                     "Only the original requester (" + d.getRequestedBy()
-                    + ") may cancel this drawdown; a checker should use /reject");
+                    + ") may cancel this draft; a checker should use /reject");
         }
         d.setStatus("CANCELLED");
         d.setCancelledBy(actor);
@@ -234,11 +262,12 @@ public class DisbursementService {
      */
     @Transactional
     public Disbursement authorize(Long id, String note, String actor) {
+        requireActor(actor);
         Disbursement d = get(id);
         if (!"DRAFT".equals(d.getStatus())) {
             throw ApiException.conflict("Disbursement is " + d.getStatus());
         }
-        if (actor != null && actor.equals(d.getRequestedBy())) {
+        if (actor.equals(d.getRequestedBy())) {
             throw ApiException.forbiddenAutonomy(
                     "Drawdown authoriser must differ from requester (" + actor + ")");
         }
@@ -291,20 +320,27 @@ public class DisbursementService {
 
     /**
      * Releases an AUTHORIZED drawdown — calls limit-service to book a UTILISE on
-     * the facility's limit node and marks the disbursement RELEASED. SoD:
-     * releaser ≠ authoriser. If the limit booking fails we leave the disbursement
-     * AUTHORIZED (the underlying transactional boundary doesn't extend into the
-     * remote service, but the limit-service call is idempotent on transactionRef).
+     * the facility's limit node and marks the disbursement RELEASED. SoD: the
+     * releaser must differ from both the authoriser and the original requester
+     * (three named humans on every funded draw). If the limit booking fails we
+     * leave the disbursement AUTHORIZED so the cause can be fixed and the release
+     * retried; the local transaction does not extend into the remote service.
      */
     @Transactional
     public Disbursement release(Long id, String actor) {
+        requireActor(actor);
         Disbursement d = get(id);
         if (!"AUTHORIZED".equals(d.getStatus())) {
             throw ApiException.conflict("Disbursement is " + d.getStatus() + " — authorise first");
         }
-        if (actor != null && actor.equals(d.getAuthorizedBy())) {
+        if (actor.equals(d.getAuthorizedBy())) {
             throw ApiException.forbiddenAutonomy(
                     "Drawdown releaser must differ from authoriser (" + actor + ")");
+        }
+        if (actor.equals(d.getRequestedBy())) {
+            throw ApiException.forbiddenAutonomy(
+                    "Drawdown releaser must differ from the original requester (" + actor
+                    + ") — request, authorise and release need three distinct humans");
         }
         LimitClient.LimitNodeDto node = limits.nodeForFacility(d.getApplicationReference(), d.getFacilityRef());
         if (node == null) {
@@ -348,12 +384,18 @@ public class DisbursementService {
 
     @Transactional
     public Disbursement reject(Long id, String reason, String actor) {
+        requireActor(actor);
         Disbursement d = get(id);
         if ("RELEASED".equals(d.getStatus())) {
             throw ApiException.conflict("Cannot reject a RELEASED disbursement — use a reversal instead");
         }
         if ("CANCELLED".equals(d.getStatus()) || "REJECTED".equals(d.getStatus())) {
             throw ApiException.conflict("Drawdown already " + d.getStatus());
+        }
+        // Reject is the checker's veto lane — the requester withdraws via /cancel instead.
+        if (actor.equals(d.getRequestedBy())) {
+            throw ApiException.forbiddenAutonomy(
+                    "The requester (" + actor + ") cannot reject their own drawdown — use /cancel");
         }
         d.setStatus("REJECTED");
         d.setRejectedBy(actor);

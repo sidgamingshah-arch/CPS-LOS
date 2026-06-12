@@ -9,7 +9,9 @@ import com.helix.decision.client.UpstreamClient.MasterRecordDto;
 import com.helix.decision.dto.CpDtos.CpBlocker;
 import com.helix.decision.dto.CpDtos.CpGateResult;
 import com.helix.decision.entity.ConditionPrecedent;
+import com.helix.decision.entity.Disbursement;
 import com.helix.decision.repo.ConditionPrecedentRepository;
+import com.helix.decision.repo.DisbursementRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,11 +33,14 @@ import java.util.Map;
 public class ConditionPrecedentService {
 
     private final ConditionPrecedentRepository repo;
+    private final DisbursementRepository disbursements;
     private final UpstreamClient upstream;
     private final AuditService audit;
 
-    public ConditionPrecedentService(ConditionPrecedentRepository repo, UpstreamClient upstream, AuditService audit) {
+    public ConditionPrecedentService(ConditionPrecedentRepository repo, DisbursementRepository disbursements,
+                                     UpstreamClient upstream, AuditService audit) {
         this.repo = repo;
+        this.disbursements = disbursements;
         this.upstream = upstream;
         this.audit = audit;
     }
@@ -146,15 +151,30 @@ public class ConditionPrecedentService {
         return saved;
     }
 
+    /**
+     * Waives a mandatory-or-optional CP. SoD: the waiver must not be the requester
+     * of any in-flight (DRAFT / AUTHORIZED) drawdown on this facility — otherwise
+     * the person asking for the money could dissolve their own evidence gate.
+     */
     @Transactional
     public ConditionPrecedent waive(Long id, String reason, String actor) {
+        if (actor == null || actor.isBlank()) {
+            throw ApiException.forbiddenAutonomy("A named human actor (X-Actor header) is required to waive a CP");
+        }
         ConditionPrecedent cp = get(id);
         if (!"OPEN".equals(cp.getStatus())) {
             throw ApiException.conflict("CP is " + cp.getStatus());
         }
-        // SoD: a CP cannot be waived by the same actor who initially cleared something on this CP.
-        // (For OPEN items there is no clearer; the SoD here is "waiver ≠ requester of the drawdown",
-        // enforced in DisbursementService.)
+        for (Disbursement d : disbursements.findByApplicationReferenceAndFacilityRefOrderByDrawdownNoAsc(
+                cp.getApplicationReference(), cp.getFacilityRef())) {
+            boolean inFlight = "DRAFT".equals(d.getStatus()) || "AUTHORIZED".equals(d.getStatus());
+            if (inFlight && actor.equals(d.getRequestedBy())) {
+                throw ApiException.forbiddenAutonomy(
+                        "CP waiver must differ from the requester of in-flight drawdown #"
+                        + d.getDrawdownNo() + " on " + cp.getFacilityRef()
+                        + " — a drawdown requester cannot waive their own conditions precedent");
+            }
+        }
         cp.setStatus("WAIVED");
         cp.setWaivedBy(actor);
         cp.setWaivedReason(reason);

@@ -37,14 +37,14 @@ public class ConditionPrecedentController {
 
     @PostMapping("/{reference}/seed")
     public List<ConditionPrecedent> seed(@PathVariable String reference,
-                                         @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+                                         @RequestHeader("X-Actor") String actor) {
         return cps.seedFromMaster(reference, actor);
     }
 
     @PostMapping("/{reference}")
     public ConditionPrecedent addCustom(@PathVariable String reference,
                                         @Valid @RequestBody AddCpRequest req,
-                                        @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+                                        @RequestHeader("X-Actor") String actor) {
         return cps.addCustom(reference, req.facilityRef(), req.code(), req.title(), req.description(),
                 req.mandatory() == null ? true : req.mandatory(), actor);
     }
@@ -65,20 +65,20 @@ public class ConditionPrecedentController {
 
     @PostMapping("/{id}/clear")
     public ConditionPrecedent clear(@PathVariable Long id, @RequestBody(required = false) ClearRequest req,
-                                    @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+                                    @RequestHeader("X-Actor") String actor) {
         return cps.clear(id, req == null ? null : req.evidenceRef(),
                 req == null ? null : req.note(), actor);
     }
 
     @PostMapping("/{id}/waive")
     public ConditionPrecedent waive(@PathVariable Long id, @Valid @RequestBody WaiveRequest req,
-                                    @RequestHeader(value = "X-Actor", defaultValue = "credit.officer") String actor) {
+                                    @RequestHeader("X-Actor") String actor) {
         return cps.waive(id, req.reason(), actor);
     }
 
     @PostMapping("/{id}/reject")
     public ConditionPrecedent reject(@PathVariable Long id, @Valid @RequestBody RejectRequest req,
-                                     @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+                                     @RequestHeader("X-Actor") String actor) {
         return cps.reject(id, req.reason(), actor);
     }
 }

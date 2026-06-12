@@ -38,7 +38,7 @@ public class DisbursementController {
     @PostMapping("/{reference}/request")
     public Disbursement request(@PathVariable String reference,
                                 @Valid @RequestBody RequestDrawdownRequest req,
-                                @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+                                @RequestHeader("X-Actor") String actor) {
         return disb.request(reference, req.facilityRef(), req.amount(), req.currency(),
                 req.purpose(), req.narrative(), req.milestoneSequence(), actor);
     }
@@ -46,26 +46,26 @@ public class DisbursementController {
     @PostMapping("/{id}/authorize")
     public Disbursement authorize(@PathVariable Long id,
                                   @RequestBody(required = false) AuthoriseRequest req,
-                                  @RequestHeader(value = "X-Actor", defaultValue = "credit.officer") String actor) {
+                                  @RequestHeader("X-Actor") String actor) {
         return disb.authorize(id, req == null ? null : req.note(), actor);
     }
 
     @PostMapping("/{id}/release")
     public Disbursement release(@PathVariable Long id,
-                                @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+                                @RequestHeader("X-Actor") String actor) {
         return disb.release(id, actor);
     }
 
     @PostMapping("/{id}/reject")
     public Disbursement reject(@PathVariable Long id, @Valid @RequestBody RejectRequest req,
-                               @RequestHeader(value = "X-Actor", defaultValue = "credit.officer") String actor) {
+                               @RequestHeader("X-Actor") String actor) {
         return disb.reject(id, req.reason(), actor);
     }
 
     /** Edit a DRAFT drawdown — requester-only. */
     @PostMapping("/{id}/amend")
     public Disbursement amend(@PathVariable Long id, @RequestBody(required = false) AmendRequest req,
-                              @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+                              @RequestHeader("X-Actor") String actor) {
         return disb.amend(id,
                 req == null ? null : req.amount(),
                 req == null ? null : req.currency(),
@@ -78,7 +78,7 @@ public class DisbursementController {
     /** Voluntary cancellation by the requester. */
     @PostMapping("/{id}/cancel")
     public Disbursement cancel(@PathVariable Long id, @RequestBody(required = false) CancelRequest req,
-                               @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+                               @RequestHeader("X-Actor") String actor) {
         return disb.cancel(id, req == null ? null : req.reason(), actor);
     }
 

@@ -142,6 +142,7 @@ public class PfService {
         r.setStatus(r.getCurrentBalance() + 1e-6 >= r.getRequiredAmount() ? "FUNDED" : "SHORTFALL");
         r.setLastActionBy(actor);
         r.setLastActionAt(Instant.now());
+        r.setLastFundedBy(actor);
         PfReserveAccount saved = reserves.save(r);
         audit.human(actor, "PF_RESERVE_FUNDED", "PfReserveAccount", String.valueOf(id),
                 "Funded %s by %.2f -> balance %.2f (%s)".formatted(r.getAccountType(), amount,
@@ -150,11 +151,21 @@ public class PfService {
         return saved;
     }
 
+    /**
+     * Withdraws from a reserve. SoD: the withdrawer must differ from whoever last
+     * funded the account — otherwise one treasury actor could overfund, watch the
+     * gate open, and quietly pull the excess back out.
+     */
     @Transactional
     public PfReserveAccount withdraw(Long id, double amount, String note, String actor) {
         PfReserveAccount r = getReserve(id);
         if (amount > r.getCurrentBalance() + 1e-6) {
             throw ApiException.badRequest("Withdrawal " + amount + " exceeds balance " + r.getCurrentBalance());
+        }
+        if (actor != null && actor.equals(r.getLastFundedBy())) {
+            throw ApiException.forbiddenAutonomy(
+                    "Reserve withdrawal must be made by a different actor than the last funder ("
+                    + r.getLastFundedBy() + ")");
         }
         r.setCurrentBalance(round2(r.getCurrentBalance() - amount));
         r.setStatus(r.getCurrentBalance() + 1e-6 >= r.getRequiredAmount() ? "FUNDED" : "SHORTFALL");
