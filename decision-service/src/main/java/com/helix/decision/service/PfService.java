@@ -1,6 +1,8 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.rbac.ActorDirectory;
+import com.helix.common.rbac.ProtectedAction;
 import com.helix.common.web.ApiException;
 import com.helix.decision.dto.PfDtos.PfBlocker;
 import com.helix.decision.dto.PfDtos.PfGateResult;
@@ -40,11 +42,14 @@ public class PfService {
 
     private final PfMilestoneRepository milestones;
     private final PfReserveAccountRepository reserves;
+    private final ActorDirectory roles;
     private final AuditService audit;
 
-    public PfService(PfMilestoneRepository milestones, PfReserveAccountRepository reserves, AuditService audit) {
+    public PfService(PfMilestoneRepository milestones, PfReserveAccountRepository reserves,
+                     ActorDirectory roles, AuditService audit) {
         this.milestones = milestones;
         this.reserves = reserves;
+        this.roles = roles;
         this.audit = audit;
     }
 
@@ -75,6 +80,7 @@ public class PfService {
 
     @Transactional
     public PfMilestone lieCertify(Long id, String certificationRef, String note, String actor) {
+        roles.require(actor, ProtectedAction.PF_CERTIFY);
         PfMilestone m = getMilestone(id);
         if (!"PLANNED".equals(m.getStatus())) {
             throw ApiException.conflict("Milestone is " + m.getStatus() + " — only PLANNED can be certified");
@@ -159,6 +165,7 @@ public class PfService {
 
     @Transactional
     public PfReserveAccount fund(Long id, double amount, String note, String actor) {
+        roles.require(actor, ProtectedAction.PF_RESERVE_FUND);
         PfReserveAccount r = getReserve(id);
         r.setCurrentBalance(round2(r.getCurrentBalance() + amount));
         r.setStatus(r.getCurrentBalance() + 1e-6 >= r.getRequiredAmount() ? "FUNDED" : "SHORTFALL");
@@ -180,6 +187,7 @@ public class PfService {
      */
     @Transactional
     public PfReserveAccount withdraw(Long id, double amount, String note, String actor) {
+        roles.require(actor, ProtectedAction.PF_RESERVE_WITHDRAW);
         PfReserveAccount r = getReserve(id);
         if (amount > r.getCurrentBalance() + 1e-6) {
             throw ApiException.badRequest("Withdrawal " + amount + " exceeds balance " + r.getCurrentBalance());

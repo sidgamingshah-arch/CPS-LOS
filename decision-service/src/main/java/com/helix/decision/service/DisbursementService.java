@@ -1,6 +1,8 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.rbac.ActorDirectory;
+import com.helix.common.rbac.ProtectedAction;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.LimitClient;
 import com.helix.decision.client.LimitClient.UtilisationResponseDto;
@@ -42,17 +44,20 @@ public class DisbursementService {
     private final PfService pf;
     private final UpstreamClient upstream;
     private final LimitClient limits;
+    private final ActorDirectory roles;
     private final AuditService audit;
 
     public DisbursementService(DisbursementRepository repo, RepaymentRepository repayments,
                                ConditionPrecedentService cps, PfService pf,
-                               UpstreamClient upstream, LimitClient limits, AuditService audit) {
+                               UpstreamClient upstream, LimitClient limits,
+                               ActorDirectory roles, AuditService audit) {
         this.repo = repo;
         this.repayments = repayments;
         this.cps = cps;
         this.pf = pf;
         this.upstream = upstream;
         this.limits = limits;
+        this.roles = roles;
         this.audit = audit;
     }
 
@@ -69,6 +74,7 @@ public class DisbursementService {
                                 double amount, String currency, String purpose, String narrative,
                                 Integer milestoneSequence, String actor) {
         requireActor(actor);
+        roles.require(actor, ProtectedAction.DISBURSEMENT_REQUEST);
         DealEnvelopeDto env = upstream.envelope(applicationReference);
         if (env == null) throw ApiException.notFound("No deal envelope for " + applicationReference);
         FacilityViewDto facility = findFacility(env, facilityRef);
@@ -156,6 +162,7 @@ public class DisbursementService {
     public Disbursement amend(Long id, Double amount, String currency, String purpose,
                               String narrative, Integer milestoneSequence, String actor) {
         requireActor(actor);
+        roles.require(actor, ProtectedAction.DISBURSEMENT_AMEND);
         Disbursement d = get(id);
         if (!"DRAFT".equals(d.getStatus())) {
             throw ApiException.conflict("Amend is only allowed on DRAFT — current status " + d.getStatus());
@@ -225,6 +232,7 @@ public class DisbursementService {
     @Transactional
     public Disbursement cancel(Long id, String reason, String actor) {
         requireActor(actor);
+        roles.require(actor, ProtectedAction.DISBURSEMENT_CANCEL);
         Disbursement d = get(id);
         if ("RELEASED".equals(d.getStatus())) {
             throw ApiException.conflict("Cannot cancel a RELEASED drawdown — use a reversal");
@@ -269,6 +277,7 @@ public class DisbursementService {
     @Transactional
     public Disbursement authorize(Long id, String note, String actor) {
         requireActor(actor);
+        roles.require(actor, ProtectedAction.DISBURSEMENT_AUTHORIZE);
         Disbursement d = get(id);
         if (!"DRAFT".equals(d.getStatus())) {
             throw ApiException.conflict("Disbursement is " + d.getStatus());
@@ -340,6 +349,7 @@ public class DisbursementService {
     @Transactional
     public Disbursement release(Long id, String actor) {
         requireActor(actor);
+        roles.require(actor, ProtectedAction.DISBURSEMENT_RELEASE);
         Disbursement d = get(id);
         if (!"AUTHORIZED".equals(d.getStatus())) {
             throw ApiException.conflict("Disbursement is " + d.getStatus() + " — authorise first");
@@ -410,6 +420,7 @@ public class DisbursementService {
     @Transactional
     public Disbursement reverse(Long id, String reason, String actor) {
         requireActor(actor);
+        roles.require(actor, ProtectedAction.DISBURSEMENT_REVERSE);
         Disbursement d = get(id);
         if (!"RELEASED".equals(d.getStatus())) {
             throw ApiException.conflict("Only a RELEASED drawdown can be reversed — this one is " + d.getStatus());
@@ -479,6 +490,7 @@ public class DisbursementService {
     @Transactional
     public Disbursement reject(Long id, String reason, String actor) {
         requireActor(actor);
+        roles.require(actor, ProtectedAction.DISBURSEMENT_REJECT);
         Disbursement d = get(id);
         if ("RELEASED".equals(d.getStatus())) {
             throw ApiException.conflict("Cannot reject a RELEASED disbursement — use a reversal instead");

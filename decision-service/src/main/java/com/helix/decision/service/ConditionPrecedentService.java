@@ -1,6 +1,8 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.rbac.ActorDirectory;
+import com.helix.common.rbac.ProtectedAction;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.DealEnvelopeDto;
@@ -35,13 +37,15 @@ public class ConditionPrecedentService {
     private final ConditionPrecedentRepository repo;
     private final DisbursementRepository disbursements;
     private final UpstreamClient upstream;
+    private final ActorDirectory roles;
     private final AuditService audit;
 
     public ConditionPrecedentService(ConditionPrecedentRepository repo, DisbursementRepository disbursements,
-                                     UpstreamClient upstream, AuditService audit) {
+                                     UpstreamClient upstream, ActorDirectory roles, AuditService audit) {
         this.repo = repo;
         this.disbursements = disbursements;
         this.upstream = upstream;
+        this.roles = roles;
         this.audit = audit;
     }
 
@@ -136,6 +140,7 @@ public class ConditionPrecedentService {
 
     @Transactional
     public ConditionPrecedent clear(Long id, String evidenceRef, String note, String actor) {
+        roles.require(actor, ProtectedAction.CP_CLEAR);
         ConditionPrecedent cp = get(id);
         if (!"OPEN".equals(cp.getStatus())) {
             throw ApiException.conflict("CP is " + cp.getStatus());
@@ -161,6 +166,7 @@ public class ConditionPrecedentService {
         if (actor == null || actor.isBlank()) {
             throw ApiException.forbiddenAutonomy("A named human actor (X-Actor header) is required to waive a CP");
         }
+        roles.require(actor, ProtectedAction.CP_WAIVE);
         ConditionPrecedent cp = get(id);
         if (!"OPEN".equals(cp.getStatus())) {
             throw ApiException.conflict("CP is " + cp.getStatus());

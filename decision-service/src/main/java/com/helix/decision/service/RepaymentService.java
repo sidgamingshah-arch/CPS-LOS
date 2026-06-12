@@ -1,6 +1,8 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.rbac.ActorDirectory;
+import com.helix.common.rbac.ProtectedAction;
 import com.helix.common.ingest.Canonical;
 import com.helix.common.ingest.Ingestion;
 import com.helix.common.ingest.IngestionGuard;
@@ -46,17 +48,20 @@ public class RepaymentService {
     private final IngestionGuard guard;
     private final UpstreamClient upstream;
     private final LimitClient limits;
+    private final ActorDirectory roles;
     private final AuditService audit;
 
     public RepaymentService(RepaymentRepository repo, DisbursementRepository disbursements,
                             CoreBankingRepaymentConnector connector, IngestionGuard guard,
-                            UpstreamClient upstream, LimitClient limits, AuditService audit) {
+                            UpstreamClient upstream, LimitClient limits,
+                            ActorDirectory roles, AuditService audit) {
         this.repo = repo;
         this.disbursements = disbursements;
         this.connector = connector;
         this.guard = guard;
         this.upstream = upstream;
         this.limits = limits;
+        this.roles = roles;
         this.audit = audit;
     }
 
@@ -161,6 +166,7 @@ public class RepaymentService {
                             Double principalComponent, Double interestComponent,
                             String valueDate, String narrative, String actor) {
         requireActor(actor);
+        roles.require(actor, ProtectedAction.REPAYMENT_RECORD);
         DealEnvelopeDto env = upstream.envelope(applicationReference);
         if (env == null) throw ApiException.notFound("No deal envelope for " + applicationReference);
         FacilityViewDto facility = findFacility(env, facilityRef);
@@ -217,6 +223,7 @@ public class RepaymentService {
     @Transactional
     public Repayment confirm(Long id, String actor) {
         requireActor(actor);
+        roles.require(actor, ProtectedAction.REPAYMENT_CONFIRM);
         Repayment p = get(id);
         if (!"RECORDED".equals(p.getStatus())) {
             throw ApiException.conflict("Repayment is " + p.getStatus());
@@ -244,6 +251,7 @@ public class RepaymentService {
     @Transactional
     public Repayment reject(Long id, String reason, String actor) {
         requireActor(actor);
+        roles.require(actor, ProtectedAction.REPAYMENT_REJECT);
         Repayment p = get(id);
         if (!"RECORDED".equals(p.getStatus())) {
             throw ApiException.conflict("Repayment is " + p.getStatus());

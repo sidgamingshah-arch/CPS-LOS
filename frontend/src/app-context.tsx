@@ -43,12 +43,18 @@ export function isNavEnabled(view: string, aiEnabled: Record<string, boolean>): 
 }
 
 export const ACTORS = [
+  "demo.user",
   "rm.user",
   "analyst.user",
   "credit.officer",
   "credit.committee",
   "compliance.officer",
   "credit.ops",
+  "treasury.ops",
+  "loan.ops",
+  "loan.checker",
+  "cad.maker",
+  "lie.engineer",
   "portfolio.manager",
   "cro",
 ];

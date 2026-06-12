@@ -244,6 +244,38 @@ public class MasterSeeder implements CommandLineRunner {
             masters.seedActive("AI_GOVERNANCE", cap.key(), null,
                     map("enabled", true, "description", cap.description()));
         }
+
+        // ---- actor-role directory (RBAC layer over name-equality SoD) ----
+        // recordKey = actor name, payload.roles = the roles the actor holds. The
+        // ProtectedAction catalogue (helix-common) maps each money-movement action to
+        // its permitted roles; ActorDirectory enforces at the head of the transition.
+        // Role grants flow maker -> checker like every other master change.
+        seedActor("rm.user", "Relationship Manager", "RM");
+        seedActor("analyst.user", "Credit Analyst", "ANALYST");
+        seedActor("credit.ops", "Credit Operations", "CREDIT_OPS");
+        seedActor("credit.officer", "Credit Officer", "CREDIT_OFFICER");
+        seedActor("credit.committee", "Credit Committee", "CREDIT_COMMITTEE");
+        seedActor("compliance.officer", "Compliance Officer", "COMPLIANCE");
+        seedActor("portfolio.manager", "Portfolio Manager", "PORTFOLIO");
+        seedActor("cro", "Chief Risk Officer", "CRO", "CREDIT_COMMITTEE");
+        seedActor("treasury.ops", "Treasury Operations", "TREASURY_OPS");
+        seedActor("finance.ops", "Finance Operations", "TREASURY_OPS");
+        seedActor("ops.checker", "Operations Control", "TREASURY_OPS", "CREDIT_OFFICER");
+        seedActor("cad.maker", "Credit Administration", "CAD_OPS");
+        seedActor("loan.ops", "Loan Servicing Ops", "LOAN_OPS");
+        seedActor("loan.checker", "Loan Servicing Control", "LOAN_OPS");
+        seedActor("lie.engineer", "Lender's Independent Engineer", "LIE");
+        // The frontend's default actor — a demo super-user holding every operational
+        // role so the UI walkthrough is frictionless. SoD still applies on top: even
+        // with every role, the same person cannot be maker AND checker.
+        seedActor("demo.user", "Demo Super User",
+                "CREDIT_OPS", "CREDIT_OFFICER", "TREASURY_OPS", "LOAN_OPS",
+                "CAD_OPS", "CREDIT_COMMITTEE", "LIE");
+    }
+
+    private void seedActor(String actor, String displayName, String... roles) {
+        masters.seedActive("ACTOR_ROLE", actor, null,
+                map("displayName", displayName, "roles", java.util.List.of(roles)));
     }
 
     private Map<String, Object> hier(String group, String subGroup, String type, String subType, double rw, String valMethod) {
