@@ -491,6 +491,17 @@ export const repayments = {
     call<any>(`/decision/api/repayments/${id}/reject`, "POST", body, actor),
 };
 
+// ---- post-sanction facility amendments (DoA-routed) ----
+export const amendments = {
+  propose: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/amendments/${ref}/propose`, "POST", body, actor),
+  approve: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/amendments/${id}/approve`, "POST", body, actor),
+  reject: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/amendments/${id}/reject`, "POST", body, actor),
+  history: (ref: string) => call<any[]>(`/decision/api/amendments/${ref}`, "GET"),
+};
+
 // ---- client planning template (CPT) ----
 export const cpt = {
   generate: (ref: string, body: any, actor: string) =>

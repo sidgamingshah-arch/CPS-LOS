@@ -31,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/applications")
@@ -135,6 +136,17 @@ public class OriginationController {
     public void removeFacility(@PathVariable Long id,
                                @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
         origination.removeFacility(id, actor);
+    }
+
+    /** Apply an APPROVED post-sanction amendment (called by decision-service; retry-safe). */
+    @PostMapping("/{reference}/facilities/{facilityRef}/amend")
+    public ProposedFacility applyAmendment(@PathVariable String reference, @PathVariable String facilityRef,
+                                           @RequestBody Map<String, Object> req,
+                                           @RequestHeader("X-Actor") String actor) {
+        Double newAmount = req.get("newAmount") == null ? null : ((Number) req.get("newAmount")).doubleValue();
+        Integer newTenor = req.get("newTenorMonths") == null ? null : ((Number) req.get("newTenorMonths")).intValue();
+        String amendmentRef = req.get("amendmentRef") == null ? null : String.valueOf(req.get("amendmentRef"));
+        return origination.applyAmendment(reference, facilityRef, newAmount, newTenor, amendmentRef, actor);
     }
 
     // ---- collaterals (multi) ----

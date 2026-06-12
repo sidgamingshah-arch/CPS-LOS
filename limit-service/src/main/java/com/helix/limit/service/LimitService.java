@@ -259,6 +259,50 @@ public class LimitService {
                         "No limit node for facility " + facilityRef + " on " + applicationRef));
     }
 
+    /**
+     * Re-syncs a facility node after an APPROVED post-sanction amendment: sets the
+     * node's sanctioned amount / tenor to the new ABSOLUTE values and rolls the
+     * amount delta up the parent chain to the obligor root. Absolute targets make
+     * a replay a no-op (delta computes to zero), so the decision-service approval
+     * path can safely retry after a partial failure.
+     */
+    @Transactional
+    public LimitNode resyncFacility(String applicationRef, String facilityRef, Double newAmount,
+                                    Integer newTenorMonths, String amendmentRef, String actor) {
+        LimitNode node = nodeByFacility(applicationRef, facilityRef);
+        double oldAmount = node.getSanctionedAmount();
+        double delta = newAmount == null ? 0.0 : newAmount - oldAmount;
+        if (newAmount != null && Math.abs(delta) > 1e-9) {
+            node.setSanctionedAmount(newAmount);
+            node.setBaseAmount(fx.toBase(newAmount, node.getCurrency()));
+        }
+        if (newTenorMonths != null && newTenorMonths > 0) {
+            node.setTenorMonths(newTenorMonths);
+        }
+        nodes.save(node);
+        if (Math.abs(delta) > 1e-9) {
+            double deltaBase = fx.toBase(delta, node.getCurrency());
+            Long pid = node.getParentId();
+            while (pid != null) {
+                LimitNode parent = nodes.findById(pid).orElse(null);
+                if (parent == null) break;
+                parent.setSanctionedAmount(parent.getSanctionedAmount() + delta);
+                parent.setBaseAmount(parent.getBaseAmount() + deltaBase);
+                nodes.save(parent);
+                pid = parent.getParentId();
+            }
+        }
+        audit.human(actor, "LIMIT_RESYNCED", "Limit", node.getReference(),
+                "Facility %s re-synced after amendment %s: sanctioned %.2f -> %.2f, tenor %s".formatted(
+                        facilityRef, amendmentRef == null ? "-" : amendmentRef,
+                        oldAmount, node.getSanctionedAmount(),
+                        newTenorMonths == null ? "unchanged" : String.valueOf(newTenorMonths)),
+                Map.of("applicationRef", applicationRef, "facilityRef", facilityRef,
+                        "oldAmount", oldAmount, "newAmount", node.getSanctionedAmount(),
+                        "amendmentRef", amendmentRef == null ? "" : amendmentRef));
+        return node;
+    }
+
     private NodeView view(LimitNode n) {
         return new NodeView(n.getId(), n.getReference(), n.getParentId(), n.getRootId(), n.getLevel(),
                 n.getCode(), n.getProductType(), n.isRevolving(), n.getSanctionedAmount(), n.getCurrency(),

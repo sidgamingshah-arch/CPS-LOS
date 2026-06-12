@@ -9,7 +9,7 @@
  */
 
 import { useState } from "react";
-import { origination, structure, fmt } from "../api";
+import { amendments, origination, structure, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Field, Stat, useAsync } from "../ui";
 
@@ -359,9 +359,127 @@ export default function Structuring() {
         </>
       )}
 
+      {ref && <AmendmentsCard refValue={ref} />}
+
       {/* Loading / empty state */}
       {ref && sv.loading && <div className="muted">Loading structure…</div>}
       {!ref && <div className="muted">Select a deal above to view or configure its structure.</div>}
     </div>
+  );
+}
+
+/**
+ * Post-sanction facility amendments: propose an increase / decrease / tenor
+ * extension; the required authority is routed from the DoA matrix on the
+ * post-amendment total exposure, and approval needs that authority RANK plus a
+ * different human than the proposer. On approval the facility of record and the
+ * limit tree update immediately.
+ */
+function AmendmentsCard({ refValue }: { refValue: string }) {
+  const { actor, notify } = useApp();
+  const facs = useAsync(() => origination.facilities(refValue), [refValue]);
+  const history = useAsync(() => amendments.history(refValue), [refValue]);
+  const [facilityRef, setFacilityRef] = useState("");
+  const [newAmount, setNewAmount] = useState("");
+  const [newTenor, setNewTenor] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function propose() {
+    if (!facilityRef || !reason) { notify("Pick a facility and give a reason", true); return; }
+    setBusy(true);
+    try {
+      const body: any = { facilityRef, reason };
+      const amt = parseFloat(newAmount.replace(/[, ]/g, ""));
+      if (!Number.isNaN(amt) && amt > 0) body.newAmount = amt;
+      const ten = parseInt(newTenor, 10);
+      if (!Number.isNaN(ten) && ten > 0) body.newTenorMonths = ten;
+      const a = await amendments.propose(refValue, body, actor);
+      notify(`Amendment proposed — needs ${a.requiredAuthority} to approve`);
+      setNewAmount(""); setNewTenor(""); setReason("");
+      history.reload();
+    } catch (e: any) { notify(e.message, true); } finally { setBusy(false); }
+  }
+
+  async function decide(id: number, approve: boolean) {
+    try {
+      if (approve) await amendments.approve(id, { comment: "approved via UI" }, actor);
+      else {
+        const r = prompt("Rejection reason") || "";
+        if (!r) return;
+        await amendments.reject(id, { reason: r }, actor);
+      }
+      notify(approve ? "Amendment approved — facility + limit tree updated" : "Amendment rejected");
+      history.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  return (
+    <Card title="Post-sanction amendments"
+      sub="Increase / decrease / tenor extension — routed through the SAME DoA matrix that sanctioned the deal. Approver needs the routed authority rank; proposer ≠ approver.">
+      <div className="grid cols-2">
+        <div>
+          <Field label="Facility">
+            <select value={facilityRef} onChange={(e) => setFacilityRef(e.target.value)}>
+              <option value="">— select —</option>
+              {(facs.data ?? []).map((f: any) => (
+                <option key={f.reference} value={f.reference}>
+                  {f.facilityType} · {f.amount.toLocaleString()} {f.currency} · {f.tenorMonths}m
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="New amount (blank = unchanged)">
+            <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} placeholder="e.g. 900000000" />
+          </Field>
+          <Field label="New tenor months (blank = unchanged)">
+            <input value={newTenor} onChange={(e) => setNewTenor(e.target.value)} placeholder="e.g. 84" />
+          </Field>
+          <Field label="Reason (required)">
+            <input value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+          <Button kind="primary" busy={busy} onClick={propose}>Propose amendment</Button>
+        </div>
+        <div>
+          {(history.data ?? []).length === 0 ? (
+            <div className="muted">No amendments on this deal yet.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr><th>#</th><th>Type</th><th>Change</th><th>Authority</th><th>Status</th><th /></tr>
+              </thead>
+              <tbody>
+                {(history.data ?? []).map((a: any) => (
+                  <tr key={a.id}>
+                    <td>{a.id}</td>
+                    <td className="mono">{a.amendmentType}</td>
+                    <td style={{ fontSize: 12 }}>
+                      {a.proposedAmount != null &&
+                        <>{a.currentAmount.toLocaleString()} → <b>{a.proposedAmount.toLocaleString()}</b><br /></>}
+                      {a.proposedTenorMonths != null &&
+                        <>{a.currentTenorMonths}m → <b>{a.proposedTenorMonths}m</b></>}
+                    </td>
+                    <td><Badge kind="info">{a.requiredAuthority}</Badge></td>
+                    <td>
+                      <Badge kind={a.status === "APPROVED" ? "ok" : a.status === "REJECTED" ? "bad" : "warn"}>
+                        {a.status}
+                      </Badge>
+                    </td>
+                    <td>
+                      {a.status === "PROPOSED" && (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <Button kind="subtle" onClick={() => decide(a.id, true)}>Approve</Button>
+                          <Button kind="ghost" onClick={() => decide(a.id, false)}>Reject</Button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }

@@ -493,6 +493,33 @@ public class OriginationService {
                 .stream().map(this::toFacilityView).toList();
     }
 
+    /**
+     * Applies an APPROVED post-sanction amendment to the facility record. Called by
+     * decision-service once the DoA-routed approval completes — origination never
+     * decides the amendment itself, it just owns the facility of record. Setting
+     * absolute target values makes the call retry-safe (a replay is a no-op).
+     */
+    @Transactional
+    public ProposedFacility applyAmendment(String reference, String facilityRef, Double newAmount,
+                                           Integer newTenorMonths, String amendmentRef, String actor) {
+        ProposedFacility f = facilities.findByApplicationIdOrderByOrdinalAsc(get(reference).getId()).stream()
+                .filter(x -> facilityRef.equals(x.getReference())).findFirst()
+                .orElseThrow(() -> ApiException.notFound("No facility " + facilityRef + " on " + reference));
+        double oldAmount = f.getAmount();
+        int oldTenor = f.getTenorMonths();
+        if (newAmount != null && newAmount > 0) f.setAmount(newAmount);
+        if (newTenorMonths != null && newTenorMonths > 0) f.setTenorMonths(newTenorMonths);
+        ProposedFacility saved = facilities.save(f);
+        audit.human(actor, "FACILITY_AMENDED", "ProposedFacility", String.valueOf(f.getId()),
+                "Amended %s: amount %.2f -> %.2f, tenor %d -> %d (amendment %s)".formatted(
+                        facilityRef, oldAmount, saved.getAmount(), oldTenor, saved.getTenorMonths(),
+                        amendmentRef == null ? "-" : amendmentRef),
+                Map.of("facilityRef", facilityRef, "oldAmount", oldAmount, "newAmount", saved.getAmount(),
+                        "oldTenor", oldTenor, "newTenor", saved.getTenorMonths(),
+                        "amendmentRef", amendmentRef == null ? "" : amendmentRef));
+        return saved;
+    }
+
     @Transactional
     public void removeFacility(Long facilityId, String actor) {
         ProposedFacility f = facilities.findById(facilityId)

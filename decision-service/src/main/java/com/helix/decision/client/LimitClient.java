@@ -109,6 +109,30 @@ public class LimitClient {
         }
     }
 
+    /**
+     * Re-syncs a facility limit node after an approved amendment. Throws on failure
+     * so the approval transaction rolls back and the retry re-runs both applies
+     * (absolute targets — replays are no-ops on the limit side).
+     */
+    public void resyncFacility(String applicationRef, String facilityRef, Double newAmount,
+                               Integer newTenorMonths, String amendmentRef, String actor) {
+        try {
+            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("applicationRef", applicationRef);
+            body.put("facilityRef", facilityRef);
+            if (newAmount != null) body.put("newAmount", newAmount);
+            if (newTenorMonths != null) body.put("newTenorMonths", newTenorMonths);
+            body.put("amendmentRef", amendmentRef);
+            client.post().uri("/api/limits/resync-facility")
+                    .header("X-Actor", actor)
+                    .body(body)
+                    .retrieve().toBodilessEntity();
+        } catch (Exception e) {
+            throw com.helix.common.web.ApiException.conflict(
+                    "limit-service could not re-sync facility " + facilityRef + ": " + e.getMessage());
+        }
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record FxView(String base, Map<String, Double> rates) {
     }

@@ -257,7 +257,8 @@ public class MasterSeeder implements CommandLineRunner {
         seedActor("credit.committee", "Credit Committee", "CREDIT_COMMITTEE");
         seedActor("compliance.officer", "Compliance Officer", "COMPLIANCE");
         seedActor("portfolio.manager", "Portfolio Manager", "PORTFOLIO");
-        seedActor("cro", "Chief Risk Officer", "CRO", "CREDIT_COMMITTEE");
+        seedActor("rm.head", "Relationship Head", "RM_HEAD");
+        seedActor("cro", "Chief Risk Officer", "CRO", "CREDIT_COMMITTEE", "BOARD_COMMITTEE");
         seedActor("treasury.ops", "Treasury Operations", "TREASURY_OPS");
         seedActor("finance.ops", "Finance Operations", "TREASURY_OPS");
         seedActor("ops.checker", "Operations Control", "TREASURY_OPS", "CREDIT_OFFICER");
@@ -270,7 +271,7 @@ public class MasterSeeder implements CommandLineRunner {
         // with every role, the same person cannot be maker AND checker.
         seedActor("demo.user", "Demo Super User",
                 "CREDIT_OPS", "CREDIT_OFFICER", "TREASURY_OPS", "LOAN_OPS",
-                "CAD_OPS", "CREDIT_COMMITTEE", "LIE");
+                "CAD_OPS", "CREDIT_COMMITTEE", "BOARD_COMMITTEE", "LIE", "RM");
     }
 
     private void seedActor(String actor, String displayName, String... roles) {

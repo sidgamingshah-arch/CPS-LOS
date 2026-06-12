@@ -29,7 +29,9 @@ public enum ProtectedAction {
     PF_RESERVE_WITHDRAW("pf-reserve-withdraw", Set.of("TREASURY_OPS")),
     REPAYMENT_RECORD("repayment-record", Set.of("LOAN_OPS")),
     REPAYMENT_CONFIRM("repayment-confirm", Set.of("LOAN_OPS")),
-    REPAYMENT_REJECT("repayment-reject", Set.of("LOAN_OPS"));
+    REPAYMENT_REJECT("repayment-reject", Set.of("LOAN_OPS")),
+    /** Approval of an amendment is rank-checked against the DoA authority, not this set. */
+    FACILITY_AMEND_PROPOSE("facility-amend-propose", Set.of("RM", "CREDIT_OPS"));
 
     private final String key;
     private final Set<String> allowedRoles;

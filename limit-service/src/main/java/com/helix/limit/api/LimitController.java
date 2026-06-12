@@ -86,6 +86,18 @@ public class LimitController {
         return limits.nodeByFacility(applicationRef, facilityRef);
     }
 
+    /** Re-sync a facility node after an approved post-sanction amendment (absolute targets; retry-safe). */
+    @PostMapping("/resync-facility")
+    public com.helix.limit.entity.LimitNode resyncFacility(@RequestBody java.util.Map<String, Object> req,
+                                                           @RequestHeader("X-Actor") String actor) {
+        String applicationRef = String.valueOf(req.get("applicationRef"));
+        String facilityRef = String.valueOf(req.get("facilityRef"));
+        Double newAmount = req.get("newAmount") == null ? null : ((Number) req.get("newAmount")).doubleValue();
+        Integer newTenor = req.get("newTenorMonths") == null ? null : ((Number) req.get("newTenorMonths")).intValue();
+        String amendmentRef = req.get("amendmentRef") == null ? null : String.valueOf(req.get("amendmentRef"));
+        return limits.resyncFacility(applicationRef, facilityRef, newAmount, newTenor, amendmentRef, actor);
+    }
+
     @GetMapping("/{cif}/exposure")
     public ExposureCheckResult exposure(@PathVariable String cif) {
         return limits.exposureCheck(cif, 0);

@@ -257,6 +257,28 @@ public class UpstreamClient {
         }
     }
 
+    /**
+     * Applies an APPROVED facility amendment on the origination record. Throws on
+     * failure — the amendment approval must not complete half-applied. Absolute
+     * target values make a retry a no-op upstream.
+     */
+    public void applyFacilityAmendment(String reference, String facilityRef, Double newAmount,
+                                       Integer newTenorMonths, String amendmentRef, String actor) {
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            if (newAmount != null) body.put("newAmount", newAmount);
+            if (newTenorMonths != null) body.put("newTenorMonths", newTenorMonths);
+            body.put("amendmentRef", amendmentRef);
+            origination.post().uri("/api/applications/{ref}/facilities/{fac}/amend", reference, facilityRef)
+                    .header("X-Actor", actor)
+                    .body(body)
+                    .retrieve().toBodilessEntity();
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "origination-service could not apply the amendment: " + e.getMessage());
+        }
+    }
+
     // ---- group / counterparty / per-counterparty applications lookup ----
 
     @JsonIgnoreProperties(ignoreUnknown = true)
