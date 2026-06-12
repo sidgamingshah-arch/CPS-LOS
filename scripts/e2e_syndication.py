@@ -147,6 +147,26 @@ check("feed has 3 participant lines", feed["recordCount"] == 3, str(feed.get("re
 check("feed line carries funded + fees",
       all("fundedToDate" in r and "totalFees" in r for r in feed["records"]), str(feed["records"])[:200])
 
+# Feed is now persisted as an idempotent ExportBatch — same shape as every other
+# downstream feed in the platform.
+st, batches = call("GET", f"/origination/api/syndication/{ref}/feed/batches")
+batches = must(st, batches, "feed batches")
+check("feed call persisted as an ExportBatch", len(batches) >= 1, str(batches))
+check("ExportBatch idempotency key follows SYND-<ref>-<asOf>",
+      batches[0]["idempotencyKey"].startswith(f"SYND-{ref}-"), str(batches[0]["idempotencyKey"]))
+check("ExportBatch record count matches envelope",
+      batches[0]["recordCount"] == feed["recordCount"], str(batches[0]["recordCount"]))
+check("ExportBatch destination = SYNDICATION",
+      batches[0]["destination"] == "SYNDICATION", str(batches[0]["destination"]))
+
+# Re-fetching the feed reuses the persisted batch (no duplicate).
+st, feed2 = call("GET", f"/origination/api/syndication/{ref}/feed")
+must(st, feed2, "feed reload")
+st, batches2 = call("GET", f"/origination/api/syndication/{ref}/feed/batches")
+batches2 = must(st, batches2, "feed batches reload")
+check("re-fetching the feed on the same day reuses the ExportBatch",
+      len(batches2) == len(batches), f"{len(batches)} -> {len(batches2)}")
+
 print("\n== 6. Negative: non-syndication deal rejected ==")
 st2, app2 = call("POST", "/origination/api/applications", {
     "counterpartyId": cp["id"], "counterpartyRef": cp["reference"], "counterpartyName": cp["legalName"],

@@ -1,14 +1,17 @@
 package com.helix.decision.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.helix.common.audit.AuditService;
 import com.helix.common.web.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,15 +28,18 @@ public class UpstreamClient {
     private final RestClient counterparty;
     private final RestClient origination;
     private final RestClient risk;
+    private final AuditService audit;
 
     public UpstreamClient(@Value("${helix.config-service.base-url}") String configUrl,
                           @Value("${helix.counterparty-service.base-url}") String counterpartyUrl,
                           @Value("${helix.origination-service.base-url}") String originationUrl,
-                          @Value("${helix.risk-service.base-url}") String riskUrl) {
+                          @Value("${helix.risk-service.base-url}") String riskUrl,
+                          AuditService audit) {
         this.config = RestClient.builder().baseUrl(configUrl).build();
         this.counterparty = RestClient.builder().baseUrl(counterpartyUrl).build();
         this.origination = RestClient.builder().baseUrl(originationUrl).build();
         this.risk = RestClient.builder().baseUrl(riskUrl).build();
+        this.audit = audit;
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -171,9 +177,19 @@ public class UpstreamClient {
     /**
      * Best-effort syndication agency allocation on drawdown release. If the deal is
      * a syndication, the agent allocates the funded draw pro-rata across lenders.
-     * Idempotent on {@code drawdownRef}, so this never double-counts. Failures are
-     * swallowed — the limit booking has already succeeded and the agency desk can
-     * always re-trigger via the standalone allocate endpoint.
+     * Idempotent on {@code drawdownRef}, so this never double-counts.
+     *
+     * <p>Outcomes:
+     * <ul>
+     *   <li>200 — allocated (or reused an existing allocation): silent success.</li>
+     *   <li>400/404 — not a syndication deal: legitimate skip, logged at DEBUG, no audit.</li>
+     *   <li>Anything else (5xx, network, 4xx other than the two above) — origination
+     *       briefly broken on a deal that <em>is</em> a syndication: we log a WARN and
+     *       stamp a {@code SYNDICATION_ALLOCATION_SKIPPED} audit event so the agency
+     *       desk has a discoverable trail and can re-trigger via {@code /allocate}.</li>
+     * </ul>
+     * The release path itself is never blocked: the limit booking has already succeeded
+     * and the agency reconciliation is a downstream concern, not a money-movement.</p>
      */
     public void allocateSyndicationOrSkip(String reference, String drawdownRef, double amount,
                                           String currency, String actor) {
@@ -183,9 +199,29 @@ public class UpstreamClient {
                     .body(Map.of("drawdownRef", drawdownRef, "amount", amount,
                             "currency", currency == null ? "" : currency))
                     .retrieve().toBodilessEntity();
+        } catch (HttpClientErrorException.BadRequest | HttpClientErrorException.NotFound expected) {
+            // Not a syndication deal — the standalone /allocate endpoint rejects
+            // with 400/404 in that case. Truly silent skip; no audit.
+            log.debug("syndication allocate skipped for {} draw {} (not a syndication: {})",
+                    reference, drawdownRef, expected.getMessage());
         } catch (Exception e) {
-            // Not a syndication deal (400/404) or origination briefly down — skip silently.
-            log.debug("syndication allocate skipped for {} draw {} ({})", reference, drawdownRef, e.getMessage());
+            // Origination is reachable-but-broken, or the deal IS a syndication and
+            // something further down threw. Surface it.
+            log.warn("syndication allocate FAILED for {} draw {} — agency desk must re-trigger ({})",
+                    reference, drawdownRef, e.getMessage());
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("drawdownRef", drawdownRef);
+            details.put("amount", amount);
+            details.put("currency", currency == null ? "" : currency);
+            details.put("error", e.getMessage());
+            try {
+                audit.engine("SYNDICATION_ALLOCATION_SKIPPED", "Application", reference,
+                        "Syndication allocation failed on release of " + drawdownRef
+                                + " — agency desk must re-trigger /allocate (" + e.getMessage() + ")",
+                        details);
+            } catch (Exception auditErr) {
+                log.warn("could not stamp SYNDICATION_ALLOCATION_SKIPPED audit ({})", auditErr.getMessage());
+            }
         }
     }
 

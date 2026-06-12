@@ -17,7 +17,8 @@ import java.time.Instant;
 @Entity
 @Table(name = "utilisations", indexes = {
         @Index(name = "idx_util_node", columnList = "limitNodeId"),
-        @Index(name = "idx_util_cif", columnList = "cif")
+        @Index(name = "idx_util_cif", columnList = "cif"),
+        @Index(name = "idx_util_txnref", columnList = "transactionRef")
 })
 @Getter
 @Setter

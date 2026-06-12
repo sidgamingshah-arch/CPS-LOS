@@ -322,9 +322,14 @@ public class DisbursementService {
      * Releases an AUTHORIZED drawdown — calls limit-service to book a UTILISE on
      * the facility's limit node and marks the disbursement RELEASED. SoD: the
      * releaser must differ from both the authoriser and the original requester
-     * (three named humans on every funded draw). If the limit booking fails we
-     * leave the disbursement AUTHORIZED so the cause can be fixed and the release
-     * retried; the local transaction does not extend into the remote service.
+     * (three named humans on every funded draw).
+     *
+     * <p>Retry safety: limit-service's UTILISE is idempotent on the
+     * {@code transactionRef} we send (the {@code DISB-…} string built below), and
+     * syndication allocation + PF milestone marking are idempotent on their own
+     * keys. So if the limit booking succeeds but anything after it fails locally
+     * — rolling back the disbursement row — the next release attempt is a no-op
+     * on the remote ledger and re-runs the local steps cleanly.</p>
      */
     @Transactional
     public Disbursement release(Long id, String actor) {

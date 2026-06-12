@@ -1,5 +1,7 @@
 package com.helix.origination.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helix.common.audit.AuditService;
 import com.helix.common.export.DownstreamSystem;
 import com.helix.common.export.Export;
@@ -14,10 +16,12 @@ import com.helix.origination.entity.DealParticipant;
 import com.helix.origination.entity.DealStructure;
 import com.helix.origination.entity.LoanApplication;
 import com.helix.origination.entity.SyndicationAllocation;
+import com.helix.origination.entity.SyndicationFeedBatch;
 import com.helix.origination.repo.DealParticipantRepository;
 import com.helix.origination.repo.DealStructureRepository;
 import com.helix.origination.repo.LoanApplicationRepository;
 import com.helix.origination.repo.SyndicationAllocationRepository;
+import com.helix.origination.repo.SyndicationFeedBatchRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,18 +56,23 @@ public class SyndicationService {
     private final DealParticipantRepository participants;
     private final LoanApplicationRepository applications;
     private final SyndicationAllocationRepository allocations;
+    private final SyndicationFeedBatchRepository feedBatches;
     private final OriginationMasterClient masters;
     private final AuditService audit;
+    private final ObjectMapper mapper;
 
     public SyndicationService(DealStructureRepository structures, DealParticipantRepository participants,
                               LoanApplicationRepository applications, SyndicationAllocationRepository allocations,
-                              OriginationMasterClient masters, AuditService audit) {
+                              SyndicationFeedBatchRepository feedBatches,
+                              OriginationMasterClient masters, AuditService audit, ObjectMapper mapper) {
         this.structures = structures;
         this.participants = participants;
         this.applications = applications;
         this.allocations = allocations;
+        this.feedBatches = feedBatches;
         this.masters = masters;
         this.audit = audit;
+        this.mapper = mapper;
     }
 
     // ============================================================ syndicate book
@@ -192,9 +201,20 @@ public class SyndicationService {
 
     // ============================================================ participant feed
 
-    /** Canonical downstream feed — one statement line per participating lender. */
-    @Transactional(readOnly = true)
-    public Export.Envelope<Export.SyndicationParticipantLine> participantFeed(String reference) {
+    /**
+     * Canonical downstream feed — one statement line per participating lender,
+     * persisted as a {@link SyndicationFeedBatch} so the platform has the same
+     * idempotent-batch shape as every other downstream feed (ERM / Finance-GL /
+     * CPR). Re-running on the same as-of day returns the existing batch envelope.
+     */
+    @Transactional
+    public Export.Envelope<Export.SyndicationParticipantLine> participantFeed(String reference, String actor) {
+        String asOf = LocalDate.now().toString();
+        String idempotencyKey = "SYND-" + reference + "-" + asOf;
+        SyndicationFeedBatch existing = feedBatches.findByIdempotencyKey(idempotencyKey).orElse(null);
+        if (existing != null) {
+            return decode(existing);
+        }
         SyndicateBook b = book(reference);
         List<Export.SyndicationParticipantLine> records = new ArrayList<>();
         for (LenderLine l : b.lenders()) {
@@ -202,12 +222,40 @@ public class SyndicationService {
                     l.role(), l.commitment(), l.sharePct(), l.fundedToDate(), l.undrawn(),
                     l.fees().totalFee(), b.currency()));
         }
-        String idempotencyKey = "SYND-" + reference + "-" + LocalDate.now();
-        audit.engine("SYNDICATION_FEED_GENERATED", "Application", reference,
-                "Generated syndicate participant feed (%d lenders)".formatted(records.size()),
-                Map.of("lenders", records.size(), "feed", "SYNDICATION"));
-        return Export.Envelope.of(DownstreamSystem.SYNDICATION, "PARTICIPANT_STATEMENT",
-                idempotencyKey, "v1", records);
+        Export.Envelope<Export.SyndicationParticipantLine> env = Export.Envelope.of(
+                DownstreamSystem.SYNDICATION, "PARTICIPANT_STATEMENT", idempotencyKey, "v1", records);
+
+        SyndicationFeedBatch batch = new SyndicationFeedBatch();
+        batch.setApplicationReference(reference);
+        batch.setDestination(env.destination().name());
+        batch.setFeedType(env.feedType());
+        batch.setIdempotencyKey(idempotencyKey);
+        batch.setAsOf(asOf);
+        batch.setRecordCount(env.recordCount());
+        batch.setStatus("GENERATED");
+        batch.setGeneratedBy(actor);
+        batch.setEnvelope(mapper.convertValue(env, new TypeReference<Map<String, Object>>() {}));
+        SyndicationFeedBatch saved = feedBatches.save(batch);
+
+        audit.engine("EXPORT_GENERATED", "SyndicationFeedBatch", String.valueOf(saved.getId()),
+                "%s %s feed — %d lender(s) for %s".formatted(env.destination(), env.feedType(),
+                        env.recordCount(), reference),
+                Map.of("destination", env.destination().name(), "feedType", env.feedType(),
+                        "records", env.recordCount(), "idempotencyKey", idempotencyKey,
+                        "applicationReference", reference));
+        return env;
+    }
+
+    @Transactional(readOnly = true)
+    public List<SyndicationFeedBatch> feedBatchesFor(String reference) {
+        return feedBatches.findByApplicationReferenceOrderByIdDesc(reference);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Export.Envelope<Export.SyndicationParticipantLine> decode(SyndicationFeedBatch batch) {
+        Map<String, Object> raw = batch.getEnvelope();
+        return mapper.convertValue(raw,
+                new TypeReference<Export.Envelope<Export.SyndicationParticipantLine>>() {});
     }
 
     @Transactional(readOnly = true)

@@ -9,4 +9,6 @@ public interface PricingExceptionRepository extends JpaRepository<PricingExcepti
     List<PricingException> findByApplicationReferenceOrderByIdDesc(String applicationReference);
 
     List<PricingException> findByStatusOrderByIdDesc(String status);
+
+    List<PricingException> findByStatusInOrderByIdDesc(List<String> statuses);
 }

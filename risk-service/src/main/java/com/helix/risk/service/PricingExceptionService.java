@@ -203,9 +203,14 @@ public class PricingExceptionService {
         return exceptions.findByApplicationReferenceOrderByIdDesc(reference);
     }
 
+    /**
+     * Every concession queued for human action — both L1 and L2 lanes, so the L2
+     * approver sees their queue. Previously this only returned PENDING_L1, leaving
+     * two-level concessions invisible to the L2 approver after the L1 sign-off.
+     */
     @Transactional(readOnly = true)
     public List<PricingException> pending() {
-        return exceptions.findByStatusOrderByIdDesc("PENDING_L1");
+        return exceptions.findByStatusInOrderByIdDesc(List.of("PENDING_L1", "PENDING_L2"));
     }
 
     private double round1(double v) { return Math.round(v * 10.0) / 10.0; }

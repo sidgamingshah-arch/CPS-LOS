@@ -105,6 +105,22 @@ public class UtilisationService {
         String action = a.action().toUpperCase();
         double amtBase = fx.toBase(a.amount(), a.currency() == null ? n.getCurrency() : a.currency());
 
+        // Idempotency: a repeat call with the same (transactionRef, action) returns the
+        // original confirmed booking without applying the delta a second time. This is
+        // the contract the disbursement-release path relies on to be retry-safe — if
+        // anything after the limit call fails locally, the next release attempt is a
+        // no-op here instead of a double-book.
+        if (a.transactionRef() != null && !a.transactionRef().isBlank()) {
+            Utilisation existing = ledger
+                    .findFirstByTransactionRefAndActionAndStatus(a.transactionRef(), action, "CONFIRMED")
+                    .orElse(null);
+            if (existing != null) {
+                return new ActionResult(a.lineId(), action, true,
+                        "Idempotent — existing booking (txnRef " + a.transactionRef() + ")",
+                        round(n.getOutstanding()), round(n.available()));
+            }
+        }
+
         if ("UTILISE".equals(action) || "RESERVE".equals(action)) {
             // Hard stops that override cannot bypass.
             if (!"ACTIVE".equals(n.getStatus())) {

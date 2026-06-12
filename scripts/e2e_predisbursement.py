@@ -401,7 +401,30 @@ st, body = call_raw("POST", f"/decision/api/disbursement/{ref}/request",
                      "purpose": "blank actor"}, headers={"X-Actor": ""})
 check("request with blank X-Actor rejected (400/403)", st in (400, 403), f"{st} {body}")
 
-print("\n== 14. Reject is the checker's lane — the requester withdraws via cancel ==")
+print("\n== 14. Idempotent UTILISE — a repeat transactionRef is a no-op on the limit ledger ==")
+# d1 was RELEASED in section 5 with utilisationRef DISB-<ref>-<facility>-1. A
+# replay of that exact UTILISE on the same node must be silently absorbed by
+# limit-service rather than double-booking exposure.
+st, before = call("GET", f"/limits/api/limits/view?cif={cif}")
+out_before = before["totalOutstandingBase"]
+# Re-find the node so we have its CIF + reference.
+st, by_fac = call("GET", f"/limits/api/limits/by-facility?applicationRef={ref}&facilityRef={facility_ref}")
+must(st, by_fac, "by-facility node")
+txn_ref = d1r.get("utilisationRef")
+replay = {"cif": by_fac["cif"], "productProcessor": "DISB-REPLAY", "overrideFlag": False,
+          "actions": [{"lineId": by_fac["reference"], "action": "UTILISE",
+                       "amount": d1r["amount"], "currency": d1r["currency"],
+                       "transactionRef": txn_ref}]}
+st, replayed = call("POST", "/limits/api/limits/utilise", replay, actor="credit.ops")
+check("replay returns 200", st == 200, f"{st} {replayed}")
+check("replay marked Idempotent in the result message",
+      "Idempotent" in (replayed["results"][0].get("message") or ""), str(replayed))
+st, after = call("GET", f"/limits/api/limits/view?cif={cif}")
+out_after = after["totalOutstandingBase"]
+check("limit-service outstanding UNCHANGED after replay",
+      abs(out_after - out_before) < 1, f"before={out_before} after={out_after}")
+
+print("\n== 15. Reject is the checker's lane — the requester withdraws via cancel ==")
 st, dr = call("POST", f"/decision/api/disbursement/{ref}/request",
               {"facilityRef": facility_ref, "amount": 10_000_000, "currency": "INR",
                "purpose": "reject lane"}, actor="credit.ops")

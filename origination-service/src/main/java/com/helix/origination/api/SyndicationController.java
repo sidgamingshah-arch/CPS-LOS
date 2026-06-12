@@ -5,6 +5,7 @@ import com.helix.origination.dto.SyndicationDtos.AllocateRequest;
 import com.helix.origination.dto.SyndicationDtos.AllocationResult;
 import com.helix.origination.dto.SyndicationDtos.SyndicateBook;
 import com.helix.origination.entity.SyndicationAllocation;
+import com.helix.origination.entity.SyndicationFeedBatch;
 import com.helix.origination.service.SyndicationService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -50,9 +51,17 @@ public class SyndicationController {
         return syndication.allocationLedger(reference);
     }
 
-    /** Canonical downstream participant-statement feed. */
+    /** Canonical downstream participant-statement feed — persisted as a SyndicationFeedBatch. */
     @GetMapping("/{reference}/feed")
-    public Export.Envelope<Export.SyndicationParticipantLine> feed(@PathVariable String reference) {
-        return syndication.participantFeed(reference);
+    public Export.Envelope<Export.SyndicationParticipantLine> feed(@PathVariable String reference,
+                                                                    @RequestHeader(value = "X-Actor",
+                                                                            defaultValue = "agency.desk") String actor) {
+        return syndication.participantFeed(reference, actor);
+    }
+
+    /** History of every persisted participant-feed batch for a deal. */
+    @GetMapping("/{reference}/feed/batches")
+    public List<SyndicationFeedBatch> feedBatches(@PathVariable String reference) {
+        return syndication.feedBatchesFor(reference);
     }
 }
