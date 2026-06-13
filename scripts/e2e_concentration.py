@@ -175,5 +175,85 @@ check("global view GEOGRAPHY has both jurisdictions",
       {"IN-RBI", "AE-CBUAE"}.issubset({l["key"] for l in geo["lines"]}),
       str([l["key"] for l in geo["lines"]]))
 
+print("\n== 8. Early-warning bands (NORMAL / WATCH / WARNING / BREACH) ==")
+sn = dims["SINGLE_NAME"]
+check("every line carries a band", all("band" in l for l in sn["lines"]), str(sn["lines"][0]))
+check("Titan single-name is in the BREACH band (9bn > 7.5bn cap)",
+      next(l["band"] for l in sn["lines"] if "Titan" in l["key"]) == "BREACH",
+      str([(l["key"], l["band"]) for l in sn["lines"]]))
+check("dimension reports a bands tally", "bands" in sn and "breach" in sn["bands"], str(sn.get("bands")))
+check("SINGLE_NAME breach band count == breachCount",
+      sn["bands"]["breach"] == sn["breachCount"], str(sn["bands"]))
+check("every bucket lands in exactly one band",
+      all(sum(sn["bands"][k] for k in ("normal", "watch", "warning", "breach")) == sn["bucketCount"]
+          for sn in [dims[d] for d in dims]),
+      str({d: dims[d]["bands"] for d in dims}))
+# A bucket between 80% and 100% of its limit should be WATCH or WARNING, never silently fine.
+sector = dims["SECTOR"]
+for l in sector["lines"]:
+    u = l["utilisation"]
+    expected_band = ("BREACH" if u > 1.0001 else "WARNING" if u >= 0.90 else "WATCH" if u >= 0.80 else "NORMAL")
+    if l["band"] != expected_band:
+        check(f"SECTOR band for {l['key']} matches utilisation {u:.2f}", False, f"{l['band']} != {expected_band}")
+        break
+else:
+    check("SECTOR bands all match their utilisation bucket", True, "")
+
+print("\n== 9. Correlation-stressed concentration ==")
+# Shock INFRASTRUCTURE: Delta Infra is the direct hit; via the seeded matrix the
+# manufacturing / steel / logistics complex co-moves, so stressed loss is far above
+# the un-correlated single-sector loss.
+st, stress = call("POST", "/portfolio/api/portfolio/concentration/stress?jurisdiction=IN-RBI",
+                  {"shockedSector": "INFRASTRUCTURE", "pdMultiplier": 4.0}, actor="cro")
+stress = must(st, stress, "stress")
+check("shocked sector echoed", stress["shockedSector"] == "INFRASTRUCTURE", str(stress["shockedSector"]))
+check("stressed EL strictly exceeds base EL",
+      stress["stressedExpectedLoss"] > stress["baseExpectedLoss"], str(stress))
+check("incremental loss = stressed - base",
+      abs(stress["incrementalLoss"] - (stress["stressedExpectedLoss"] - stress["baseExpectedLoss"])) < 1,
+      str(stress["incrementalLoss"]))
+secs = {s["sector"]: s for s in stress["sectors"]}
+check("shocked sector has correlation 1.0",
+      abs(secs["INFRASTRUCTURE"]["correlationToShock"] - 1.0) < 1e-6, str(secs.get("INFRASTRUCTURE")))
+check("shocked sector PD lifts ~4x",
+      secs["INFRASTRUCTURE"]["avgStressedPd"] > 3.0 * secs["INFRASTRUCTURE"]["avgBasePd"] - 1e-9,
+      f"{secs['INFRASTRUCTURE']['avgBasePd']} -> {secs['INFRASTRUCTURE']['avgStressedPd']}")
+check("a correlated sector (MANUFACTURING) takes a partial PD hit, not the full shock",
+      secs["MANUFACTURING"]["avgBasePd"] < secs["MANUFACTURING"]["avgStressedPd"] < secs["INFRASTRUCTURE"]["avgStressedPd"],
+      f"mfg base {secs['MANUFACTURING']['avgBasePd']} stressed {secs['MANUFACTURING']['avgStressedPd']}")
+check("MANUFACTURING correlation to INFRASTRUCTURE is in (0,1)",
+      0 < secs["MANUFACTURING"]["correlationToShock"] < 1, str(secs["MANUFACTURING"]["correlationToShock"]))
+check("sectors sorted by incremental loss desc",
+      all(stress["sectors"][i]["incrementalLoss"] >= stress["sectors"][i+1]["incrementalLoss"]
+          for i in range(len(stress["sectors"]) - 1)), "")
+check("stressed loss reported as % of capital", stress["stressedLossPctOfCapital"] > 0,
+      str(stress["stressedLossPctOfCapital"]))
+
+# An uncorrelated shock (RETAIL only lightly touches infra/mfg) moves less than the infra shock.
+st, stress2 = call("POST", "/portfolio/api/portfolio/concentration/stress?jurisdiction=IN-RBI",
+                   {"shockedSector": "RETAIL", "pdMultiplier": 4.0}, actor="cro")
+stress2 = must(st, stress2, "retail stress")
+check("RETAIL shock yields a different (lower) incremental loss than the INFRASTRUCTURE complex",
+      stress2["incrementalLoss"] < stress["incrementalLoss"],
+      f"retail {stress2['incrementalLoss']} vs infra {stress['incrementalLoss']}")
+
+# Severe shock breaches the capital buffer and raises alerts. The book's strong
+# ratings keep stressed EL a small % of capital, so pick a buffer below the
+# stressed loss the engine actually reports (then the breach is exercised cleanly).
+buffer_below = round(stress["stressedLossPctOfCapital"] / 2, 8) or 0.0001
+st, severe = call("POST", "/portfolio/api/portfolio/concentration/stress?jurisdiction=IN-RBI",
+                  {"shockedSector": "INFRASTRUCTURE", "pdMultiplier": 25.0,
+                   "capitalBufferPct": buffer_below},
+                  actor="cro")
+severe = must(st, severe, "severe stress")
+check("severe shock breaches the capital buffer", severe["capitalBreach"] is True, str(severe["capitalBreach"]))
+check("capital breach raises an alert",
+      any("capital" in a.lower() for a in severe["alerts"]), str(severe["alerts"]))
+
+# A bad scenario is rejected.
+st, body = call("POST", "/portfolio/api/portfolio/concentration/stress?jurisdiction=IN-RBI",
+                {"pdMultiplier": 4.0}, actor="cro")
+check("stress without a shocked sector rejected (400)", st == 400, f"{st} {body}")
+
 print(f"\n== Multi-dim concentration e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

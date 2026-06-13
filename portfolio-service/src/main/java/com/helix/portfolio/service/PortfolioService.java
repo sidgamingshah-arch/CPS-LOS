@@ -187,8 +187,11 @@ public class PortfolioService {
             if (breach) {
                 breaches.add("%s limit breached: %s at %.0f vs limit %.0f".formatted(dim, key, exp, limitAmount));
             }
+            String band = utilisation > 1.0 + 1e-6 ? "BREACH"
+                    : utilisation >= 0.90 ? "WARNING"
+                    : utilisation >= 0.80 ? "WATCH" : "NORMAL";
             lines.add(new ConcentrationLine(key, key, round(exp), round4(share), limitPct,
-                    round(limitAmount), round4(utilisation), breach));
+                    round(limitAmount), round4(utilisation), breach, band));
         });
         lines.sort((a, b) -> Double.compare(b.exposure(), a.exposure()));
         return lines;

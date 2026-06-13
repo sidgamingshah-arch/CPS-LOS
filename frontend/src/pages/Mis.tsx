@@ -1,6 +1,22 @@
 import { Fragment, useState } from "react";
 import { mis, fmt, portfolio } from "../api";
-import { Badge, Card, Stat, useAsync } from "../ui";
+import { useApp } from "../app-context";
+import { Badge, Button, Card, Field, Stat, useAsync } from "../ui";
+
+function bandBadge(band: string) {
+  if (band === "BREACH") return <Badge kind="bad">breach</Badge>;
+  if (band === "WARNING") return <Badge kind="bad">warning</Badge>;
+  if (band === "WATCH") return <Badge kind="warn">watch</Badge>;
+  return <Badge kind="ok">normal</Badge>;
+}
+
+function bandSummary(b: any) {
+  if (!b) return <Badge kind="ok">within</Badge>;
+  if (b.breach > 0) return <Badge kind="bad">{b.breach} breach</Badge>;
+  if (b.warning > 0) return <Badge kind="bad">{b.warning} warning</Badge>;
+  if (b.watch > 0) return <Badge kind="warn">{b.watch} watch</Badge>;
+  return <Badge kind="ok">within</Badge>;
+}
 
 export default function Mis() {
   const dash = useAsync(() => mis.dashboard(), []);
@@ -111,13 +127,13 @@ export default function Mis() {
                     <td className="num">{d.bucketCount}</td>
                     <td className="num">{fmt.pct(d.topBucketShare, 1)}</td>
                     <td className="num">{d.hhi.toFixed(3)}</td>
-                    <td>{d.breachCount > 0 ? <Badge kind="bad">{d.breachCount} breach</Badge> : <Badge kind="ok">within</Badge>}</td>
+                    <td>{bandSummary(d.bands)}</td>
                   </tr>
                   {openDim === d.dimension && (
                     <tr>
                       <td colSpan={7} style={{ background: "var(--surface-2, rgba(0,0,0,0.02))" }}>
                         <table>
-                          <thead><tr><th>Bucket</th><th className="num">EAD</th><th className="num">Share</th><th className="num">Limit</th><th className="num">Utilisation</th><th /></tr></thead>
+                          <thead><tr><th>Bucket</th><th className="num">EAD</th><th className="num">Share</th><th className="num">Limit</th><th className="num">Utilisation</th><th>Band</th></tr></thead>
                           <tbody>
                             {d.lines.slice(0, 12).map((l: any) => (
                               <tr key={l.key}>
@@ -126,7 +142,7 @@ export default function Mis() {
                                 <td className="num">{fmt.pct(l.share, 1)}</td>
                                 <td className="num">{fmt.money(l.limitAmount, "")}</td>
                                 <td className="num">{fmt.pct(l.utilisation, 0)}</td>
-                                <td>{l.breach ? <Badge kind="bad">breach</Badge> : ""}</td>
+                                <td>{bandBadge(l.band)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -140,6 +156,8 @@ export default function Mis() {
           </table>
         )}
       </Card>
+
+      <ConcentrationStressCard />
 
       <Card title="ECL by stage × jurisdiction" sub="Reported provision per jurisdiction policy (max(ECL, IRAC) for IN-RBI; ECL only for AE-CBUAE).">
         {ecl.loading ? <div className="loading">Loading…</div> :
@@ -201,5 +219,86 @@ function DistCounts({ map }: { map: Record<string, number> | undefined }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * Correlation-stressed concentration. Shock a sector's PD and watch it propagate
+ * through the seeded correlation matrix into every co-moving sector — the hidden
+ * concentration that name-level diversification masks. Stressed expected loss is
+ * rolled against the capital buffer.
+ */
+function ConcentrationStressCard() {
+  const { actor, notify } = useApp();
+  const [sector, setSector] = useState("INFRASTRUCTURE");
+  const [mult, setMult] = useState("4");
+  const [res, setRes] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    setBusy(true);
+    try {
+      const r = await portfolio.concentrationStress("IN-RBI", {
+        shockedSector: sector.toUpperCase().trim(),
+        pdMultiplier: parseFloat(mult) || 3,
+      }, actor);
+      setRes(r);
+    } catch (e: any) { notify(e.message, true); } finally { setBusy(false); }
+  }
+
+  return (
+    <Card title="Correlation-stressed concentration"
+      sub="Shock one sector's PD; the correlation matrix propagates it to co-moving sectors. Surfaces the concentration that name diversification hides — a single macro event hitting a correlated cluster at once.">
+      <div className="grid cols-3" style={{ alignItems: "end" }}>
+        <Field label="Shocked sector">
+          <input value={sector} onChange={(e) => setSector(e.target.value)} placeholder="e.g. INFRASTRUCTURE" />
+        </Field>
+        <Field label="PD multiplier">
+          <input value={mult} onChange={(e) => setMult(e.target.value)} />
+        </Field>
+        <Button kind="primary" busy={busy} onClick={run}>Run stress</Button>
+      </div>
+      {res && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, margin: "12px 0" }}>
+            <Stat label="Base expected loss" value={fmt.money(res.baseExpectedLoss, "")} />
+            <Stat label="Stressed expected loss" value={fmt.money(res.stressedExpectedLoss, "")}
+              tone={res.capitalBreach ? "bad" : "ok"} />
+            <Stat label="Incremental loss" value={fmt.money(res.incrementalLoss, "")} />
+            <Stat label="% of capital" value={fmt.pct(res.stressedLossPctOfCapital, 3)}
+              delta={res.capitalBreach ? "buffer breached" : "within buffer"}
+              tone={res.capitalBreach ? "bad" : "ok"} />
+          </div>
+          {(res.alerts ?? []).length > 0 && (
+            <ul style={{ margin: "0 0 10px", paddingLeft: 18 }}>
+              {res.alerts.map((a: string, i: number) => (
+                <li key={i} style={{ color: "var(--bad, #c0392b)", fontSize: 13 }}>{a}</li>
+              ))}
+            </ul>
+          )}
+          <table>
+            <thead>
+              <tr><th>Sector</th><th className="num">EAD</th><th className="num">ρ to shock</th>
+                  <th className="num">Base PD</th><th className="num">Stressed PD</th>
+                  <th className="num">Base EL</th><th className="num">Stressed EL</th><th className="num">Δ Loss</th></tr>
+            </thead>
+            <tbody>
+              {res.sectors.map((s: any) => (
+                <tr key={s.sector}>
+                  <td>{s.sector}{s.correlationToShock === 1 ? <> <Badge kind="bad">shocked</Badge></> : null}</td>
+                  <td className="num">{fmt.money(s.exposure, "")}</td>
+                  <td className="num">{fmt.pct(s.correlationToShock, 0)}</td>
+                  <td className="num">{fmt.pct(s.avgBasePd, 2)}</td>
+                  <td className="num">{fmt.pct(s.avgStressedPd, 2)}</td>
+                  <td className="num">{fmt.money(s.baseExpectedLoss, "")}</td>
+                  <td className="num">{fmt.money(s.stressedExpectedLoss, "")}</td>
+                  <td className="num">{fmt.money(s.incrementalLoss, "")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </Card>
   );
 }

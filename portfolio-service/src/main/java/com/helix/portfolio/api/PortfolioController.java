@@ -113,6 +113,20 @@ public class PortfolioController {
         return multiDim.concentration(jurisdiction, global);
     }
 
+    /**
+     * Correlation-stressed concentration: shock a sector's PD and propagate it through the
+     * correlation matrix to every co-moving sector, rolling stressed expected loss against
+     * the capital buffer. The "hidden" concentration that name diversification masks.
+     */
+    @PostMapping("/concentration/stress")
+    public com.helix.portfolio.dto.Dtos.ConcentrationStressView concentrationStress(
+            @RequestParam(defaultValue = "IN-RBI") String jurisdiction,
+            @RequestParam(defaultValue = "false") boolean global,
+            @org.springframework.web.bind.annotation.RequestBody com.helix.portfolio.dto.Dtos.StressRequest req) {
+        return multiDim.stress(jurisdiction, req.shockedSector(), req.pdMultiplier(),
+                req.capitalBufferPct(), req.correlationOverrides(), global);
+    }
+
     @GetMapping("/stress")
     public StressResult stress() {
         return portfolio.stress();

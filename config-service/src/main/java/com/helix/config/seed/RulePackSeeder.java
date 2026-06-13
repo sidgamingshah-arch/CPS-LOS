@@ -273,6 +273,11 @@ public class RulePackSeeder implements CommandLineRunner {
     private Map<String, Object> concentrationLimits(double singleName, double group, double sectorGeoCell) {
         return map(
                 "capital_base", 50_000_000_000d,
+                // Early-warning bands: NORMAL < 80% ≤ WATCH < 90% ≤ WARNING < 100% ≤ BREACH.
+                "watch_pct", 0.80,
+                "warning_pct", 0.90,
+                // Capital buffer the correlation-stress engine rolls stressed loss against.
+                "capital_buffer_pct", 0.10,
                 "dimensions", map(
                         "SINGLE_NAME", map("basis", "CAPITAL", "limitPct", singleName),
                         "GROUP", map("basis", "CAPITAL", "limitPct", group),
@@ -283,7 +288,41 @@ public class RulePackSeeder implements CommandLineRunner {
                         "RATING", map("basis", "PORTFOLIO", "limitPct", 0.35),
                         "CURRENCY", map("basis", "PORTFOLIO", "limitPct", 0.60),
                         "SECTOR_x_GEOGRAPHY", map("basis", "PORTFOLIO", "limitPct", sectorGeoCell),
-                        "RATING_x_SECTOR", map("basis", "PORTFOLIO", "limitPct", 0.12)));
+                        "RATING_x_SECTOR", map("basis", "PORTFOLIO", "limitPct", 0.12)),
+                // Sector co-movement matrix for correlation-stress: ρ of each sector to a
+                // shock in the row sector. Symmetric in spirit; only the shocked row is read.
+                "correlations", sectorCorrelations());
+    }
+
+    /**
+     * A pragmatic sector correlation matrix for the demo book. The clusters that matter:
+     * the real-estate / construction / steel / infrastructure / power complex moves
+     * together (a property or capex downturn hits all of them), while retail / trade /
+     * logistics form a looser consumer cluster.
+     */
+    private Map<String, Object> sectorCorrelations() {
+        return map(
+                "INFRASTRUCTURE", map("CONSTRUCTION", 0.80, "STEEL", 0.70, "POWER", 0.65,
+                        "REAL_ESTATE", 0.55, "MANUFACTURING", 0.45, "LOGISTICS", 0.40,
+                        "RETAIL", 0.20, "TRADE", 0.20),
+                "REAL_ESTATE", map("CONSTRUCTION", 0.85, "STEEL", 0.60, "INFRASTRUCTURE", 0.55,
+                        "MANUFACTURING", 0.35, "RETAIL", 0.30, "POWER", 0.30,
+                        "LOGISTICS", 0.25, "TRADE", 0.20),
+                "MANUFACTURING", map("STEEL", 0.65, "LOGISTICS", 0.55, "TRADE", 0.50,
+                        "INFRASTRUCTURE", 0.45, "CONSTRUCTION", 0.40, "RETAIL", 0.40,
+                        "POWER", 0.35, "REAL_ESTATE", 0.35),
+                "RETAIL", map("TRADE", 0.75, "LOGISTICS", 0.60, "MANUFACTURING", 0.40,
+                        "REAL_ESTATE", 0.30, "INFRASTRUCTURE", 0.20),
+                "TRADE", map("RETAIL", 0.75, "LOGISTICS", 0.65, "MANUFACTURING", 0.50,
+                        "INFRASTRUCTURE", 0.20),
+                "LOGISTICS", map("TRADE", 0.65, "RETAIL", 0.60, "MANUFACTURING", 0.55,
+                        "INFRASTRUCTURE", 0.40),
+                "STEEL", map("INFRASTRUCTURE", 0.70, "MANUFACTURING", 0.65, "CONSTRUCTION", 0.65,
+                        "REAL_ESTATE", 0.60, "POWER", 0.45),
+                "CONSTRUCTION", map("REAL_ESTATE", 0.85, "INFRASTRUCTURE", 0.80, "STEEL", 0.65,
+                        "MANUFACTURING", 0.40, "POWER", 0.40),
+                "POWER", map("INFRASTRUCTURE", 0.65, "STEEL", 0.45, "CONSTRUCTION", 0.40,
+                        "MANUFACTURING", 0.35, "REAL_ESTATE", 0.30));
     }
 
     /**

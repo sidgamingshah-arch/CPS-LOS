@@ -266,6 +266,8 @@ export const portfolio = {
   summary: () => call<any>("/portfolio/api/portfolio/summary", "GET"),
   concentration: (j: string) => call<any>(`/portfolio/api/portfolio/concentration?jurisdiction=${j}`, "GET"),
   concentrationMulti: (j: string) => call<any>(`/portfolio/api/portfolio/concentration/multi?jurisdiction=${j}`, "GET"),
+  concentrationStress: (j: string, body: any, actor: string) =>
+    call<any>(`/portfolio/api/portfolio/concentration/stress?jurisdiction=${j}`, "POST", body, actor),
   stress: () => call<any>("/portfolio/api/portfolio/stress", "GET"),
   scan: (ref: string, actor: string) =>
     call<any[]>(`/portfolio/api/portfolio/exposures/${ref}/ews/scan`, "POST", undefined, actor),
