@@ -196,5 +196,105 @@ st, d1ba = call("POST", f"/decision/api/disbursement/{d1b['id']}/authorize", {},
 check("milestone 1 re-draw authorises after reversal (was ALREADY_DRAWN)",
       st == 200 and d1ba["status"] == "AUTHORIZED", f"{st} {d1ba}")
 
+# Release that re-drawn tranche so we have a 1bn debt-service stream to project against.
+call("POST", f"/decision/api/disbursement/{d1b['id']}/release", actor="treasury.ops")
+
+print("\n== 9. Waterfall + forward DSCR projection (computed view, never persisted) ==")
+# Comfortably-covered case: 400M annual CFADS against 1bn outstanding over the
+# Solaris facility's 180-month monthly EMI. 30% O&M leaves 280M for debt
+# service / DSRA / distributions per year — comfortably above contractual debt
+# service so DSCR sits well clear of the 1.20 covenant.
+st, w1 = call("POST", f"/decision/api/pf/{ref}/waterfall",
+              {"facilityRef": fref, "baseAnnualCfads": 400_000_000,
+               "omRatio": 0.30, "minDscrCovenant": 1.20},
+              actor="credit.officer")
+w1 = must(st, w1, "waterfall projection")
+check("projection has rows for every schedule period (180)",
+      w1["periods"] == 180 and len(w1["rows"]) == 180, str(w1["periods"]))
+check("first row carries O&M + debtService + DSCR",
+      all(k in w1["rows"][0] for k in ("om", "debtService", "dscr", "cfads")), str(w1["rows"][0]))
+check("frequency inherited from the schedule",
+      w1["frequency"] in ("MONTHLY", "QUARTERLY"), str(w1["frequency"]))
+check("O&M = 30% of CFADS each period",
+      abs(w1["rows"][0]["om"] - 0.30 * w1["rows"][0]["cfads"]) < 1, str(w1["rows"][0]))
+check("min DSCR > covenant in the healthy case",
+      w1["summary"]["minDscr"] >= 1.20, str(w1["summary"]["minDscr"]))
+check("zero breaches in the healthy case",
+      w1["summary"]["totalBreachPeriods"] == 0
+      and w1["summary"]["firstBreachPeriod"] == -1, str(w1["summary"]))
+check("cushion to covenant reported (>0)",
+      w1["summary"]["cushionToCovenantPct"] > 0, str(w1["summary"]["cushionToCovenantPct"]))
+check("LLCR > 1 in the healthy case (NPV cash > outstanding)",
+      w1["summary"]["llcr"] > 1.0, str(w1["summary"]["llcr"]))
+
+# DSRA was refunded in section 8 — at waterfall time the reserve is FULL, so
+# top-ups stay zero throughout and the post-debt-service surplus flows straight
+# to distributions. (The shortfall lane is exercised separately below.)
+check("no DSRA top-up when the reserve is already at requirement",
+      all(r["dsraTopUp"] == 0 for r in w1["rows"]), str(w1["rows"][0]))
+check("distributions flow every period (surplus after debt service)",
+      all(r["distributions"] > 0 for r in w1["rows"][:10]), str(w1["rows"][0]))
+
+# Now create a real DSRA shortfall and re-project: the waterfall should top up
+# the reserve from period-1's surplus until balance is back to required.
+st, ds = call("GET", f"/decision/api/pf/{ref}/reserves")
+dsra_id = next(r["id"] for r in ds if r["accountType"] == "DSRA")
+# finance.ops was the last funder (in section 4 setup); withdraw needs a
+# different actor — use treasury.ops who hasn't acted on this reserve recently.
+call("POST", f"/decision/api/pf/reserves/{dsra_id}/withdraw",
+     {"amount": 30_000_000, "note": "force shortfall for waterfall test"},
+     actor="finance.ops")
+st, ws = call("POST", f"/decision/api/pf/{ref}/waterfall",
+              {"facilityRef": fref, "baseAnnualCfads": 400_000_000,
+               "omRatio": 0.30, "minDscrCovenant": 1.20},
+              actor="credit.officer")
+ws = must(st, ws, "waterfall after shortfall")
+first10_topup = sum(r["dsraTopUp"] for r in ws["rows"][:10])
+check("DSRA shortfall pulled top-ups from period-1 surplus",
+      first10_topup > 25_000_000, f"first-10 top-ups: {first10_topup:.0f}")
+# Once refilled the top-ups stop and distributions resume.
+late_topup = sum(r["dsraTopUp"] for r in ws["rows"][20:30])
+check("top-ups stop after DSRA is refilled", late_topup == 0,
+      f"periods 20-30 top-ups: {late_topup}")
+
+print("\n== 10. Stress: low CFADS triggers covenant + cash breaches ==")
+# CFADS so low that net of 30% O&M it falls below debt service in early periods.
+# 8M annual against ~9M monthly debt service is well below 1x coverage.
+st, w2 = call("POST", f"/decision/api/pf/{ref}/waterfall",
+              {"facilityRef": fref, "baseAnnualCfads": 8_000_000,
+               "omRatio": 0.30, "minDscrCovenant": 1.20,
+               "cfadsRampFactor": 0.5},
+              actor="credit.officer")
+w2 = must(st, w2, "stress projection")
+check("min DSCR collapses well below covenant under stress",
+      w2["summary"]["minDscr"] < 1.0, str(w2["summary"]["minDscr"]))
+check("totalBreachPeriods > 0", w2["summary"]["totalBreachPeriods"] > 0, str(w2["summary"]))
+check("firstBreachPeriod identified", w2["summary"]["firstBreachPeriod"] >= 1, str(w2["summary"]))
+check("cushion to covenant negative under stress",
+      w2["summary"]["cushionToCovenantPct"] < 0, str(w2["summary"]["cushionToCovenantPct"]))
+breach_rows = [r for r in w2["rows"] if r["covenantBreach"]]
+check("breached rows flagged covenantBreach",
+      len(breach_rows) == w2["summary"]["totalBreachPeriods"], str(len(breach_rows)))
+cash_breaches = [r for r in w2["rows"] if r["cashBreach"]]
+check("cash shortfall flagged where CFADS net of O&M < debt service",
+      len(cash_breaches) > 0 and all(r["cashShortfall"] > 0 for r in cash_breaches), str(len(cash_breaches)))
+check("no distributions in any breached period",
+      all(r["distributions"] == 0 for r in breach_rows), str(breach_rows[0] if breach_rows else None))
+
+print("\n== 11. Covenant override + audit ==")
+# Same CFADS, lower covenant — fewer breaches.
+st, w3 = call("POST", f"/decision/api/pf/{ref}/waterfall",
+              {"facilityRef": fref, "baseAnnualCfads": 8_000_000,
+               "omRatio": 0.30, "minDscrCovenant": 0.50,
+               "cfadsRampFactor": 0.5}, actor="credit.officer")
+w3 = must(st, w3, "lower-covenant projection")
+check("lower covenant -> fewer covenant breaches than 1.20",
+      w3["summary"]["totalBreachPeriods"] <= w2["summary"]["totalBreachPeriods"],
+      f"{w3['summary']['totalBreachPeriods']} vs {w2['summary']['totalBreachPeriods']}")
+
+st, audit_rows = call("GET", "/decision/api/audit")
+check("PF_WATERFALL_PROJECTED stamped on the audit trail",
+      any(a.get("eventType") == "PF_WATERFALL_PROJECTED" for a in audit_rows), "")
+
 print(f"\n== PF mechanics e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

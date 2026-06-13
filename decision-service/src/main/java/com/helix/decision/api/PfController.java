@@ -5,9 +5,12 @@ import com.helix.decision.dto.PfDtos.DefineMilestoneRequest;
 import com.helix.decision.dto.PfDtos.DefineReserveRequest;
 import com.helix.decision.dto.PfDtos.PfGateResult;
 import com.helix.decision.dto.PfDtos.ReserveTxnRequest;
+import com.helix.decision.dto.PfDtos.WaterfallProjection;
+import com.helix.decision.dto.PfDtos.WaterfallRequest;
 import com.helix.decision.entity.PfMilestone;
 import com.helix.decision.entity.PfReserveAccount;
 import com.helix.decision.service.PfService;
+import com.helix.decision.service.PfWaterfallService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,9 +33,11 @@ import java.util.List;
 public class PfController {
 
     private final PfService pf;
+    private final PfWaterfallService waterfall;
 
-    public PfController(PfService pf) {
+    public PfController(PfService pf, PfWaterfallService waterfall) {
         this.pf = pf;
+        this.waterfall = waterfall;
     }
 
     // ---- milestones ----
@@ -94,5 +99,19 @@ public class PfController {
     public PfGateResult gate(@PathVariable String reference, @PathVariable String facilityRef,
                              @RequestParam(required = false) Integer milestoneSequence) {
         return pf.gate(reference, facilityRef, milestoneSequence);
+    }
+
+    /**
+     * Forward DSCR + payment waterfall projection for the facility, given a
+     * base annual CFADS. Computed view — never persisted. Re-run any time the
+     * underlying schedule, reserve state, or projected CFADS changes.
+     */
+    @PostMapping("/{reference}/waterfall")
+    public WaterfallProjection waterfall(@PathVariable String reference,
+                                         @Valid @RequestBody WaterfallRequest req,
+                                         @RequestHeader(value = "X-Actor", defaultValue = "credit.officer") String actor) {
+        return waterfall.project(reference, req.facilityRef(), req.baseAnnualCfads(),
+                req.omRatio(), req.minDscrCovenant(), req.cfadsRampFactor(),
+                req.frequency(), req.method(), actor);
     }
 }

@@ -454,6 +454,8 @@ export const pf = {
     call<any>(`/decision/api/pf/reserves/${id}/withdraw`, "POST", body, actor),
   gate: (ref: string, facilityRef: string, seq?: number) =>
     call<any>(`/decision/api/pf/gate/${ref}/${facilityRef}${seq != null ? `?milestoneSequence=${seq}` : ""}`, "GET"),
+  waterfall: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/${ref}/waterfall`, "POST", body, actor),
 };
 
 export const disbursement = {

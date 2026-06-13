@@ -23,6 +23,7 @@ import {
   EmptyState,
   Field,
   HumanBadge,
+  Stat,
   useAsync,
 } from "../ui";
 
@@ -458,6 +459,10 @@ export default function Disbursement() {
         </Card>
       )}
 
+      {ref && facilityRef && isPf && (history.data ?? []).some((d: any) => d.status === "RELEASED") && (
+        <WaterfallCard refValue={ref} facilityRef={facilityRef} />
+      )}
+
       {ref && facilityRef && (
         <Card title="Drawdown tranches"
           sub="One row per draw. Multi-tranche PF, partial WC, and revolver use all map to repeated rows on the same facility. Each transition is SoD-gated."
@@ -635,5 +640,109 @@ export default function Disbursement() {
         </Card>
       )}
     </div>
+  );
+}
+
+/**
+ * Forward DSCR + payment waterfall projection for a PF facility. Given a base
+ * annual CFADS, projects per-period O&M → debt service → DSRA top-up → MMRA
+ * top-up → distributions, and reports min/avg DSCR, LLCR, cushion to covenant,
+ * and per-period breach flags. Pure read — computed on every submit.
+ */
+function WaterfallCard({ refValue, facilityRef }: { refValue: string; facilityRef: string }) {
+  const { actor, notify } = useApp();
+  const [cfads, setCfads] = useState("400000000");
+  const [omRatio, setOmRatio] = useState("0.30");
+  const [covenant, setCovenant] = useState("1.20");
+  const [ramp, setRamp] = useState("1.0");
+  const [proj, setProj] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    const cf = parseFloat(cfads.replace(/[, ]/g, ""));
+    const om = parseFloat(omRatio);
+    const cov = parseFloat(covenant);
+    const rmp = parseFloat(ramp);
+    if (!cf || cf <= 0) { notify("Provide a positive baseAnnualCfads", true); return; }
+    setBusy(true);
+    try {
+      const w = await pfApi.waterfall(refValue, {
+        facilityRef, baseAnnualCfads: cf, omRatio: om, minDscrCovenant: cov,
+        cfadsRampFactor: rmp,
+      }, actor);
+      setProj(w);
+    } catch (e: any) { notify(e.message, true); } finally { setBusy(false); }
+  }
+
+  const s = proj?.summary;
+  const cushionGood = s && s.cushionToCovenantPct > 0;
+  return (
+    <Card title="Payment waterfall · forward DSCR"
+      sub="O&M → senior debt → DSRA top-up → MMRA → distributions. Computed view; never persisted. Re-run any time CFADS, reserves or the schedule changes."
+      right={<DeterministicBadge label="PROJECTION · DETERMINISTIC" />}>
+      <div className="grid cols-4" style={{ alignItems: "end" }}>
+        <Field label="Base annual CFADS">
+          <input value={cfads} onChange={(e) => setCfads(e.target.value)} />
+        </Field>
+        <Field label="O&M ratio (of CFADS)">
+          <input value={omRatio} onChange={(e) => setOmRatio(e.target.value)} />
+        </Field>
+        <Field label="Min DSCR covenant">
+          <input value={covenant} onChange={(e) => setCovenant(e.target.value)} />
+        </Field>
+        <Field label="CFADS ramp (1 = flat)">
+          <input value={ramp} onChange={(e) => setRamp(e.target.value)} />
+        </Field>
+      </div>
+      <div className="btnrow" style={{ marginTop: 8 }}>
+        <Button kind="primary" busy={busy} onClick={run}>Project waterfall</Button>
+      </div>
+      {proj && s && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginTop: 12 }}>
+            <Stat label="Min DSCR" value={s.minDscr.toFixed(3)}
+              delta={cushionGood ? `+${(s.cushionToCovenantPct * 100).toFixed(1)}% cushion`
+                                  : `${(s.cushionToCovenantPct * 100).toFixed(1)}% vs covenant`}
+              tone={cushionGood ? "ok" : "bad"} />
+            <Stat label="Avg DSCR" value={s.avgDscr.toFixed(3)} />
+            <Stat label="Rolling 12 min" value={s.rollingForward12MinDscr.toFixed(3)} />
+            <Stat label="LLCR" value={s.llcr.toFixed(3)} />
+            <Stat label="Breaches"
+              value={`${s.totalBreachPeriods}${s.firstBreachPeriod > 0 ? " (1st @ " + s.firstBreachPeriod + ")" : ""}`}
+              tone={s.totalBreachPeriods === 0 ? "ok" : "bad"} />
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.75, margin: "8px 0" }}>
+            First 12 periods · {proj.frequency} · {proj.periods} total · covenant {proj.minDscrCovenant.toFixed(2)}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>Due</th><th>CFADS</th><th>O&amp;M</th><th>Debt svc</th>
+                <th>DSRA</th><th>MMRA</th><th>Distrib.</th><th>DSCR</th><th />
+              </tr>
+            </thead>
+            <tbody>
+              {proj.rows.slice(0, 12).map((r: any) => (
+                <tr key={r.periodNo} style={r.covenantBreach ? { background: "var(--bad-soft, #fee)" } : undefined}>
+                  <td>{r.periodNo}</td>
+                  <td className="mono" style={{ fontSize: 12 }}>{r.periodDate}</td>
+                  <td>{fmt.money(r.cfads)}</td>
+                  <td>{fmt.money(r.om)}</td>
+                  <td>{fmt.money(r.debtService)}</td>
+                  <td>{fmt.money(r.dsraTopUp)}</td>
+                  <td>{fmt.money(r.mmraTopUp)}</td>
+                  <td>{fmt.money(r.distributions)}</td>
+                  <td>{r.dscr.toFixed(3)}</td>
+                  <td>
+                    {r.covenantBreach && <Badge kind="bad">BREACH</Badge>}
+                    {r.cashBreach && <Badge kind="bad">CASH</Badge>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </Card>
   );
 }

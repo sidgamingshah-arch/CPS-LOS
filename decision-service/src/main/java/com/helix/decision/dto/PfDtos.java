@@ -28,4 +28,45 @@ public class PfDtos {
     public record PfGateResult(String facilityRef, Integer milestoneSequence, boolean canDrawdown,
                                List<PfBlocker> blockers) {
     }
+
+    // ============================================================ waterfall + DSCR
+
+    /**
+     * One period of the projected payment waterfall. Cash uses are applied in
+     * priority order (O&amp;M → senior debt service → DSRA top-up → MMRA top-up →
+     * distributions); a level only consumes what is left after the level above
+     * it has been fully served. {@code cashShortfall} is non-zero when CFADS net
+     * of O&amp;M is below debt service — the borrower can't pay everything
+     * contractually due. {@code covenantBreach} = DSCR below the covenant; a
+     * cash shortfall always implies a covenant breach.
+     */
+    public record WaterfallRow(int periodNo, String periodDate,
+                               double cfads, double om, double debtService,
+                               double dsraTopUp, double mmraTopUp, double distributions,
+                               double dscr, double cashShortfall,
+                               boolean covenantBreach, boolean cashBreach) {
+    }
+
+    /** Headline DSCR / LLCR / cushion stats over the whole projection. */
+    public record WaterfallSummary(double minDscr, double avgDscr, double llcr,
+                                   double rollingForward12MinDscr,
+                                   double cushionToCovenantPct,
+                                   int firstBreachPeriod, int totalBreachPeriods) {
+    }
+
+    /** A whole projected waterfall — computed view, never persisted. */
+    public record WaterfallProjection(String applicationReference, String facilityRef,
+                                      String frequency, int periods,
+                                      double baseAnnualCfads, double omRatio,
+                                      double minDscrCovenant, String currency,
+                                      List<WaterfallRow> rows, WaterfallSummary summary) {
+    }
+
+    public record WaterfallRequest(@NotBlank String facilityRef,
+                                   @Positive double baseAnnualCfads,
+                                   Double omRatio,
+                                   Double minDscrCovenant,
+                                   Double cfadsRampFactor,
+                                   String frequency, String method) {
+    }
 }
