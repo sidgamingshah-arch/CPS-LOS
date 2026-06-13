@@ -4,9 +4,13 @@ import com.helix.common.export.Export;
 import com.helix.origination.dto.SyndicationDtos.AllocateRequest;
 import com.helix.origination.dto.SyndicationDtos.AllocationResult;
 import com.helix.origination.dto.SyndicationDtos.SyndicateBook;
+import com.helix.origination.entity.SecondaryTransfer;
 import com.helix.origination.entity.SyndicationAllocation;
 import com.helix.origination.entity.SyndicationFeedBatch;
+import com.helix.origination.entity.SyndicationInvitation;
 import com.helix.origination.service.SyndicationService;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -75,5 +79,84 @@ public class SyndicationController {
     @GetMapping("/{reference}/feed/batches")
     public List<SyndicationFeedBatch> feedBatches(@PathVariable String reference) {
         return syndication.feedBatchesFor(reference);
+    }
+
+    // ============================================================ invitations
+
+    public record InviteRequest(@NotBlank String invitedBank, String invitedBankRef,
+                                @Positive double proposedCommitment, String proposedRole,
+                                String currency, String terms, Integer expiresInDays) { }
+
+    public record DeclineRequest(@NotBlank String reason) { }
+
+    @PostMapping("/{reference}/invitations")
+    public SyndicationInvitation invite(@PathVariable String reference,
+                                        @Valid @RequestBody InviteRequest req,
+                                        @RequestHeader("X-Actor") String actor) {
+        return syndication.invite(reference, req.invitedBank(), req.invitedBankRef(),
+                req.proposedCommitment(), req.proposedRole(), req.currency(),
+                req.terms(), req.expiresInDays(), actor);
+    }
+
+    @PostMapping("/invitations/{id}/accept")
+    public SyndicationInvitation acceptInvitation(@PathVariable Long id,
+                                                  @RequestHeader("X-Actor") String actor) {
+        return syndication.acceptInvitation(id, actor);
+    }
+
+    @PostMapping("/invitations/{id}/decline")
+    public SyndicationInvitation declineInvitation(@PathVariable Long id,
+                                                   @Valid @RequestBody DeclineRequest req,
+                                                   @RequestHeader("X-Actor") String actor) {
+        return syndication.declineInvitation(id, req.reason(), actor);
+    }
+
+    @PostMapping("/invitations/{id}/withdraw")
+    public SyndicationInvitation withdrawInvitation(@PathVariable Long id,
+                                                    @RequestBody(required = false) DeclineRequest req,
+                                                    @RequestHeader("X-Actor") String actor) {
+        return syndication.withdrawInvitation(id, req == null ? null : req.reason(), actor);
+    }
+
+    @GetMapping("/{reference}/invitations")
+    public List<SyndicationInvitation> invitations(@PathVariable String reference) {
+        return syndication.invitationsFor(reference);
+    }
+
+    // ============================================================ secondary transfers
+
+    public record TransferRequest(@Positive Long fromParticipantId,
+                                  @NotBlank String toBank, String toBankRef,
+                                  @Positive double transferAmount, String currency,
+                                  String reason) { }
+
+    public record DecideRequest(String comment) { }
+
+    @PostMapping("/{reference}/transfers")
+    public SecondaryTransfer proposeTransfer(@PathVariable String reference,
+                                             @Valid @RequestBody TransferRequest req,
+                                             @RequestHeader("X-Actor") String actor) {
+        return syndication.proposeTransfer(reference, req.fromParticipantId(),
+                req.toBank(), req.toBankRef(), req.transferAmount(), req.currency(),
+                req.reason(), actor);
+    }
+
+    @PostMapping("/transfers/{id}/settle")
+    public SecondaryTransfer settleTransfer(@PathVariable Long id,
+                                            @RequestBody(required = false) DecideRequest req,
+                                            @RequestHeader("X-Actor") String actor) {
+        return syndication.settleTransfer(id, req == null ? null : req.comment(), actor);
+    }
+
+    @PostMapping("/transfers/{id}/reject")
+    public SecondaryTransfer rejectTransfer(@PathVariable Long id,
+                                            @Valid @RequestBody DeclineRequest req,
+                                            @RequestHeader("X-Actor") String actor) {
+        return syndication.rejectTransfer(id, req.reason(), actor);
+    }
+
+    @GetMapping("/{reference}/transfers")
+    public List<SecondaryTransfer> transfers(@PathVariable String reference) {
+        return syndication.transfersFor(reference);
     }
 }

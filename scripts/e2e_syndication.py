@@ -194,5 +194,136 @@ st2, app2 = call("POST", "/origination/api/applications", {
 st, body = call("GET", f"/origination/api/syndication/{app2['reference']}/book")
 check("book on non-syndication deal returns 4xx", st in (400, 404), f"{st} {body}")
 
+print("\n== 7. Invitations: SENT -> ACCEPT / DECLINE / WITHDRAW (with SoD) ==")
+# Lead bank (lead.bank actor) sends three invitations to fresh banks.
+def invite(bank, amt):
+    s, r = call("POST", f"/origination/api/syndication/{ref}/invitations",
+                {"invitedBank": bank, "invitedBankRef": "REF-" + bank.replace(" ", ""),
+                 "proposedCommitment": amt, "proposedRole": "PARTICIPANT_LENDER",
+                 "currency": "INR", "terms": "stand-by terms", "expiresInDays": 30},
+                actor="lead.bank")
+    return s, r
+
+st, inv1 = invite("New Capital Bank", 500_000_000)
+inv1 = must(st, inv1, "invitation 1")
+check("invitation persisted SENT", inv1["status"] == "SENT" and inv1["invitedBy"] == "lead.bank",
+      str(inv1))
+
+st, body = call("POST", f"/origination/api/syndication/invitations/{inv1['id']}/accept",
+                actor="lead.bank")
+check("self-accept blocked (403 SoD)", st == 403, f"{st} {body}")
+
+st, inv1ok = call("POST", f"/origination/api/syndication/invitations/{inv1['id']}/accept",
+                  actor="new.capital.bank")
+inv1ok = must(st, inv1ok, "accept by invitee")
+check("invitation flips to ACCEPTED", inv1ok["status"] == "ACCEPTED", str(inv1ok))
+check("participantId stamped on accepted invitation", inv1ok.get("participantId") is not None, str(inv1ok))
+
+# The accepted bank now appears in the syndicate book with its commitment.
+st, b4 = call("GET", f"/origination/api/syndication/{ref}/book")
+new_lender = next((l for l in b4["lenders"] if l["name"] == "New Capital Bank"), None)
+check("accepted invitee joined the syndicate book",
+      new_lender is not None and abs(new_lender["commitment"] - 500_000_000) < 1, str(b4["lenders"]))
+
+# Re-accepting fails — terminal state.
+st, body = call("POST", f"/origination/api/syndication/invitations/{inv1['id']}/accept",
+                actor="new.capital.bank")
+check("re-accept of ACCEPTED invitation rejected (409)", st == 409, f"{st}")
+
+st, inv2 = invite("Pacific Bank", 200_000_000)
+inv2 = must(st, inv2, "invitation 2")
+st, inv2d = call("POST", f"/origination/api/syndication/invitations/{inv2['id']}/decline",
+                 {"reason": "country limit full"}, actor="pacific.bank")
+check("declined invitation captured", st == 200 and inv2d["status"] == "DECLINED"
+      and "country" in (inv2d.get("declineReason") or ""), str(inv2d))
+
+st, inv3 = invite("Tertiary Bank", 100_000_000)
+inv3 = must(st, inv3, "invitation 3")
+st, body = call("POST", f"/origination/api/syndication/invitations/{inv3['id']}/withdraw",
+                {"reason": "deal restructured"}, actor="other.bank")
+check("withdraw by non-inviter blocked (403)", st == 403, f"{st} {body}")
+st, inv3w = call("POST", f"/origination/api/syndication/invitations/{inv3['id']}/withdraw",
+                 {"reason": "deal restructured"}, actor="lead.bank")
+check("withdraw by inviter succeeds", st == 200 and inv3w["status"] == "WITHDRAWN", str(inv3w))
+
+st, lst = call("GET", f"/origination/api/syndication/{ref}/invitations")
+check("invitation history returns 3 rows", len(lst) == 3, str(len(lst)))
+
+print("\n== 8. Secondary transfer: novate unfunded commitment with SoD + agent settlement ==")
+# Find the LEAD_BANK participant — they hold the unfunded commitment we'll
+# transfer. The seed deal has 5bn total / 50% lead = 2.5bn commitment; section
+# 4 funded DRAW-1 (1bn) of which lead took 500M, then DRAW-2 (2bn) lead 1bn,
+# then DRAW-2 was REVERSED. So funded on lead = 500M, unfunded = 2.5bn - 0.5bn = 2bn.
+st, parts = call("GET", f"/origination/api/syndication/{ref}/allocations")
+lead_id = None
+st, b_now = call("GET", f"/origination/api/syndication/{ref}/book")
+for l in b_now["lenders"]:
+    if l["role"] == "LEAD_BANK":
+        lead_id = l["participantId"]; break
+check("lead participant identified", lead_id is not None, str(b_now["lenders"]))
+
+# Transfer above unfunded headroom is blocked.
+st, body = call("POST", f"/origination/api/syndication/{ref}/transfers",
+                {"fromParticipantId": lead_id, "toBank": "Distress Capital",
+                 "transferAmount": 9_999_999_999.0, "currency": "INR",
+                 "reason": "test bound"}, actor="lead.bank")
+check("transfer above unfunded commitment blocked (400)", st == 400, f"{st} {body}")
+
+st, t1 = call("POST", f"/origination/api/syndication/{ref}/transfers",
+              {"fromParticipantId": lead_id, "toBank": "Polestar Asset Mgmt",
+               "toBankRef": "REF-POLESTAR",
+               "transferAmount": 300_000_000, "currency": "INR",
+               "reason": "balance-sheet rotation"}, actor="lead.bank")
+t1 = must(st, t1, "propose transfer")
+check("transfer PROPOSED", t1["status"] == "PROPOSED" and t1["proposedBy"] == "lead.bank", str(t1))
+
+# Lead can't settle their own proposal — agent SoD.
+st, body = call("POST", f"/origination/api/syndication/transfers/{t1['id']}/settle",
+                {"comment": "self"}, actor="lead.bank")
+check("self-settle blocked (403 SoD)", st == 403, f"{st} {body}")
+
+# Capture lead commitment + transferee absence pre-settlement.
+st, b_pre = call("GET", f"/origination/api/syndication/{ref}/book")
+lead_pre = next(l for l in b_pre["lenders"] if l["participantId"] == lead_id)["commitment"]
+
+st, t1ok = call("POST", f"/origination/api/syndication/transfers/{t1['id']}/settle",
+                {"comment": "agent settles"}, actor="agent.desk")
+t1ok = must(st, t1ok, "settle transfer")
+check("transfer SETTLED", t1ok["status"] == "SETTLED", str(t1ok))
+check("toParticipantId stamped", t1ok.get("toParticipantId") is not None, str(t1ok))
+
+st, b_post = call("GET", f"/origination/api/syndication/{ref}/book")
+lead_post = next(l for l in b_post["lenders"] if l["participantId"] == lead_id)["commitment"]
+check("lead commitment dropped by the transferred amount",
+      abs(lead_pre - lead_post - 300_000_000) < 1, f"{lead_pre} -> {lead_post}")
+transferee = next((l for l in b_post["lenders"] if l["name"] == "Polestar Asset Mgmt"), None)
+check("transferee appears in the book with the transfer",
+      transferee is not None and abs(transferee["commitment"] - 300_000_000) < 1, str(b_post["lenders"]))
+
+# Past funded allocations are unchanged — only the commitment re-cuts; the
+# transferred lender's old DRAW-1 row is still their slice on the ledger.
+st, ledger_now = call("GET", f"/origination/api/syndication/{ref}/allocations")
+lead_old = [a for a in ledger_now if a["drawdownRef"] == "DRAW-1" and a["role"] == "LEAD_BANK"]
+check("funded historical allocations on DRAW-1 untouched by transfer",
+      len(lead_old) == 1 and abs(lead_old[0]["allocatedAmount"] - 500_000_000) < 1, str(lead_old))
+
+# Reject lane.
+st, t2 = call("POST", f"/origination/api/syndication/{ref}/transfers",
+              {"fromParticipantId": lead_id, "toBank": "Vulture Fund",
+               "transferAmount": 100_000_000, "currency": "INR",
+               "reason": "speculative bid"}, actor="lead.bank")
+t2 = must(st, t2, "propose for rejection")
+st, t2r = call("POST", f"/origination/api/syndication/transfers/{t2['id']}/reject",
+               {"reason": "credit committee blocked the buyer"}, actor="agent.desk")
+check("agent rejection succeeds", st == 200 and t2r["status"] == "REJECTED", str(t2r))
+
+st, audit_rows = call("GET", "/origination/api/audit")
+check("SYNDICATION_INVITATION_ACCEPTED stamped HUMAN",
+      any(a.get("eventType") == "SYNDICATION_INVITATION_ACCEPTED" and a.get("actorType") == "HUMAN"
+          for a in audit_rows), "")
+check("SYNDICATION_TRANSFER_SETTLED stamped HUMAN",
+      any(a.get("eventType") == "SYNDICATION_TRANSFER_SETTLED" and a.get("actorType") == "HUMAN"
+          for a in audit_rows), "")
+
 print(f"\n== Syndication e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

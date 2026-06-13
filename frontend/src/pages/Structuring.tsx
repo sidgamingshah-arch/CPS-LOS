@@ -9,7 +9,7 @@
  */
 
 import { useState } from "react";
-import { amendments, origination, structure, fmt } from "../api";
+import { amendments, origination, structure, syndication, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Field, Stat, useAsync } from "../ui";
 
@@ -359,6 +359,10 @@ export default function Structuring() {
         </>
       )}
 
+      {hasStructure && s?.structureType === "SYNDICATION" && (
+        <SyndicationLifecycleCard refValue={ref} participants={parts} />
+      )}
+
       {ref && <AmendmentsCard refValue={ref} />}
 
       {/* Loading / empty state */}
@@ -481,5 +485,212 @@ function AmendmentsCard({ refValue }: { refValue: string }) {
         </div>
       </div>
     </Card>
+  );
+}
+
+/**
+ * Syndication lifecycle: invitations (lead sends, invitee accepts/declines —
+ * accepted invitees materialise as DealParticipant rows) and secondary
+ * transfers (transferor sells unfunded commitment to a new bank, agent
+ * settles — funded historical allocations stay with the seller).
+ */
+function SyndicationLifecycleCard({ refValue, participants }: { refValue: string; participants: any[] }) {
+  const { actor, notify } = useApp();
+  const invs = useAsync(() => syndication.invitations(refValue), [refValue]);
+  const xfers = useAsync(() => syndication.transfers(refValue), [refValue]);
+
+  const [iName, setIName] = useState("");
+  const [iRef, setIRef] = useState("");
+  const [iAmt, setIAmt] = useState("");
+  const [iDays, setIDays] = useState("30");
+  const [iBusy, setIBusy] = useState(false);
+
+  const [tFromId, setTFromId] = useState<number | "">("");
+  const [tToBank, setTToBank] = useState("");
+  const [tToBankRef, setTToBankRef] = useState("");
+  const [tAmt, setTAmt] = useState("");
+  const [tReason, setTReason] = useState("");
+  const [tBusy, setTBusy] = useState(false);
+
+  const lenders = participants.filter((p: any) =>
+    p.role === "LEAD_BANK" || p.role === "PARTICIPANT_LENDER");
+
+  async function sendInvitation() {
+    const amt = parseFloat(iAmt.replace(/[, ]/g, ""));
+    if (!iName || !amt) { notify("Bank name and commitment are required", true); return; }
+    setIBusy(true);
+    try {
+      await syndication.invite(refValue, {
+        invitedBank: iName, invitedBankRef: iRef || undefined,
+        proposedCommitment: amt, proposedRole: "PARTICIPANT_LENDER",
+        currency: "INR", terms: "standard",
+        expiresInDays: parseInt(iDays, 10) || 30,
+      }, actor);
+      notify(`Invitation sent to ${iName}`);
+      setIName(""); setIRef(""); setIAmt("");
+      invs.reload();
+    } catch (e: any) { notify(e.message, true); } finally { setIBusy(false); }
+  }
+
+  async function decideInvitation(inv: any, action: "accept" | "decline" | "withdraw") {
+    try {
+      if (action === "accept") {
+        await syndication.acceptInvitation(inv.id, actor);
+      } else {
+        const reason = prompt(action === "decline" ? "Decline reason" : "Withdraw reason") || "";
+        if (!reason && action === "decline") return;
+        if (action === "decline") await syndication.declineInvitation(inv.id, { reason }, actor);
+        else await syndication.withdrawInvitation(inv.id, { reason }, actor);
+      }
+      notify(`Invitation ${action}ed`);
+      invs.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function proposeTransfer() {
+    const amt = parseFloat(tAmt.replace(/[, ]/g, ""));
+    if (!tFromId || !tToBank || !amt) { notify("Source lender, target bank and amount are required", true); return; }
+    setTBusy(true);
+    try {
+      await syndication.proposeTransfer(refValue, {
+        fromParticipantId: tFromId, toBank: tToBank,
+        toBankRef: tToBankRef || undefined,
+        transferAmount: amt, currency: "INR", reason: tReason || "balance-sheet rotation",
+      }, actor);
+      notify(`Transfer proposed: ${tToBank} buys ${amt.toLocaleString()}`);
+      setTToBank(""); setTToBankRef(""); setTAmt(""); setTReason("");
+      xfers.reload();
+    } catch (e: any) { notify(e.message, true); } finally { setTBusy(false); }
+  }
+
+  async function decideTransfer(t: any, action: "settle" | "reject") {
+    try {
+      if (action === "settle") {
+        await syndication.settleTransfer(t.id, { comment: "agent settles" }, actor);
+      } else {
+        const reason = prompt("Rejection reason") || "";
+        if (!reason) return;
+        await syndication.rejectTransfer(t.id, { reason }, actor);
+      }
+      notify(`Transfer ${action === "settle" ? "settled" : "rejected"}`);
+      xfers.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  return (
+    <>
+      <Card title="Syndicate invitations"
+        sub="Lead bank invites a participant lender. Accept materialises a syndicate member; SoD: invitee ≠ inviter."
+        right={<Badge kind="info">SYNDICATION LIFECYCLE</Badge>}>
+        <div className="grid cols-4" style={{ alignItems: "end" }}>
+          <Field label="Bank name">
+            <input value={iName} onChange={(e) => setIName(e.target.value)} placeholder="e.g. New Capital Bank" />
+          </Field>
+          <Field label="External ref">
+            <input value={iRef} onChange={(e) => setIRef(e.target.value)} placeholder="optional" />
+          </Field>
+          <Field label="Proposed commitment (INR)">
+            <input value={iAmt} onChange={(e) => setIAmt(e.target.value)} placeholder="500000000" />
+          </Field>
+          <Field label="Expires in (days)">
+            <input value={iDays} onChange={(e) => setIDays(e.target.value)} />
+          </Field>
+        </div>
+        <div className="btnrow" style={{ marginTop: 8 }}>
+          <Button kind="primary" busy={iBusy} onClick={sendInvitation}>Send invitation</Button>
+        </div>
+        {(invs.data ?? []).length > 0 && (
+          <table>
+            <thead>
+              <tr><th>#</th><th>Bank</th><th>Commitment</th><th>Role</th><th>Status</th><th>By</th><th /></tr>
+            </thead>
+            <tbody>
+              {(invs.data ?? []).map((inv: any) => (
+                <tr key={inv.id}>
+                  <td>{inv.id}</td>
+                  <td>{inv.invitedBank}</td>
+                  <td>{fmt.money(inv.proposedCommitment)}</td>
+                  <td className="mono">{inv.proposedRole}</td>
+                  <td>
+                    <Badge kind={inv.status === "ACCEPTED" ? "ok"
+                                : inv.status === "DECLINED" || inv.status === "WITHDRAWN" || inv.status === "EXPIRED" ? "bad"
+                                : "warn"}>{inv.status}</Badge>
+                  </td>
+                  <td className="mono" style={{ fontSize: 12 }}>{inv.decidedBy ?? inv.invitedBy}</td>
+                  <td>
+                    {inv.status === "SENT" && (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <Button kind="subtle" onClick={() => decideInvitation(inv, "accept")}>Accept</Button>
+                        <Button kind="ghost" onClick={() => decideInvitation(inv, "decline")}>Decline</Button>
+                        <Button kind="ghost" onClick={() => decideInvitation(inv, "withdraw")}>Withdraw</Button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <Card title="Secondary market transfers"
+        sub="Sell down UNFUNDED commitment to a new bank. Funded historical allocations stay with the original lender. SoD: agent settler ≠ transferor.">
+        <div className="grid cols-4" style={{ alignItems: "end" }}>
+          <Field label="Selling lender">
+            <select value={tFromId} onChange={(e) => setTFromId(e.target.value ? Number(e.target.value) : "")}>
+              <option value="">— select —</option>
+              {lenders.map((p: any) => (
+                <option key={p.id} value={p.id}>{p.name} ({p.role}, {fmt.money(p.committedAmount || 0)})</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Buyer (bank)">
+            <input value={tToBank} onChange={(e) => setTToBank(e.target.value)} placeholder="e.g. Polestar Asset Mgmt" />
+          </Field>
+          <Field label="Buyer external ref">
+            <input value={tToBankRef} onChange={(e) => setTToBankRef(e.target.value)} placeholder="optional" />
+          </Field>
+          <Field label="Transfer amount (INR)">
+            <input value={tAmt} onChange={(e) => setTAmt(e.target.value)} placeholder="300000000" />
+          </Field>
+        </div>
+        <Field label="Reason">
+          <input value={tReason} onChange={(e) => setTReason(e.target.value)} placeholder="balance-sheet rotation" />
+        </Field>
+        <div className="btnrow" style={{ marginTop: 8 }}>
+          <Button kind="primary" busy={tBusy} onClick={proposeTransfer}>Propose transfer</Button>
+        </div>
+        {(xfers.data ?? []).length > 0 && (
+          <table>
+            <thead>
+              <tr><th>#</th><th>From</th><th>To</th><th>Amount</th><th>Status</th><th>Agent</th><th /></tr>
+            </thead>
+            <tbody>
+              {(xfers.data ?? []).map((t: any) => (
+                <tr key={t.id}>
+                  <td>{t.id}</td>
+                  <td>{t.fromName}</td>
+                  <td>{t.toBank}</td>
+                  <td>{fmt.money(t.transferAmount)}</td>
+                  <td>
+                    <Badge kind={t.status === "SETTLED" ? "ok"
+                                : t.status === "REJECTED" ? "bad" : "warn"}>{t.status}</Badge>
+                  </td>
+                  <td className="mono" style={{ fontSize: 12 }}>{t.agentDecidedBy ?? t.proposedBy}</td>
+                  <td>
+                    {t.status === "PROPOSED" && (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <Button kind="subtle" onClick={() => decideTransfer(t, "settle")}>Settle</Button>
+                        <Button kind="ghost" onClick={() => decideTransfer(t, "reject")}>Reject</Button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+    </>
   );
 }

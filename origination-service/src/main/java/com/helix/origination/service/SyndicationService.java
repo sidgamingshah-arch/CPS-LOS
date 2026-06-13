@@ -15,13 +15,17 @@ import com.helix.origination.dto.SyndicationDtos.SyndicateBook;
 import com.helix.origination.entity.DealParticipant;
 import com.helix.origination.entity.DealStructure;
 import com.helix.origination.entity.LoanApplication;
+import com.helix.origination.entity.SecondaryTransfer;
 import com.helix.origination.entity.SyndicationAllocation;
 import com.helix.origination.entity.SyndicationFeedBatch;
+import com.helix.origination.entity.SyndicationInvitation;
 import com.helix.origination.repo.DealParticipantRepository;
 import com.helix.origination.repo.DealStructureRepository;
 import com.helix.origination.repo.LoanApplicationRepository;
+import com.helix.origination.repo.SecondaryTransferRepository;
 import com.helix.origination.repo.SyndicationAllocationRepository;
 import com.helix.origination.repo.SyndicationFeedBatchRepository;
+import com.helix.origination.repo.SyndicationInvitationRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,6 +61,8 @@ public class SyndicationService {
     private final LoanApplicationRepository applications;
     private final SyndicationAllocationRepository allocations;
     private final SyndicationFeedBatchRepository feedBatches;
+    private final SyndicationInvitationRepository invitations;
+    private final SecondaryTransferRepository transfers;
     private final OriginationMasterClient masters;
     private final AuditService audit;
     private final ObjectMapper mapper;
@@ -64,12 +70,16 @@ public class SyndicationService {
     public SyndicationService(DealStructureRepository structures, DealParticipantRepository participants,
                               LoanApplicationRepository applications, SyndicationAllocationRepository allocations,
                               SyndicationFeedBatchRepository feedBatches,
+                              SyndicationInvitationRepository invitations,
+                              SecondaryTransferRepository transfers,
                               OriginationMasterClient masters, AuditService audit, ObjectMapper mapper) {
         this.structures = structures;
         this.participants = participants;
         this.applications = applications;
         this.allocations = allocations;
         this.feedBatches = feedBatches;
+        this.invitations = invitations;
+        this.transfers = transfers;
         this.masters = masters;
         this.audit = audit;
         this.mapper = mapper;
@@ -317,4 +327,326 @@ public class SyndicationService {
 
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
     private static double round4(double v) { return Math.round(v * 10_000.0) / 10_000.0; }
+
+    // ============================================================ invitations
+
+    @Transactional
+    public SyndicationInvitation invite(String reference, String invitedBank, String invitedBankRef,
+                                        double proposedCommitment, String proposedRole, String currency,
+                                        String terms, Integer expiresInDays, String actor) {
+        DealStructure structure = structures.findByApplicationReference(reference)
+                .orElseThrow(() -> ApiException.notFound("No deal structure for " + reference));
+        if (!"SYNDICATION".equalsIgnoreCase(structure.getStructureType())) {
+            throw ApiException.badRequest(reference + " is not a SYNDICATION deal");
+        }
+        if (invitedBank == null || invitedBank.isBlank()) {
+            throw ApiException.badRequest("invitedBank is required");
+        }
+        if (proposedCommitment <= 0) {
+            throw ApiException.badRequest("proposedCommitment must be positive");
+        }
+        if (actor == null || actor.isBlank()) {
+            throw ApiException.forbiddenAutonomy("A named human actor is required to send an invitation");
+        }
+        String role = proposedRole == null || proposedRole.isBlank()
+                ? "PARTICIPANT_LENDER" : proposedRole.toUpperCase();
+        if (!LENDER_ROLES.contains(role)) {
+            throw ApiException.badRequest("Invitation role must be LEAD_BANK or PARTICIPANT_LENDER");
+        }
+        SyndicationInvitation inv = new SyndicationInvitation();
+        inv.setApplicationReference(reference);
+        inv.setInvitedBank(invitedBank);
+        inv.setInvitedBankRef(invitedBankRef);
+        inv.setProposedCommitment(round2(proposedCommitment));
+        inv.setProposedRole(role);
+        inv.setCurrency(currency == null || currency.isBlank()
+                ? currencyFor(reference) : currency.toUpperCase());
+        inv.setTerms(terms);
+        inv.setInvitedBy(actor);
+        if (expiresInDays != null && expiresInDays > 0) {
+            inv.setExpiresAt(java.time.Instant.now().plus(expiresInDays, java.time.temporal.ChronoUnit.DAYS));
+        }
+        SyndicationInvitation saved = invitations.save(inv);
+        audit.human(actor, "SYNDICATION_INVITED", "SyndicationInvitation", String.valueOf(saved.getId()),
+                "Invited %s to syndicate %s for %.2f %s (%s)".formatted(
+                        invitedBank, reference, proposedCommitment, inv.getCurrency(), role),
+                Map.of("reference", reference, "invitedBank", invitedBank,
+                        "commitment", proposedCommitment, "role", role));
+        return saved;
+    }
+
+    @Transactional
+    public SyndicationInvitation acceptInvitation(Long id, String actor) {
+        SyndicationInvitation inv = getInvitation(id);
+        guardInvitationDecidable(inv, actor);
+        // On accept, materialise a DealParticipant for the now-joined lender.
+        LoanApplication app = applications.findByReference(inv.getApplicationReference())
+                .orElseThrow(() -> ApiException.notFound("No application: " + inv.getApplicationReference()));
+        int nextOrdinal = participants.findByApplicationReferenceOrderByOrdinalAsc(
+                inv.getApplicationReference()).size();
+        DealParticipant p = new DealParticipant();
+        p.setApplicationId(app.getId());
+        p.setApplicationReference(inv.getApplicationReference());
+        p.setRole(inv.getProposedRole());
+        p.setName(inv.getInvitedBank());
+        p.setExternalRef(inv.getInvitedBankRef());
+        p.setCommittedAmount(inv.getProposedCommitment());
+        p.setOrdinal(nextOrdinal);
+        DealParticipant savedP = participants.save(p);
+
+        inv.setStatus("ACCEPTED");
+        inv.setDecidedBy(actor);
+        inv.setDecidedAt(java.time.Instant.now());
+        inv.setParticipantId(savedP.getId());
+        SyndicationInvitation saved = invitations.save(inv);
+        audit.human(actor, "SYNDICATION_INVITATION_ACCEPTED", "SyndicationInvitation", String.valueOf(id),
+                "Accepted invitation to syndicate %s for %.2f %s — joined as %s".formatted(
+                        inv.getApplicationReference(), inv.getProposedCommitment(),
+                        inv.getCurrency(), inv.getProposedRole()),
+                Map.of("reference", inv.getApplicationReference(),
+                        "commitment", inv.getProposedCommitment(),
+                        "participantId", savedP.getId()));
+        return saved;
+    }
+
+    @Transactional
+    public SyndicationInvitation declineInvitation(Long id, String reason, String actor) {
+        SyndicationInvitation inv = getInvitation(id);
+        guardInvitationDecidable(inv, actor);
+        inv.setStatus("DECLINED");
+        inv.setDecidedBy(actor);
+        inv.setDecidedAt(java.time.Instant.now());
+        inv.setDeclineReason(reason);
+        SyndicationInvitation saved = invitations.save(inv);
+        audit.human(actor, "SYNDICATION_INVITATION_DECLINED", "SyndicationInvitation", String.valueOf(id),
+                "Declined invitation to %s — %s".formatted(inv.getApplicationReference(),
+                        reason == null ? "no reason" : reason),
+                Map.of("reference", inv.getApplicationReference(),
+                        "reason", reason == null ? "" : reason));
+        return saved;
+    }
+
+    @Transactional
+    public SyndicationInvitation withdrawInvitation(Long id, String reason, String actor) {
+        SyndicationInvitation inv = getInvitation(id);
+        if (!"SENT".equals(inv.getStatus())) {
+            throw ApiException.conflict("Invitation is " + inv.getStatus());
+        }
+        if (actor == null || !actor.equals(inv.getInvitedBy())) {
+            throw ApiException.forbiddenAutonomy(
+                    "Only the lead-bank actor who sent the invitation (" + inv.getInvitedBy()
+                    + ") may withdraw it");
+        }
+        inv.setStatus("WITHDRAWN");
+        inv.setDecidedBy(actor);
+        inv.setDecidedAt(java.time.Instant.now());
+        inv.setDeclineReason(reason);
+        SyndicationInvitation saved = invitations.save(inv);
+        audit.human(actor, "SYNDICATION_INVITATION_WITHDRAWN", "SyndicationInvitation", String.valueOf(id),
+                "Withdrew invitation to %s — %s".formatted(inv.getInvitedBank(),
+                        reason == null ? "no reason" : reason),
+                Map.of("invitedBank", inv.getInvitedBank()));
+        return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public List<SyndicationInvitation> invitationsFor(String reference) {
+        return invitations.findByApplicationReferenceOrderByIdDesc(reference);
+    }
+
+    private SyndicationInvitation getInvitation(Long id) {
+        return invitations.findById(id)
+                .orElseThrow(() -> ApiException.notFound("No invitation: " + id));
+    }
+
+    private void guardInvitationDecidable(SyndicationInvitation inv, String actor) {
+        if (!"SENT".equals(inv.getStatus())) {
+            throw ApiException.conflict("Invitation is " + inv.getStatus());
+        }
+        if (actor == null || actor.isBlank()) {
+            throw ApiException.forbiddenAutonomy("A named human actor is required");
+        }
+        if (actor.equals(inv.getInvitedBy())) {
+            throw ApiException.forbiddenAutonomy(
+                    "Invitation decision must be made by a different actor than the inviter ("
+                    + inv.getInvitedBy() + ")");
+        }
+        if (inv.getExpiresAt() != null && java.time.Instant.now().isAfter(inv.getExpiresAt())) {
+            // Self-heal: mark expired and refuse the decision.
+            inv.setStatus("EXPIRED");
+            inv.setDecidedAt(java.time.Instant.now());
+            invitations.save(inv);
+            throw ApiException.conflict("Invitation expired at " + inv.getExpiresAt());
+        }
+    }
+
+    // ============================================================ secondary transfers
+
+    @Transactional
+    public SecondaryTransfer proposeTransfer(String reference, Long fromParticipantId,
+                                             String toBank, String toBankRef,
+                                             double transferAmount, String currency,
+                                             String reason, String actor) {
+        DealStructure structure = structures.findByApplicationReference(reference)
+                .orElseThrow(() -> ApiException.notFound("No deal structure for " + reference));
+        if (!"SYNDICATION".equalsIgnoreCase(structure.getStructureType())) {
+            throw ApiException.badRequest(reference + " is not a SYNDICATION deal");
+        }
+        DealParticipant from = participants.findById(fromParticipantId)
+                .filter(p -> reference.equals(p.getApplicationReference()))
+                .orElseThrow(() -> ApiException.notFound("No participant " + fromParticipantId + " on " + reference));
+        if (!LENDER_ROLES.contains(from.getRole())) {
+            throw ApiException.badRequest("Transfer source must be a lender role (got " + from.getRole() + ")");
+        }
+        if (toBank == null || toBank.isBlank()) {
+            throw ApiException.badRequest("toBank is required");
+        }
+        if (transferAmount <= 0) {
+            throw ApiException.badRequest("transferAmount must be positive");
+        }
+        if (actor == null || actor.isBlank()) {
+            throw ApiException.forbiddenAutonomy("A named human actor is required to propose a transfer");
+        }
+        // The transferable balance is the UNFUNDED commitment — funded historical
+        // allocations stay with the original lender. The agent's secondary
+        // register tracks the sold-down portion separately, but the live book
+        // adjusts on future draws only.
+        double funded = allocations.findByApplicationReferenceOrderByIdAsc(reference).stream()
+                .filter(a -> !"REVERSED".equals(a.getStatus()))
+                .filter(a -> fromParticipantId.equals(a.getParticipantId()))
+                .mapToDouble(SyndicationAllocation::getAllocatedAmount).sum();
+        double unfunded = from.getCommittedAmount() - funded;
+        if (transferAmount > unfunded + 0.01) {
+            throw ApiException.badRequest(
+                    "Cannot transfer %.2f — only %.2f is unfunded on %s's commitment (funded %.2f of %.2f)"
+                            .formatted(transferAmount, unfunded, from.getName(), funded, from.getCommittedAmount()));
+        }
+        SecondaryTransfer t = new SecondaryTransfer();
+        t.setApplicationReference(reference);
+        t.setFromParticipantId(fromParticipantId);
+        t.setFromName(from.getName());
+        t.setToBank(toBank);
+        t.setToBankRef(toBankRef);
+        t.setTransferAmount(round2(transferAmount));
+        t.setCurrency(currency == null || currency.isBlank()
+                ? currencyFor(reference) : currency.toUpperCase());
+        t.setReason(reason);
+        t.setProposedBy(actor);
+        SecondaryTransfer saved = transfers.save(t);
+        audit.human(actor, "SYNDICATION_TRANSFER_PROPOSED", "SecondaryTransfer", String.valueOf(saved.getId()),
+                "%s proposes to sell down %.2f %s of %s commitment to %s".formatted(
+                        from.getName(), transferAmount, t.getCurrency(), reference, toBank),
+                Map.of("reference", reference, "fromName", from.getName(),
+                        "toBank", toBank, "transferAmount", transferAmount));
+        return saved;
+    }
+
+    @Transactional
+    public SecondaryTransfer settleTransfer(Long id, String comment, String actor) {
+        SecondaryTransfer t = getTransfer(id);
+        if (!"PROPOSED".equals(t.getStatus())) {
+            throw ApiException.conflict("Transfer is " + t.getStatus());
+        }
+        if (actor == null || actor.isBlank() || actor.equals(t.getProposedBy())) {
+            throw ApiException.forbiddenAutonomy(
+                    "Transfer settlement must be made by an agent actor different from the transferor ("
+                    + t.getProposedBy() + ")");
+        }
+        DealParticipant from = participants.findById(t.getFromParticipantId())
+                .orElseThrow(() -> ApiException.notFound("Transferor participant gone"));
+        // Re-verify unfunded headroom at settlement time (draws may have happened
+        // between propose and settle).
+        double funded = allocations.findByApplicationReferenceOrderByIdAsc(t.getApplicationReference()).stream()
+                .filter(a -> !"REVERSED".equals(a.getStatus()))
+                .filter(a -> t.getFromParticipantId().equals(a.getParticipantId()))
+                .mapToDouble(SyndicationAllocation::getAllocatedAmount).sum();
+        double unfunded = from.getCommittedAmount() - funded;
+        if (t.getTransferAmount() > unfunded + 0.01) {
+            throw ApiException.conflict(
+                    "Settlement aborted — unfunded commitment is now %.2f, transfer needs %.2f (draws since proposal)"
+                            .formatted(unfunded, t.getTransferAmount()));
+        }
+        // Re-cut commitments.
+        from.setCommittedAmount(round2(from.getCommittedAmount() - t.getTransferAmount()));
+        participants.save(from);
+
+        // If the transferee is already a participant (by externalRef match if
+        // present, else by name), merge into that row; otherwise create a fresh
+        // PARTICIPANT_LENDER for them.
+        DealParticipant to = participants.findByApplicationReferenceOrderByOrdinalAsc(t.getApplicationReference())
+                .stream()
+                .filter(p -> LENDER_ROLES.contains(p.getRole()))
+                .filter(p -> {
+                    if (t.getToBankRef() != null && !t.getToBankRef().isBlank()
+                            && t.getToBankRef().equals(p.getExternalRef())) return true;
+                    return t.getToBankRef() == null && t.getToBank().equalsIgnoreCase(p.getName());
+                })
+                .findFirst().orElse(null);
+        if (to == null) {
+            LoanApplication app = applications.findByReference(t.getApplicationReference())
+                    .orElseThrow(() -> ApiException.notFound("No application"));
+            int nextOrdinal = participants.findByApplicationReferenceOrderByOrdinalAsc(
+                    t.getApplicationReference()).size();
+            to = new DealParticipant();
+            to.setApplicationId(app.getId());
+            to.setApplicationReference(t.getApplicationReference());
+            to.setRole("PARTICIPANT_LENDER");
+            to.setName(t.getToBank());
+            to.setExternalRef(t.getToBankRef());
+            to.setCommittedAmount(t.getTransferAmount());
+            to.setOrdinal(nextOrdinal);
+        } else {
+            to.setCommittedAmount(round2(to.getCommittedAmount() + t.getTransferAmount()));
+        }
+        DealParticipant savedTo = participants.save(to);
+
+        t.setStatus("SETTLED");
+        t.setAgentDecidedBy(actor);
+        t.setAgentDecidedAt(java.time.Instant.now());
+        t.setDecisionComment(comment);
+        t.setToParticipantId(savedTo.getId());
+        SecondaryTransfer saved = transfers.save(t);
+        audit.human(actor, "SYNDICATION_TRANSFER_SETTLED", "SecondaryTransfer", String.valueOf(id),
+                "Settled secondary transfer: %s -> %s, %.2f %s (%s -> %s)".formatted(
+                        from.getName(), savedTo.getName(), t.getTransferAmount(), t.getCurrency(),
+                        round2(from.getCommittedAmount() + t.getTransferAmount()), from.getCommittedAmount()),
+                Map.of("reference", t.getApplicationReference(),
+                        "fromParticipantId", t.getFromParticipantId(),
+                        "toParticipantId", savedTo.getId(),
+                        "transferAmount", t.getTransferAmount()));
+        return saved;
+    }
+
+    @Transactional
+    public SecondaryTransfer rejectTransfer(Long id, String reason, String actor) {
+        SecondaryTransfer t = getTransfer(id);
+        if (!"PROPOSED".equals(t.getStatus())) {
+            throw ApiException.conflict("Transfer is " + t.getStatus());
+        }
+        if (actor == null || actor.isBlank() || actor.equals(t.getProposedBy())) {
+            throw ApiException.forbiddenAutonomy(
+                    "Transfer rejection must be made by an agent actor different from the transferor");
+        }
+        t.setStatus("REJECTED");
+        t.setAgentDecidedBy(actor);
+        t.setAgentDecidedAt(java.time.Instant.now());
+        t.setDecisionComment(reason);
+        SecondaryTransfer saved = transfers.save(t);
+        audit.human(actor, "SYNDICATION_TRANSFER_REJECTED", "SecondaryTransfer", String.valueOf(id),
+                "Rejected secondary transfer from %s — %s".formatted(t.getFromName(),
+                        reason == null ? "no reason" : reason),
+                Map.of("reference", t.getApplicationReference(),
+                        "reason", reason == null ? "" : reason));
+        return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public List<SecondaryTransfer> transfersFor(String reference) {
+        return transfers.findByApplicationReferenceOrderByIdDesc(reference);
+    }
+
+    private SecondaryTransfer getTransfer(Long id) {
+        return transfers.findById(id)
+                .orElseThrow(() -> ApiException.notFound("No secondary transfer: " + id));
+    }
 }

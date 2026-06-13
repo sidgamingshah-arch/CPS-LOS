@@ -411,13 +411,8 @@ export const initiation = {
 };
 
 // ---- syndication agency: book · fee waterfall · agency reconciliation · feed ----
-export const syndication = {
-  book: (ref: string) => call<any>(`/origination/api/syndication/${ref}/book`, "GET"),
-  allocate: (ref: string, body: any, actor: string) =>
-    call<any>(`/origination/api/syndication/${ref}/allocate`, "POST", body, actor),
-  allocations: (ref: string) => call<any[]>(`/origination/api/syndication/${ref}/allocations`, "GET"),
-  feed: (ref: string) => call<any>(`/origination/api/syndication/${ref}/feed`, "GET"),
-};
+// (invitations + secondary transfers extend this object further down — kept
+// as a single export so the lifecycle surface is one import in the UI.)
 
 // ---- pre-disbursement: Condition Precedent register + Disbursement workflow ----
 export const cps = {
@@ -491,6 +486,35 @@ export const repayments = {
     call<any>(`/decision/api/repayments/${id}/confirm`, "POST", undefined, actor),
   reject: (id: number, body: any, actor: string) =>
     call<any>(`/decision/api/repayments/${id}/reject`, "POST", body, actor),
+};
+
+export const syndication = {
+  // agency: book / fee waterfall / agency reconciliation / feed
+  book: (ref: string) => call<any>(`/origination/api/syndication/${ref}/book`, "GET"),
+  allocate: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/${ref}/allocate`, "POST", body, actor),
+  allocations: (ref: string) => call<any[]>(`/origination/api/syndication/${ref}/allocations`, "GET"),
+  feed: (ref: string) => call<any>(`/origination/api/syndication/${ref}/feed`, "GET"),
+  // invitations
+  invite: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/${ref}/invitations`, "POST", body, actor),
+  acceptInvitation: (id: number, actor: string) =>
+    call<any>(`/origination/api/syndication/invitations/${id}/accept`, "POST", undefined, actor),
+  declineInvitation: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/invitations/${id}/decline`, "POST", body, actor),
+  withdrawInvitation: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/invitations/${id}/withdraw`, "POST", body, actor),
+  invitations: (ref: string) =>
+    call<any[]>(`/origination/api/syndication/${ref}/invitations`, "GET"),
+  // secondary transfers
+  proposeTransfer: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/${ref}/transfers`, "POST", body, actor),
+  settleTransfer: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/transfers/${id}/settle`, "POST", body, actor),
+  rejectTransfer: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/transfers/${id}/reject`, "POST", body, actor),
+  transfers: (ref: string) =>
+    call<any[]>(`/origination/api/syndication/${ref}/transfers`, "GET"),
 };
 
 // ---- post-sanction facility amendments (DoA-routed) ----
