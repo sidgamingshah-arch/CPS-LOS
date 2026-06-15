@@ -139,5 +139,38 @@ check("self-approval blocked (403)", st == 403, f"HTTP {st}")
 st, ok = approve(d3["id"], checker="bob")
 check("different checker approves (200)", st == 200, f"HTTP {st}")
 
+print("== 8. Blank jurisdiction normalises to the DEFAULT line (no duplicate ACTIVE) ==")
+# Submitting with jurisdiction="" must version + supersede the default line, not
+# spawn a second empty-string line that resolution can't see.
+BKEY = "param_blank"
+st, b1 = call("POST", f"/config/api/masters/{TYPE}",
+              {"recordKey": BKEY, "jurisdiction": "", "payload": {"scope": "DEFAULT", "v": 1}}, actor="master.maker")
+b1 = must(st, b1, "blank submit v1")
+check("blank jurisdiction stored as null (default line)", b1.get("jurisdiction") in (None, ""), b1.get("jurisdiction"))
+must(*approve(b1["id"]), "approve blank v1")
+st, b2 = call("POST", f"/config/api/masters/{TYPE}",
+              {"recordKey": BKEY, "jurisdiction": "", "payload": {"scope": "DEFAULT", "v": 2}}, actor="master.maker")
+b2 = must(st, b2, "blank submit v2")
+check("blank re-submit versions the SAME default line (v2, not v1)", b2["version"] == 2, b2)
+must(*approve(b2["id"]), "approve blank v2")
+st, bhist = call("GET", f"/config/api/masters/{TYPE}/{BKEY}/history")
+bhist = must(st, bhist, "blank history")
+bactive = [r for r in bhist if r["status"] == "ACTIVE"]
+check("exactly one ACTIVE default after blank-jurisdiction versioning", len(bactive) == 1 and bactive[0]["version"] == 2,
+      [{'jur': r.get('jurisdiction'), 'v': r['version'], 's': r['status']} for r in bhist])
+
+print("== 9. resolve() does NOT cross-jurisdiction fallback (no default → 404) ==")
+# An override exists ONLY for AE-CBUAE on a key with no default. Resolving an
+# unrelated jurisdiction must 404, never silently return the AE override.
+OKEY = "param_override_only"
+st, oo = call("POST", f"/config/api/masters/{TYPE}",
+              {"recordKey": OKEY, "jurisdiction": "AE-CBUAE", "payload": {"scope": "OVERRIDE"}}, actor="master.maker")
+oo = must(st, oo, "override-only submit")
+must(*approve(oo["id"]), "approve override-only")
+st, _ = call("GET", f"/config/api/masters/{TYPE}/{OKEY}?jurisdiction=IN-RBI")
+check("unrelated jurisdiction with no default returns 404 (no cross-jurisdiction leak)", st == 404, f"HTTP {st}")
+st, ae_ok = call("GET", f"/config/api/masters/{TYPE}/{OKEY}?jurisdiction=AE-CBUAE")
+check("the AE-CBUAE override itself still resolves", st == 200 and ae_ok["payload"]["scope"] == "OVERRIDE", f"HTTP {st}")
+
 print(f"\n== masters jurisdiction e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

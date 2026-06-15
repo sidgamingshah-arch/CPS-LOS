@@ -37,14 +37,17 @@ public class MasterDataService {
     @Transactional
     public MasterRecord submit(String masterType, String recordKey, String jurisdiction,
                                Map<String, Object> payload, String maker) {
+        // Normalise blank → null so a record's stored jurisdiction matches the scope it
+        // was versioned under (the IsNull helpers treat blank as the default line).
+        String jur = normaliseJurisdiction(jurisdiction);
         // Version within the (type, key, jurisdiction) scope — a jurisdiction override
         // has its own version line, independent of the default record for the key.
-        int version = versionsFor(masterType.toUpperCase(), recordKey, jurisdiction)
+        int version = versionsFor(masterType.toUpperCase(), recordKey, jur)
                 .stream().mapToInt(MasterRecord::getVersion).max().orElse(0) + 1;
         MasterRecord m = new MasterRecord();
         m.setMasterType(masterType.toUpperCase());
         m.setRecordKey(recordKey);
-        m.setJurisdiction(jurisdiction);
+        m.setJurisdiction(jur);
         m.setPayload(payload == null ? Map.of() : payload);
         m.setStatus(PENDING);
         m.setVersion(version);
@@ -119,13 +122,23 @@ public class MasterDataService {
     /** Seeds an already-approved record (used by the platform seeder). */
     @Transactional
     public MasterRecord seedActive(String masterType, String recordKey, String jurisdiction, Map<String, Object> payload) {
+        String type = masterType.toUpperCase();
+        String jur = normaliseJurisdiction(jurisdiction);
+        // Version + supersede within the (type, key, jurisdiction) scope so a re-seed
+        // against a populated DB never leaves two ACTIVE rows on the same line.
+        int version = versionsFor(type, recordKey, jur)
+                .stream().mapToInt(MasterRecord::getVersion).max().orElse(0) + 1;
+        activeFor(type, recordKey, jur).ifPresent(prev -> {
+            prev.setStatus(INACTIVE);
+            repo.save(prev);
+        });
         MasterRecord m = new MasterRecord();
-        m.setMasterType(masterType.toUpperCase());
+        m.setMasterType(type);
         m.setRecordKey(recordKey);
-        m.setJurisdiction(jurisdiction);
+        m.setJurisdiction(jur);
         m.setPayload(payload);
         m.setStatus(ACTIVE);
-        m.setVersion(1);
+        m.setVersion(version);
         m.setMaker("seed.maker");
         m.setMakerAt(Instant.now());
         m.setChecker("seed.checker");
@@ -167,8 +180,10 @@ public class MasterDataService {
                 return override.get();
             }
         }
+        // No override for this jurisdiction → the null-jurisdiction default applies.
+        // Deliberately NOT a cross-jurisdiction fallback: returning another regime's
+        // override here would silently apply the wrong overlay.
         return repo.findFirstByMasterTypeAndRecordKeyAndJurisdictionIsNullAndStatusOrderByVersionDesc(type, recordKey, ACTIVE)
-                .or(() -> repo.findFirstByMasterTypeAndRecordKeyAndStatusOrderByVersionDesc(type, recordKey, ACTIVE))
                 .orElseThrow(() -> ApiException.notFound(
                         "No active %s/%s for jurisdiction %s".formatted(masterType, recordKey, jurisdiction)));
     }
@@ -195,6 +210,11 @@ public class MasterDataService {
 
     // ---- jurisdiction-scoped helpers: a (type, key, jurisdiction) triple is the unit
     // of versioning and supersession; a null jurisdiction = the default line. ----
+
+    /** Blank jurisdiction collapses to null so the stored value matches the default line. */
+    private static String normaliseJurisdiction(String jurisdiction) {
+        return (jurisdiction == null || jurisdiction.isBlank()) ? null : jurisdiction;
+    }
 
     /** All versions for the (type, key, jurisdiction) scope — the version line that submit increments. */
     private List<MasterRecord> versionsFor(String masterType, String recordKey, String jurisdiction) {

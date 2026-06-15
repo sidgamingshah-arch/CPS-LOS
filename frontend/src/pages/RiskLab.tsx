@@ -622,7 +622,7 @@ function ManualOverrideCard({ refValue, rating, qual, onChanged }: {
       )}
 
       <div className="btnrow">
-        <Button kind="primary" busy={busy} onClick={submit} disabled={!proposedGrade || !reasonCode || exceedsLimit}>
+        <Button kind="primary" busy={busy} onClick={submit} disabled={!proposedGrade || !reasonCode || exceedsLimit || busy}>
           Apply manual override
         </Button>
         <span className="muted">Acting as {actor}</span>
