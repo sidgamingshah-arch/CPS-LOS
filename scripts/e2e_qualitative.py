@@ -196,5 +196,49 @@ set_cap(True)
 st, body = call("POST", f"/risk/api/risk/{ref}/qualitative/assess", actor="risk.analyst")
 check("qualitative assess works again after re-enable", st == 200, f"{st}")
 
+print("\n== 7. Manual rating override — 100% human; qualitative composite is read-only context ==")
+SCALE = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC", "CC", "C", "D"]
+st, rnow = call("GET", f"/risk/api/risk/{ref}/rating")
+rnow = must(st, rnow, "rating before override")
+model_grade = rnow["modelGrade"]
+# Read-only qualitative composite the override screen echoes as context.
+st, qbefore = call("GET", f"/risk/api/risk/{ref}/qualitative")
+qbefore = must(st, qbefore, "qualitative before override")
+composite_before = qbefore["compositeScore"]
+# The qualitative readout proposes NO notch — overrides are completely manual.
+check("qualitative view carries no AI notch suggestion (override is 100% manual)",
+      "suggestedNotch" not in qbefore and all("suggestedNotch" not in p for p in qbefore["parameters"]), "")
+
+# A 3-notch override as ANALYST must be blocked (notch-limited by role).
+mi = SCALE.index(model_grade)
+three = SCALE[min(mi + 3, len(SCALE) - 1)]
+st, blocked = call("POST", f"/risk/api/risk/{ref}/rating/override",
+                   {"proposedGrade": three, "reasonCode": "OTHER", "note": "too far", "role": "ANALYST"},
+                   actor="credit.officer")
+check("3-notch ANALYST override blocked (403, notch-limited)", st == 403, f"{st} {blocked}")
+
+# A 1-notch manual override (human-entered grade + reason) is accepted.
+one = SCALE[min(mi + 1, len(SCALE) - 1)]
+pd_before = rnow["pd"]
+st, ov = call("POST", f"/risk/api/risk/{ref}/rating/override",
+              {"proposedGrade": one, "reasonCode": "MANAGEMENT_QUALITY",
+               "note": "RM diligence + qualitative context reviewed", "role": "CREDIT_OFFICER"},
+              actor="credit.officer")
+ov = must(st, ov, "manual override")
+check("manual override changes the FINAL grade to the human-entered value", ov["finalGrade"] == one, str(ov["finalGrade"]))
+check("MODEL grade preserved by override (only the final grade moves)", ov["modelGrade"] == model_grade, str(ov["modelGrade"]))
+check("override re-derives the deterministic PD from the new grade",
+      ov["overridden"] is True and abs(ov["pd"] - pd_before) > 1e-9, f"{pd_before} -> {ov['pd']}")
+st, oaudit = call("GET", "/risk/api/audit")
+check("RATING_OVERRIDDEN stamped HUMAN (manual, never AI)",
+      any(a.get("eventType") == "RATING_OVERRIDDEN" and a.get("actorType") == "HUMAN" for a in oaudit), "")
+
+# The qualitative composite is pure read-only context — the manual override neither
+# reads it nor changes it.
+st, qafter = call("GET", f"/risk/api/risk/{ref}/qualitative")
+qafter = must(st, qafter, "qualitative after override")
+check("qualitative composite is read-only context — unchanged by the manual override",
+      abs(qafter["compositeScore"] - composite_before) < 1e-9, f"{composite_before} -> {qafter['compositeScore']}")
+
 print(f"\n== Qualitative scorecard e2e: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

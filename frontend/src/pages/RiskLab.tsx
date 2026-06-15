@@ -6,10 +6,25 @@
 import { Fragment, useState } from "react";
 import { origination, risk, modelDoc, fmt } from "../api";
 import { useApp } from "../app-context";
-import { AiBadge, Badge, Button, Card, EmptyState, Field, GradeBadge, GovSplit, Stat, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, EmptyState, Field, GradeBadge, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
 
 const SECTOR_OUTLOOKS = ["IMPROVING", "STABLE", "DETERIORATING"] as const;
 type SectorOutlook = (typeof SECTOR_OUTLOOKS)[number];
+
+// Manual-override vocabulary, mirrored from the risk-service (MasterScale.GRADES +
+// RiskDtos.REASON_CODES + the per-role notch limits). The override is 100% human —
+// these only populate the dropdowns; nothing here is AI-derived.
+const GRADE_SCALE = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC", "CC", "C", "D"] as const;
+const OVERRIDE_REASONS = [
+  "POST_BALANCE_SHEET_EVENT", "MANAGEMENT_QUALITY", "GROUP_SUPPORT",
+  "SECTOR_OUTLOOK", "DATA_QUALITY", "COLLATERAL_STRENGTH", "OTHER",
+] as const;
+const OVERRIDE_ROLES = [
+  { role: "ANALYST", notches: 1 },
+  { role: "CREDIT_OFFICER", notches: 2 },
+  { role: "CREDIT_COMMITTEE", notches: 99 },
+  { role: "CRO", notches: 99 },
+] as const;
 
 interface MacroForm {
   scenarioName: string;
@@ -64,6 +79,13 @@ export default function RiskLab() {
     [ref],
   );
 
+  // Qualitative scorecard — shared so the manual-override card can echo the composite
+  // as read-only context (stays in sync when a parameter is confirmed).
+  const qualAsync = useAsync(
+    () => (ref ? risk.qualitative(ref).catch(() => null) : Promise.resolve(null)),
+    [ref],
+  );
+
   // RAG busy state
   const [ragBusy, setRagBusy] = useState(false);
 
@@ -75,6 +97,7 @@ export default function RiskLab() {
     ratingAsync.reload();
     ragAsync.reload();
     macroAsync.reload();
+    qualAsync.reload();
   };
 
   const handleAssessRag = async () => {
@@ -465,10 +488,147 @@ export default function RiskLab() {
         )}
       </Card>
 
-      {ref && <QualitativeCard refValue={ref} grade={ratingAsync.data?.rating?.finalGrade} />}
+      {ref && (
+        <QualitativeCard
+          refValue={ref}
+          grade={ratingAsync.data?.rating?.finalGrade}
+          qa={qualAsync}
+        />
+      )}
+
+      {ref && rating && (
+        <ManualOverrideCard
+          refValue={ref}
+          rating={rating}
+          qual={qualAsync.data}
+          onChanged={reloadAll}
+        />
+      )}
       </>
       )}
     </div>
+  );
+}
+
+/**
+ * Manual rating override — a named human changes the authoritative grade. This is
+ * deliberately 100% manual: nothing here is AI-derived, no notch is suggested, and
+ * the qualitative composite is shown only as READ-ONLY CONTEXT the human may weigh.
+ * The backend enforces the per-role notch limit, reason code, and segregation of
+ * duties; the implied-notch hint below is plain arithmetic on the human's selection.
+ */
+function ManualOverrideCard({ refValue, rating, qual, onChanged }: {
+  refValue: string; rating: any; qual: any; onChanged: () => void;
+}) {
+  const { actor, notify } = useApp();
+  const [proposedGrade, setProposedGrade] = useState("");
+  const [reasonCode, setReasonCode] = useState("");
+  const [role, setRole] = useState<string>("ANALYST");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const modelGrade: string | undefined = rating?.modelGrade;
+  const finalGrade: string | undefined = rating?.finalGrade;
+  // + = upgrade (toward AAA), matching MasterScale.notches on the server.
+  const notch = proposedGrade && modelGrade
+    ? GRADE_SCALE.indexOf(modelGrade as any) - GRADE_SCALE.indexOf(proposedGrade as any)
+    : 0;
+  const roleLimit = OVERRIDE_ROLES.find((r) => r.role === role)?.notches ?? 1;
+  const exceedsLimit = Math.abs(notch) > roleLimit;
+
+  async function submit() {
+    if (!proposedGrade) { notify("Pick the grade you are overriding to", true); return; }
+    if (!reasonCode) { notify("Select a reason code", true); return; }
+    setBusy(true);
+    try {
+      await risk.overrideRating(refValue, { proposedGrade, reasonCode, note, role }, actor);
+      notify(`Rating overridden to ${proposedGrade} (${role})`);
+      setProposedGrade(""); setReasonCode(""); setNote("");
+      onChanged();
+    } catch (e: any) { notify(e.message, true); } finally { setBusy(false); }
+  }
+
+  const bandKind = (b: string) => (b === "STRONG" ? "ok" : b === "WEAK" ? "bad" : "warn");
+  const notchLabel = notch === 0
+    ? "no change"
+    : `${Math.abs(notch)}-notch ${notch > 0 ? "upgrade" : "downgrade"}`;
+
+  return (
+    <Card title="Manual rating override"
+      sub="A named human changes the authoritative grade — notch-limited by role, reason-coded, and segregation-of-duties checked. 100% manual: no AI recommendation pre-fills or drives this."
+      right={<HumanBadge label="HUMAN · MANUAL" />}>
+
+      {/* Authoritative figures of record (what an override would change). */}
+      <div className="grid cols-3" style={{ marginBottom: 12 }}>
+        <Stat label="Model grade" value={<GradeBadge grade={modelGrade} />} />
+        <Stat label="Current final grade" value={<GradeBadge grade={finalGrade} />} />
+        <Stat label="PD" value={fmt.pct(rating?.pd, 2)} />
+      </div>
+
+      {/* Read-only qualitative context — informs the human, never pre-fills the grade. */}
+      <div className="prov" style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <AiBadge label="ADVISORY CONTEXT" />
+        {qual && qual.parameterCount > 0 ? (
+          <>
+            <span>Qualitative composite</span>
+            <b>{qual.compositeScore.toFixed(1)}/100</b>
+            <Badge kind={bandKind(qual.compositeBand)}>{qual.compositeBand}</Badge>
+            {!qual.allConfirmed && <span className="muted">(some parameters not yet confirmed)</span>}
+            <span className="muted">— read-only reference; it suggests no grade and does not drive this override.</span>
+          </>
+        ) : (
+          <span className="muted">No qualitative assessment yet — run the scorecard above for advisory context. It is optional and never pre-fills the override.</span>
+        )}
+      </div>
+
+      <div className="grid cols-3" style={{ alignItems: "end" }}>
+        <Field label="Override to grade">
+          <select value={proposedGrade} onChange={(e) => setProposedGrade(e.target.value)}>
+            <option value="">— select grade —</option>
+            {GRADE_SCALE.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+        </Field>
+        <Field label="Reason code">
+          <select value={reasonCode} onChange={(e) => setReasonCode(e.target.value)}>
+            <option value="">— select reason —</option>
+            {OVERRIDE_REASONS.map((r) => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
+          </select>
+        </Field>
+        <Field label="Acting as role">
+          <select value={role} onChange={(e) => setRole(e.target.value)}>
+            {OVERRIDE_ROLES.map((r) => (
+              <option key={r.role} value={r.role}>
+                {r.role.replace(/_/g, " ")}{r.notches < 99 ? ` (≤${r.notches} notch)` : " (unlimited)"}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+
+      <Field label="Justification note">
+        <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)}
+          placeholder="Why is the model grade being overridden? (audited)" />
+      </Field>
+
+      {proposedGrade && (
+        <div className="prov" style={{ marginBottom: 10 }}>
+          Implied move from model grade <b>{modelGrade}</b> → <b>{proposedGrade}</b>: <b>{notchLabel}</b>.
+          {exceedsLimit && (
+            <span style={{ color: "var(--bad, #c0392b)", marginLeft: 6 }}>
+              Exceeds the {role.replace(/_/g, " ")} limit of {roleLimit} notch(es) — will be rejected and must be escalated.
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="btnrow">
+        <Button kind="primary" busy={busy} onClick={submit} disabled={!proposedGrade || !reasonCode || exceedsLimit}>
+          Apply manual override
+        </Button>
+        <span className="muted">Acting as {actor}</span>
+        <Unchanged label="DETERMINISTIC PD/CAPITAL RE-DERIVED" />
+      </div>
+    </Card>
   );
 }
 
@@ -478,9 +638,8 @@ export default function RiskLab() {
  * grounded on deal data, traceable to the prompt that produced it, and human-confirmed.
  * The authoritative grade on the right is never touched — pure advisory overlay.
  */
-function QualitativeCard({ refValue, grade }: { refValue: string; grade?: string }) {
+function QualitativeCard({ refValue, grade, qa }: { refValue: string; grade?: string; qa: { data: any; reload: () => void } }) {
   const { actor, notify } = useApp();
-  const qa = useAsync(() => risk.qualitative(refValue).catch(() => null), [refValue]);
   const [busy, setBusy] = useState(false);
   const [openPrompt, setOpenPrompt] = useState<number | null>(null);
   const [modelText, setModelText] = useState("");
