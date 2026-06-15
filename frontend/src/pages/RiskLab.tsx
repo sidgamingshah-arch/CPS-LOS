@@ -248,7 +248,7 @@ export default function RiskLab() {
         right={<Badge kind="ai">AI · advisory</Badge>}
       >
         <div className="btnrow">
-          <Button onClick={handleAssessRag} disabled={!ref} busy={ragBusy}>
+          <Button onClick={handleAssessRag} disabled={!ref || ragBusy} busy={ragBusy}>
             Assess RAG
           </Button>
           <span className="muted">Acting as {actor}</span>
@@ -404,7 +404,7 @@ export default function RiskLab() {
         </div>
 
         <div className="btnrow" style={{ marginTop: 8 }}>
-          <Button onClick={handleMacroSubmit} disabled={!ref} busy={macroBusy}>
+          <Button onClick={handleMacroSubmit} disabled={!ref || macroBusy} busy={macroBusy}>
             Run macro impact
           </Button>
         </div>
@@ -672,7 +672,7 @@ function QualitativeCard({ refValue, grade, qa }: { refValue: string; grade?: st
       sub="AI-recommended qualitative parameter scores, prompt-driven (QUAL_SCORECARD) and grounded on deal data. Advisory & human-confirmed — the authoritative grade is never changed."
       right={<AiBadge label="ADVISORY · PROMPT-DRIVEN" />}>
       <div className="btnrow" style={{ marginBottom: 10 }}>
-        <Button kind="primary" busy={busy} onClick={assess}>
+        <Button kind="primary" busy={busy} disabled={busy} onClick={assess}>
           {v && v.parameterCount > 0 ? "Re-assess" : "Assess qualitative"}
         </Button>
         {v && v.parameterCount > 0 && (
