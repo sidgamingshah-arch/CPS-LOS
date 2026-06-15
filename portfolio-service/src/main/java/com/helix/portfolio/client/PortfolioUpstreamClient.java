@@ -57,6 +57,31 @@ public class PortfolioUpstreamClient {
         return counterpartyRef;
     }
 
+    /**
+     * Escalates a monitoring signal into a SYSTEM-opened collections case on
+     * decision-service. Idempotent on its side (one active case per facility);
+     * best-effort here — a sweep never fails because the escalation call hiccuped,
+     * but a real failure is logged at WARN so it's discoverable. Returns the case id
+     * when known, else null.
+     */
+    @SuppressWarnings("unchecked")
+    public Long openCollectionsCase(String applicationReference, int dpd, double overdueAmount, String trigger) {
+        try {
+            Map<String, Object> body = Map.of("daysPastDue", dpd, "overdueAmount", overdueAmount,
+                    "trigger", trigger == null ? "" : trigger);
+            Map<String, Object> res = decision.post()
+                    .uri("/api/collections/{ref}/monitoring/open", applicationReference)
+                    .header("X-Actor", "SYSTEM:monitoring")
+                    .body(body)
+                    .retrieve().body(Map.class);
+            Object id = res == null ? null : res.get("id");
+            return id instanceof Number n ? n.longValue() : null;
+        } catch (Exception e) {
+            log.warn("collections auto-open failed for {} ({})", applicationReference, e.getMessage());
+            return null;
+        }
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record RulePackDto(String code, int version, Map<String, Object> payload) {
         public double number(String key, double fallback) {

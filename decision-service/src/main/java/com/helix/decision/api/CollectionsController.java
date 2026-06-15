@@ -58,6 +58,19 @@ public class CollectionsController {
         return collections.open(reference, req.facilityRef(), req.daysPastDue(), req.overdueAmount(), actor);
     }
 
+    public record MonitoringOpenRequest(int daysPastDue, double overdueAmount, String trigger) { }
+
+    /**
+     * SYSTEM auto-open from the portfolio monitoring sweep (EWS escalation). Idempotent;
+     * not role-gated — the case shell is automation surfacing work, and every action
+     * inside it stays human + DoA gated.
+     */
+    @PostMapping("/{reference}/monitoring/open")
+    public CollectionsCase openFromMonitoring(@PathVariable String reference,
+                                              @RequestBody MonitoringOpenRequest req) {
+        return collections.openFromMonitoring(reference, req.daysPastDue(), req.overdueAmount(), req.trigger());
+    }
+
     @PostMapping("/{id}/dpd")
     public CollectionsCase updateDpd(@PathVariable Long id, @Valid @RequestBody UpdateDpdRequest req,
                                      @RequestHeader("X-Actor") String actor) {

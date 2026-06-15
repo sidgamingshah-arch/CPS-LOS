@@ -77,6 +77,10 @@ public class CollectionsCase {
     @Column(nullable = false, length = 80)
     private String openedBy;
 
+    /** What surfaced the case — null for manual opens, else the monitoring trigger (e.g. EWS signal types). */
+    @Column(length = 200)
+    private String triggerReason;
+
     @CreationTimestamp
     private Instant openedAt;
 

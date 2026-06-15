@@ -249,6 +249,59 @@ public class PortfolioService {
         return all;
     }
 
+    // ---- monitoring loop closure: EWS scan -> auto-escalate severe signals to collections ----
+
+    /** One exposure's monitoring outcome. */
+    public record SweepResult(String applicationReference, String counterpartyName,
+                              int signalsRaised, boolean escalated, List<String> escalationSignals,
+                              Long collectionsCaseId) {
+    }
+
+    /**
+     * Closes the monitoring loop for one deal: run the EWS scan, then escalate qualifying
+     * signals into a (SYSTEM, idempotent) collections case on decision-service. The
+     * escalation bar is a SEVERE signal, a covenant breach, or 90+ DPD — the points at
+     * which a deal stops being a watchlist item and becomes a workout. The case is a
+     * shell; the actual workout (restructure / legal / write-off) stays human + DoA gated.
+     */
+    @Transactional
+    public SweepResult monitorSweep(String reference, String actor) {
+        ExposureRecord exp = exposure(reference);
+        List<com.helix.portfolio.entity.EwsSignal> raised = ews.scan(exp);
+        List<String> escalating = new ArrayList<>();
+        for (com.helix.portfolio.entity.EwsSignal s : raised) {
+            boolean severe = "SEVERE".equalsIgnoreCase(s.getSeverity());
+            boolean covenant = "COVENANT_BREACH".equals(s.getSignalType());
+            boolean badDpd = "DAYS_PAST_DUE".equals(s.getSignalType()) && exp.getDaysPastDue() >= 90;
+            if (severe || covenant || badDpd) {
+                escalating.add(s.getSignalType());
+            }
+        }
+        Long caseId = null;
+        if (!escalating.isEmpty()) {
+            String trigger = "EWS: " + String.join(", ", escalating);
+            // Covenant-only signals carry no overdue; DPD signals pass the days so the
+            // case stages itself. The human enters the real overdue when working it.
+            caseId = upstream.openCollectionsCase(reference, exp.getDaysPastDue(), 0.0, trigger);
+        }
+        audit.engine("MONITORING_SWEEP", "Application", reference,
+                "Swept %s: %d signal(s)%s".formatted(reference, raised.size(),
+                        escalating.isEmpty() ? "" : " — escalated to collections (" + String.join(", ", escalating) + ")"),
+                Map.of("signals", raised.size(), "escalated", !escalating.isEmpty(),
+                        "caseId", caseId == null ? "" : caseId));
+        return new SweepResult(reference, exp.getCounterpartyName(), raised.size(),
+                !escalating.isEmpty(), escalating, caseId);
+    }
+
+    @Transactional
+    public List<SweepResult> monitorSweepAll(String actor) {
+        List<SweepResult> out = new ArrayList<>();
+        for (ExposureRecord e : exposures.findAll()) {
+            out.add(monitorSweep(e.getApplicationReference(), actor));
+        }
+        return out;
+    }
+
     // --------------------------------------------------------------- fallbacks
 
     private RulePackDto fallbackProvisioning() {

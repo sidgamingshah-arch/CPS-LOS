@@ -106,6 +106,71 @@ public class CollectionsService {
         return saved;
     }
 
+    /**
+     * SYSTEM-initiated open from the monitoring sweep (portfolio EWS escalation). Unlike
+     * the manual {@link #open}, this is not role-gated (automation surfacing a case, like
+     * the EWS scan raising signals — every consequential action INSIDE the case is still
+     * human + DoA gated), permits a zero overdue (a covenant breach is not a payment
+     * default), and is idempotent: an active case for the facility is refreshed (DPD /
+     * stage bumped if the signal is worse) and returned rather than duplicated.
+     *
+     * <p>The case is opened against the deal's primary facility — a covenant / conduct
+     * signal is obligor-level, so one case per obligor is the right granularity.</p>
+     */
+    @Transactional
+    public CollectionsCase openFromMonitoring(String applicationReference, int dpd,
+                                              double overdueAmount, String trigger) {
+        DealEnvelopeDto env = upstream.envelope(applicationReference);
+        if (env == null || env.facilities() == null || env.facilities().isEmpty()) {
+            throw ApiException.notFound("No deal envelope/facility for " + applicationReference);
+        }
+        String facilityRef = env.facilities().get(0).reference();
+        var existing = repo.findFirstByApplicationReferenceAndFacilityRefAndStatusIn(
+                applicationReference, facilityRef, List.of("OPEN", "LEGAL"));
+        if (existing.isPresent()) {
+            CollectionsCase c = existing.get();
+            boolean changed = false;
+            if (dpd > c.getDaysPastDue()) {
+                c.setDaysPastDue(dpd);
+                c.setNpaStage(stageFor(dpd));
+                changed = true;
+            }
+            if (overdueAmount > c.getOverdueAmount()) {
+                c.setOverdueAmount(round2(overdueAmount));
+                changed = true;
+            }
+            if (changed) {
+                repo.save(c);
+                audit.engine("COLLECTIONS_CASE_REFRESHED", "CollectionsCase", String.valueOf(c.getId()),
+                        "Monitoring refreshed case on %s — %ddpd, stage %s (%s)".formatted(
+                                facilityRef, c.getDaysPastDue(), c.getNpaStage(), trigger),
+                        Map.of("facilityRef", facilityRef, "dpd", c.getDaysPastDue(),
+                                "stage", c.getNpaStage(), "trigger", trigger == null ? "" : trigger));
+            }
+            return c;
+        }
+        FacilityViewDto facility = findFacility(env, facilityRef);
+        CollectionsCase c = new CollectionsCase();
+        c.setApplicationReference(applicationReference);
+        c.setFacilityRef(facilityRef);
+        c.setCounterpartyName(env.counterpartyName());
+        c.setDaysPastDue(Math.max(0, dpd));
+        c.setOverdueAmount(round2(Math.max(0, overdueAmount)));
+        c.setOutstandingAtOpen(repayments.outstandingPrincipal(applicationReference, facilityRef));
+        c.setCurrency(facility != null && facility.currency() != null ? facility.currency().toUpperCase() : "INR");
+        c.setNpaStage(stageFor(Math.max(0, dpd)));
+        c.setOpenedBy("SYSTEM:monitoring");
+        c.setTriggerReason(trigger);
+        CollectionsCase saved = repo.save(c);
+        audit.engine("COLLECTIONS_CASE_AUTO_OPENED", "CollectionsCase", String.valueOf(saved.getId()),
+                "Monitoring auto-opened case on %s — %ddpd, stage %s; trigger: %s".formatted(
+                        facilityRef, c.getDaysPastDue(), c.getNpaStage(), trigger),
+                Map.of("applicationReference", applicationReference, "facilityRef", facilityRef,
+                        "dpd", c.getDaysPastDue(), "stage", c.getNpaStage(),
+                        "trigger", trigger == null ? "" : trigger));
+        return saved;
+    }
+
     @Transactional
     public CollectionsCase updateDpd(Long id, int dpd, double overdueAmount, String note, String actor) {
         roles.require(actor, ProtectedAction.COLLECTIONS_UPDATE);

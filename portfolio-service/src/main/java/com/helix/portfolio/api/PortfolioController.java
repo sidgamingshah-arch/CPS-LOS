@@ -145,6 +145,19 @@ public class PortfolioController {
         return portfolio.scanAll(actor);
     }
 
+    /** Monitoring loop: EWS scan + auto-escalate severe signals into a collections case. */
+    @PostMapping("/monitoring/sweep/{reference}")
+    public PortfolioService.SweepResult monitorSweep(@PathVariable String reference,
+                                                     @RequestHeader(value = "X-Actor", defaultValue = "portfolio.manager") String actor) {
+        return portfolio.monitorSweep(reference, actor);
+    }
+
+    @PostMapping("/monitoring/sweep")
+    public List<PortfolioService.SweepResult> monitorSweepAll(
+            @RequestHeader(value = "X-Actor", defaultValue = "portfolio.manager") String actor) {
+        return portfolio.monitorSweepAll(actor);
+    }
+
     @GetMapping("/ews/watchlist")
     public List<EwsSignal> watchlist() {
         return ews.watchlist();

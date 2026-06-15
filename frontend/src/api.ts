@@ -293,6 +293,8 @@ export const portfolio = {
     call<any[]>(`/portfolio/api/portfolio/exposures/${ref}/ews/scan`, "POST", undefined, actor),
   scanAll: (actor: string) => call<any[]>("/portfolio/api/portfolio/ews/scan-all", "POST", undefined, actor),
   watchlist: () => call<any[]>("/portfolio/api/portfolio/ews/watchlist", "GET"),
+  monitorSweepAll: (actor: string) =>
+    call<any[]>("/portfolio/api/portfolio/monitoring/sweep", "POST", undefined, actor),
   disposition: (id: number, status: string, actor: string) =>
     call<any>(`/portfolio/api/portfolio/ews/${id}/disposition`, "POST", { status }, actor),
   ingestCoreBanking: (ref: string, envelope: any, actor: string) =>
