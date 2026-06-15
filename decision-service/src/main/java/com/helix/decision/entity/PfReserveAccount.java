@@ -39,11 +39,12 @@ public class PfReserveAccount {
     @Column(nullable = false, length = 20)
     private String accountType;
 
-    @Column(nullable = false)
-    private double requiredAmount;
+    @Column(nullable = false, precision = 22, scale = 2)
+    private java.math.BigDecimal requiredAmount = com.helix.common.money.Money.ZERO;
 
-    @Column(nullable = false)
-    private double currentBalance;
+    /** Running balance — fund/withdraw accumulate here, so it's a BigDecimal ledger field. */
+    @Column(nullable = false, precision = 22, scale = 2)
+    private java.math.BigDecimal currentBalance = com.helix.common.money.Money.ZERO;
 
     @Column(nullable = false, length = 8)
     private String currency;

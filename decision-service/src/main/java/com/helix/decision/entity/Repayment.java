@@ -51,14 +51,14 @@ public class Repayment {
     @Column(nullable = false, length = 60)
     private String facilityRef;
 
-    @Column(nullable = false)
-    private double amount;
+    @Column(nullable = false, precision = 22, scale = 2)
+    private java.math.BigDecimal amount = com.helix.common.money.Money.ZERO;
 
-    @Column(nullable = false)
-    private double principalComponent;
+    @Column(nullable = false, precision = 22, scale = 2)
+    private java.math.BigDecimal principalComponent = com.helix.common.money.Money.ZERO;
 
-    @Column(nullable = false)
-    private double interestComponent;
+    @Column(nullable = false, precision = 22, scale = 2)
+    private java.math.BigDecimal interestComponent = com.helix.common.money.Money.ZERO;
 
     @Column(nullable = false, length = 8)
     private String currency;

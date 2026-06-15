@@ -49,8 +49,8 @@ public class PfMilestone {
     @Column(nullable = false, length = 160)
     private String name;
 
-    @Column(nullable = false)
-    private double plannedAmount;
+    @Column(nullable = false, precision = 22, scale = 2)
+    private java.math.BigDecimal plannedAmount = com.helix.common.money.Money.ZERO;
 
     @Column(nullable = false, length = 8)
     private String currency;

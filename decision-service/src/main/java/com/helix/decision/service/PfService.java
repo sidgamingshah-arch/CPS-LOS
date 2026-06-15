@@ -1,6 +1,7 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.money.Money;
 import com.helix.common.rbac.ActorDirectory;
 import com.helix.common.rbac.ProtectedAction;
 import com.helix.common.web.ApiException;
@@ -67,7 +68,7 @@ public class PfService {
         m.setFacilityRef(facilityRef);
         m.setSequence(sequence);
         m.setName(name);
-        m.setPlannedAmount(plannedAmount);
+        m.setPlannedAmount(Money.of(plannedAmount));
         m.setCurrency(currency == null || currency.isBlank() ? "INR" : currency.toUpperCase());
         m.setPlannedDate(plannedDate);
         PfMilestone saved = milestones.save(m);
@@ -151,8 +152,8 @@ public class PfService {
         PfReserveAccount r = new PfReserveAccount();
         r.setApplicationReference(ref);
         r.setAccountType(type.toUpperCase());
-        r.setRequiredAmount(required);
-        r.setCurrentBalance(0.0);
+        r.setRequiredAmount(Money.of(required));
+        r.setCurrentBalance(Money.ZERO);
         r.setCurrency(currency == null || currency.isBlank() ? "INR" : currency.toUpperCase());
         r.setStatus("SHORTFALL");
         PfReserveAccount saved = reserves.save(r);
@@ -167,16 +168,17 @@ public class PfService {
     public PfReserveAccount fund(Long id, double amount, String note, String actor) {
         roles.require(actor, ProtectedAction.PF_RESERVE_FUND);
         PfReserveAccount r = getReserve(id);
-        r.setCurrentBalance(round2(r.getCurrentBalance() + amount));
-        r.setStatus(r.getCurrentBalance() + 1e-6 >= r.getRequiredAmount() ? "FUNDED" : "SHORTFALL");
+        r.setCurrentBalance(Money.add(r.getCurrentBalance(), Money.of(amount)));
+        r.setStatus(funded(r) ? "FUNDED" : "SHORTFALL");
         r.setLastActionBy(actor);
         r.setLastActionAt(Instant.now());
         r.setLastFundedBy(actor);
         PfReserveAccount saved = reserves.save(r);
         audit.human(actor, "PF_RESERVE_FUNDED", "PfReserveAccount", String.valueOf(id),
                 "Funded %s by %.2f -> balance %.2f (%s)".formatted(r.getAccountType(), amount,
-                        r.getCurrentBalance(), r.getStatus()),
-                Map.of("accountType", r.getAccountType(), "amount", amount, "balance", r.getCurrentBalance()));
+                        Money.asDouble(r.getCurrentBalance()), r.getStatus()),
+                Map.of("accountType", r.getAccountType(), "amount", amount,
+                        "balance", Money.asDouble(r.getCurrentBalance())));
         return saved;
     }
 
@@ -189,23 +191,25 @@ public class PfService {
     public PfReserveAccount withdraw(Long id, double amount, String note, String actor) {
         roles.require(actor, ProtectedAction.PF_RESERVE_WITHDRAW);
         PfReserveAccount r = getReserve(id);
-        if (amount > r.getCurrentBalance() + 1e-6) {
-            throw ApiException.badRequest("Withdrawal " + amount + " exceeds balance " + r.getCurrentBalance());
+        if (Money.of(amount).compareTo(r.getCurrentBalance()) > 0) {
+            throw ApiException.badRequest("Withdrawal " + amount + " exceeds balance "
+                    + Money.asDouble(r.getCurrentBalance()));
         }
         if (actor != null && actor.equals(r.getLastFundedBy())) {
             throw ApiException.forbiddenAutonomy(
                     "Reserve withdrawal must be made by a different actor than the last funder ("
                     + r.getLastFundedBy() + ")");
         }
-        r.setCurrentBalance(round2(r.getCurrentBalance() - amount));
-        r.setStatus(r.getCurrentBalance() + 1e-6 >= r.getRequiredAmount() ? "FUNDED" : "SHORTFALL");
+        r.setCurrentBalance(Money.sub(r.getCurrentBalance(), Money.of(amount)));
+        r.setStatus(funded(r) ? "FUNDED" : "SHORTFALL");
         r.setLastActionBy(actor);
         r.setLastActionAt(Instant.now());
         PfReserveAccount saved = reserves.save(r);
         audit.human(actor, "PF_RESERVE_WITHDRAWN", "PfReserveAccount", String.valueOf(id),
                 "Withdrew %.2f from %s -> balance %.2f (%s)".formatted(amount, r.getAccountType(),
-                        r.getCurrentBalance(), r.getStatus()),
-                Map.of("accountType", r.getAccountType(), "amount", amount, "balance", r.getCurrentBalance()));
+                        Money.asDouble(r.getCurrentBalance()), r.getStatus()),
+                Map.of("accountType", r.getAccountType(), "amount", amount,
+                        "balance", Money.asDouble(r.getCurrentBalance())));
         return saved;
     }
 
@@ -245,10 +249,11 @@ public class PfService {
             }
         }
         for (PfReserveAccount r : reserves.findByApplicationReferenceOrderByIdAsc(ref)) {
-            if (r.getCurrentBalance() + 1e-6 < r.getRequiredAmount()) {
+            if (!funded(r)) {
                 blockers.add(new PfBlocker("RESERVE", r.getAccountType(),
                         "%s underfunded: %.2f / %.2f %s".formatted(r.getAccountType(),
-                                r.getCurrentBalance(), r.getRequiredAmount(), r.getCurrency())));
+                                Money.asDouble(r.getCurrentBalance()), Money.asDouble(r.getRequiredAmount()),
+                                r.getCurrency())));
             }
         }
         return new PfGateResult(facilityRef, milestoneSequence, blockers.isEmpty(), blockers);
@@ -277,4 +282,9 @@ public class PfService {
     }
 
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+
+    /** A reserve is funded when its balance is at or above the required minimum. */
+    private static boolean funded(PfReserveAccount r) {
+        return r.getCurrentBalance().compareTo(r.getRequiredAmount()) >= 0;
+    }
 }

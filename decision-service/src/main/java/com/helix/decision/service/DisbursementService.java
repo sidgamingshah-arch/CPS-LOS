@@ -1,6 +1,7 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.money.Money;
 import com.helix.common.rbac.ActorDirectory;
 import com.helix.common.rbac.ProtectedAction;
 import com.helix.common.web.ApiException;
@@ -106,8 +107,7 @@ public class DisbursementService {
                 .stream()
                 .filter(d -> !"REJECTED".equals(d.getStatus()) && !"CANCELLED".equals(d.getStatus())
                         && !"REVERSED".equals(d.getStatus()))
-                .mapToDouble(Disbursement::getAmount)
-                .sum();
+                .map(Disbursement::getAmount).reduce(Money.ZERO, Money::add).doubleValue();
         if (used + facilityAmount > facility.amount() + 0.01) {
             throw ApiException.badRequest("Drawdown of " + facilityAmount + " " + facilityCcy
                     + " would exceed facility " + facilityRef + " (sanctioned " + facility.amount()
@@ -120,12 +120,12 @@ public class DisbursementService {
         d.setApplicationReference(applicationReference);
         d.setFacilityRef(facilityRef);
         d.setDrawdownNo(nextNo);
-        d.setAmount(round2(facilityAmount));
+        d.setAmount(Money.of(facilityAmount));
         d.setCurrency(facilityCcy);
         d.setRequestedAmount(round2(requestedAmount));
         d.setRequestedCurrency(requestedCurrency);
         d.setFxRate(fxRate);
-        d.setBaseAmount(round2(facilityAmount));  // updated on release
+        d.setBaseAmount(Money.of(facilityAmount));  // updated on release
         d.setPurpose(purpose);
         d.setNarrative(narrative);
         d.setStatus("DRAFT");
@@ -166,7 +166,7 @@ public class DisbursementService {
         LimitClient.FxQuote q = limits.fxQuote(d.getRequestedCurrency(), d.getCurrency(), d.getRequestedAmount());
         double effRate = applySpread(q.rate());
         double newAmount = round2(d.getRequestedAmount() * effRate);
-        if (Math.abs(newAmount - d.getAmount()) <= 0.01) {
+        if (Math.abs(newAmount - Money.asDouble(d.getAmount())) <= 0.01) {
             return;   // rate unchanged within rounding — nothing to do
         }
         DealEnvelopeDto env = upstream.envelope(d.getApplicationReference());
@@ -177,16 +177,16 @@ public class DisbursementService {
                 .filter(o -> !o.getId().equals(d.getId()))
                 .filter(o -> !"REJECTED".equals(o.getStatus()) && !"CANCELLED".equals(o.getStatus())
                         && !"REVERSED".equals(o.getStatus()))
-                .mapToDouble(Disbursement::getAmount).sum();
+                .map(Disbursement::getAmount).reduce(Money.ZERO, Money::add).doubleValue();
         if (otherUsed + newAmount > sanctioned + 0.01) {
             throw ApiException.conflict(("FX moved against the draw at release: re-quoted %.2f %s exceeds "
                     + "remaining headroom on %s (sanctioned %.2f, other used %.2f) — amend or re-request")
                     .formatted(newAmount, d.getCurrency(), d.getFacilityRef(), sanctioned, otherUsed));
         }
-        double oldAmount = d.getAmount();
+        double oldAmount = Money.asDouble(d.getAmount());
         double oldRate = d.getFxRate();
-        d.setAmount(newAmount);
-        d.setBaseAmount(newAmount);
+        d.setAmount(Money.of(newAmount));
+        d.setBaseAmount(Money.of(newAmount));
         d.setFxRate(round6(effRate));
         audit.engine("DISBURSEMENT_FX_REQUOTED", "Disbursement", String.valueOf(d.getId()),
                 "Release re-quote: %.2f %s @ %.4f -> %.2f %s @ %.4f".formatted(
@@ -253,7 +253,7 @@ public class DisbursementService {
                     .filter(other -> !"REJECTED".equals(other.getStatus())
                             && !"CANCELLED".equals(other.getStatus())
                             && !"REVERSED".equals(other.getStatus()))
-                    .mapToDouble(Disbursement::getAmount).sum();
+                    .map(Disbursement::getAmount).reduce(Money.ZERO, Money::add).doubleValue();
             if (used + facAmt > facility.amount() + 0.01) {
                 throw ApiException.badRequest("Amended drawdown of " + facAmt + " " + facCcy
                         + " would exceed facility (sanctioned " + facility.amount() + ", other used " + used + ")");
@@ -261,9 +261,9 @@ public class DisbursementService {
             d.setRequestedAmount(round2(reqAmt));
             d.setRequestedCurrency(reqCcy);
             d.setFxRate(fx);
-            d.setAmount(round2(facAmt));
+            d.setAmount(Money.of(facAmt));
             d.setCurrency(facCcy);
-            d.setBaseAmount(round2(facAmt));
+            d.setBaseAmount(Money.of(facAmt));
         }
         if (purpose != null) d.setPurpose(purpose);
         if (narrative != null) d.setNarrative(narrative);
@@ -434,7 +434,7 @@ public class DisbursementService {
         }
         String txnRef = "DISB-" + d.getApplicationReference() + "-" + d.getFacilityRef() + "-" + d.getDrawdownNo();
         UtilisationResponseDto response = limits.utilise(node.cif(), node.reference(),
-                d.getAmount(), d.getCurrency(), txnRef, actor);
+                Money.asDouble(d.getAmount()), d.getCurrency(), txnRef, actor);
         if (response == null || !response.success()) {
             // Don't flip status; surface the limit failure so the UI shows the cause.
             String reason = response == null ? "no response from limit-service"
@@ -451,7 +451,7 @@ public class DisbursementService {
 
         // If this is a syndicated deal, the agent allocates the funded draw pro-rata
         // across lenders. Best-effort + idempotent — never blocks the release.
-        upstream.allocateSyndicationOrSkip(d.getApplicationReference(), txnRef, d.getAmount(),
+        upstream.allocateSyndicationOrSkip(d.getApplicationReference(), txnRef, Money.asDouble(d.getAmount()),
                 d.getCurrency(), actor);
         // For PF tranches, mark the milestone DRAWN so it can't be re-drawn.
         pf.markDrawn(d.getApplicationReference(), d.getFacilityRef(), d.getMilestoneSequence(), d.getId());
@@ -499,14 +499,14 @@ public class DisbursementService {
         double repaidPrincipal = repayments
                 .findByApplicationReferenceAndFacilityRefAndStatusIn(
                         d.getApplicationReference(), d.getFacilityRef(), List.of("CONFIRMED"))
-                .stream().mapToDouble(r -> r.getPrincipalComponent()).sum();
+                .stream().map(r -> r.getPrincipalComponent()).reduce(Money.ZERO, Money::add).doubleValue();
         double releasedOther = repo
                 .findByApplicationReferenceAndFacilityRefOrderByDrawdownNoAsc(
                         d.getApplicationReference(), d.getFacilityRef())
                 .stream()
                 .filter(other -> !other.getId().equals(d.getId()))
                 .filter(other -> "RELEASED".equals(other.getStatus()))
-                .mapToDouble(Disbursement::getAmount).sum();
+                .map(Disbursement::getAmount).reduce(Money.ZERO, Money::add).doubleValue();
         if (repaidPrincipal > releasedOther + 0.01) {
             throw ApiException.conflict(("Facility %s has %.2f of confirmed principal repayments but only %.2f"
                     + " would remain released after this reversal — the ledger would go negative;"
@@ -521,7 +521,7 @@ public class DisbursementService {
         }
         String revRef = "REV-" + d.getUtilisationRef();
         UtilisationResponseDto response = limits.reversal(node.cif(), node.reference(),
-                d.getAmount(), d.getCurrency(), revRef, actor);
+                Money.asDouble(d.getAmount()), d.getCurrency(), revRef, actor);
         if (response == null || !response.success()) {
             String cause = response == null ? "no response from limit-service"
                     : (response.results() == null || response.results().isEmpty()

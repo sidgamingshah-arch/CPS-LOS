@@ -47,13 +47,13 @@ public class FacilityAmendment {
     @Column(nullable = false, length = 20)
     private String amendmentType;
 
-    @Column(nullable = false) private double currentAmount;
-    private Double proposedAmount;
+    @Column(nullable = false, precision = 22, scale = 2) private java.math.BigDecimal currentAmount = com.helix.common.money.Money.ZERO;
+    @Column(precision = 22, scale = 2) private java.math.BigDecimal proposedAmount;
     @Column(nullable = false) private int currentTenorMonths;
     private Integer proposedTenorMonths;
 
     /** Post-amendment total application exposure the DoA routing was computed on. */
-    @Column(nullable = false) private double routedExposure;
+    @Column(nullable = false, precision = 22, scale = 2) private java.math.BigDecimal routedExposure = com.helix.common.money.Money.ZERO;
 
     @Column(nullable = false, length = 8)
     private String currency;

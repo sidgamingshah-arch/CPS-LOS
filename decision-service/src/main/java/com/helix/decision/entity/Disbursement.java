@@ -58,8 +58,8 @@ public class Disbursement {
     /** For PF tranches: the construction milestone this draw is against (else null). */
     private Integer milestoneSequence;
 
-    @Column(nullable = false)
-    private double amount;
+    @Column(nullable = false, precision = 22, scale = 2)
+    private java.math.BigDecimal amount = com.helix.common.money.Money.ZERO;
 
     @Column(nullable = false, length = 8)
     private String currency;
@@ -77,8 +77,8 @@ public class Disbursement {
     private Double fxRate;
 
     /** Amount in base currency, captured at release-time for the audit row. */
-    @Column(nullable = false)
-    private double baseAmount;
+    @Column(nullable = false, precision = 22, scale = 2)
+    private java.math.BigDecimal baseAmount = com.helix.common.money.Money.ZERO;
 
     @Column(length = 200)
     private String purpose;

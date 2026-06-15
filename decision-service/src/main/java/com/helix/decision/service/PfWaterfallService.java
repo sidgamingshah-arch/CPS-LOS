@@ -99,12 +99,12 @@ public class PfWaterfallService {
         double mmraRequired = 0, mmraBalance = 0;
         for (PfReserveAccount r : reserves.findByApplicationReferenceOrderByIdAsc(applicationReference)) {
             if ("DSRA".equalsIgnoreCase(r.getAccountType())) {
-                dsraRequired = r.getRequiredAmount();
-                dsraBalance = r.getCurrentBalance();
+                dsraRequired = com.helix.common.money.Money.asDouble(r.getRequiredAmount());
+                dsraBalance = com.helix.common.money.Money.asDouble(r.getCurrentBalance());
             } else if ("MMRA".equalsIgnoreCase(r.getAccountType())
                     || "MAJOR_MAINTENANCE".equalsIgnoreCase(r.getAccountType())) {
-                mmraRequired = r.getRequiredAmount();
-                mmraBalance = r.getCurrentBalance();
+                mmraRequired = com.helix.common.money.Money.asDouble(r.getRequiredAmount());
+                mmraBalance = com.helix.common.money.Money.asDouble(r.getCurrentBalance());
             }
         }
 

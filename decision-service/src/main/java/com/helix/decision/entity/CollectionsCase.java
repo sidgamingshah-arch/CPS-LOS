@@ -55,11 +55,11 @@ public class CollectionsCase {
     @Column(nullable = false)
     private int daysPastDue;
 
-    @Column(nullable = false)
-    private double overdueAmount;
+    @Column(nullable = false, precision = 22, scale = 2)
+    private java.math.BigDecimal overdueAmount = com.helix.common.money.Money.ZERO;
 
-    @Column(nullable = false)
-    private double outstandingAtOpen;
+    @Column(nullable = false, precision = 22, scale = 2)
+    private java.math.BigDecimal outstandingAtOpen = com.helix.common.money.Money.ZERO;
 
     @Column(nullable = false, length = 8)
     private String currency;
@@ -88,7 +88,8 @@ public class CollectionsCase {
     private Long restructureAmendmentId;
 
     /** Approved write-off amount in facility currency (null until WRITTEN_OFF). */
-    private Double writeOffAmount;
+    @Column(precision = 22, scale = 2)
+    private java.math.BigDecimal writeOffAmount;
     @Column(length = 80) private String writeOffProposedBy;
     @Column(length = 80) private String writeOffDecidedBy;
     @Column(length = 30) private String writeOffAuthority;

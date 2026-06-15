@@ -1,6 +1,7 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.money.Money;
 import com.helix.common.rbac.ActorDirectory;
 import com.helix.common.rbac.ProtectedAction;
 import com.helix.common.web.ApiException;
@@ -118,7 +119,7 @@ public class FacilityAmendmentService {
                     .stream()
                     .filter(d -> !"REJECTED".equals(d.getStatus()) && !"CANCELLED".equals(d.getStatus())
                             && !"REVERSED".equals(d.getStatus()))
-                    .mapToDouble(Disbursement::getAmount).sum();
+                    .map(Disbursement::getAmount).reduce(Money.ZERO, Money::add).doubleValue();
             if (newAmount < committed - 0.01) {
                 throw ApiException.badRequest(
                         "Cannot decrease %s below its committed drawdowns: proposed %.2f < committed %.2f"
@@ -144,11 +145,11 @@ public class FacilityAmendmentService {
         a.setApplicationReference(applicationReference);
         a.setFacilityRef(facilityRef);
         a.setAmendmentType(type);
-        a.setCurrentAmount(facility.amount());
-        a.setProposedAmount(amountChange ? round2(newAmount) : null);
+        a.setCurrentAmount(Money.of(facility.amount()));
+        a.setProposedAmount(amountChange ? Money.of(newAmount) : null);
         a.setCurrentTenorMonths(facility.tenorMonths());
         a.setProposedTenorMonths(tenorChange ? newTenorMonths : null);
-        a.setRoutedExposure(round2(routedExposure));
+        a.setRoutedExposure(Money.of(routedExposure));
         a.setCurrency(facility.currency() == null ? "INR" : facility.currency().toUpperCase());
         a.setReason(reason);
         a.setRequiredAuthority(routing.requiredAuthority());
@@ -187,10 +188,11 @@ public class FacilityAmendmentService {
         // failure throws, rolls this transaction back, and leaves the amendment
         // PROPOSED for a clean retry.
         String amendmentRef = "AMD-" + a.getApplicationReference() + "-" + a.getId();
+        Double proposedD = a.getProposedAmount() == null ? null : a.getProposedAmount().doubleValue();
         upstream.applyFacilityAmendment(a.getApplicationReference(), a.getFacilityRef(),
-                a.getProposedAmount(), a.getProposedTenorMonths(), amendmentRef, actor);
+                proposedD, a.getProposedTenorMonths(), amendmentRef, actor);
         limits.resyncFacility(a.getApplicationReference(), a.getFacilityRef(),
-                a.getProposedAmount(), a.getProposedTenorMonths(), amendmentRef, actor);
+                proposedD, a.getProposedTenorMonths(), amendmentRef, actor);
 
         a.setStatus("APPROVED");
         a.setDecidedBy(actor);

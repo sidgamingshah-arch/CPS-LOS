@@ -1,6 +1,7 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.money.Money;
 import com.helix.common.rbac.ActorDirectory;
 import com.helix.common.rbac.ProtectedAction;
 import com.helix.common.web.ApiException;
@@ -92,8 +93,8 @@ public class CollectionsService {
         c.setFacilityRef(facilityRef);
         c.setCounterpartyName(env.counterpartyName());
         c.setDaysPastDue(dpd);
-        c.setOverdueAmount(round2(overdueAmount));
-        c.setOutstandingAtOpen(repayments.outstandingPrincipal(applicationReference, facilityRef));
+        c.setOverdueAmount(Money.of(overdueAmount));
+        c.setOutstandingAtOpen(Money.of(repayments.outstandingPrincipal(applicationReference, facilityRef)));
         c.setCurrency(facility.currency() == null ? "INR" : facility.currency().toUpperCase());
         c.setNpaStage(stageFor(dpd));
         c.setOpenedBy(actor);
@@ -135,8 +136,8 @@ public class CollectionsService {
                 c.setNpaStage(stageFor(dpd));
                 changed = true;
             }
-            if (overdueAmount > c.getOverdueAmount()) {
-                c.setOverdueAmount(round2(overdueAmount));
+            if (Money.of(overdueAmount).compareTo(c.getOverdueAmount()) > 0) {
+                c.setOverdueAmount(Money.of(overdueAmount));
                 changed = true;
             }
             if (changed) {
@@ -155,8 +156,8 @@ public class CollectionsService {
         c.setFacilityRef(facilityRef);
         c.setCounterpartyName(env.counterpartyName());
         c.setDaysPastDue(Math.max(0, dpd));
-        c.setOverdueAmount(round2(Math.max(0, overdueAmount)));
-        c.setOutstandingAtOpen(repayments.outstandingPrincipal(applicationReference, facilityRef));
+        c.setOverdueAmount(Money.of(Math.max(0, overdueAmount)));
+        c.setOutstandingAtOpen(Money.of(repayments.outstandingPrincipal(applicationReference, facilityRef)));
         c.setCurrency(facility != null && facility.currency() != null ? facility.currency().toUpperCase() : "INR");
         c.setNpaStage(stageFor(Math.max(0, dpd)));
         c.setOpenedBy("SYSTEM:monitoring");
@@ -180,7 +181,7 @@ public class CollectionsService {
         }
         String oldStage = c.getNpaStage();
         c.setDaysPastDue(dpd);
-        c.setOverdueAmount(round2(overdueAmount));
+        c.setOverdueAmount(Money.of(overdueAmount));
         c.setNpaStage(stageFor(dpd));
         CollectionsCase saved = repo.save(c);
         audit.human(actor, "COLLECTIONS_DPD_UPDATED", "CollectionsCase", String.valueOf(id),
@@ -212,7 +213,7 @@ public class CollectionsService {
         if (!"OPEN".equals(c.getStatus())) {
             throw ApiException.conflict("Only OPEN cases can be cured — this one is " + c.getStatus());
         }
-        if (c.getDaysPastDue() > 0 || c.getOverdueAmount() > 0.01) {
+        if (c.getDaysPastDue() > 0 || Money.asDouble(c.getOverdueAmount()) > 0.01) {
             throw ApiException.conflict(
                     "Cannot cure while overdue stands — dpd %d, overdue %.2f. Update DPD to 0 first".formatted(
                             c.getDaysPastDue(), c.getOverdueAmount()));
@@ -345,7 +346,7 @@ public class CollectionsService {
 
         // Park the proposal on the case temporarily (we don't open a parallel entity
         // — the case IS the workflow). decidedBy stays null until decideWriteOff.
-        c.setWriteOffAmount(round2(amount));
+        c.setWriteOffAmount(Money.of(amount));
         c.setWriteOffAuthority(routing.requiredAuthority());
         c.setWriteOffProposedBy(actor);
         repo.save(c);
@@ -397,7 +398,7 @@ public class CollectionsService {
         }
         String txnRef = "WRITEOFF-" + c.getApplicationReference() + "-" + c.getFacilityRef() + "-" + id;
         LimitClient.UtilisationResponseDto resp = limits.release(node.cif(), node.reference(),
-                c.getWriteOffAmount(), c.getCurrency(), txnRef, actor);
+                Money.asDouble(c.getWriteOffAmount()), c.getCurrency(), txnRef, actor);
         if (resp == null || !resp.success()) {
             String reason = resp == null ? "no response from limit-service"
                     : (resp.results() == null || resp.results().isEmpty()

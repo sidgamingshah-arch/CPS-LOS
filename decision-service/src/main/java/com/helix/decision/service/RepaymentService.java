@@ -1,6 +1,7 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.money.Money;
 import com.helix.common.rbac.ActorDirectory;
 import com.helix.common.rbac.ProtectedAction;
 import com.helix.common.ingest.Canonical;
@@ -227,7 +228,7 @@ public class RepaymentService {
         double outstanding = outstandingPrincipal(applicationReference, facilityRef);
         double pendingPrincipal = repo.findByApplicationReferenceAndFacilityRefAndStatusIn(
                         applicationReference, facilityRef, List.of("RECORDED")).stream()
-                .mapToDouble(Repayment::getPrincipalComponent).sum();
+                .map(Repayment::getPrincipalComponent).reduce(Money.ZERO, Money::add).doubleValue();
         if (principal > outstanding - pendingPrincipal + 0.01) {
             throw ApiException.badRequest(
                     "Principal %.2f exceeds outstanding %.2f (with %.2f already pending confirmation) on %s"
@@ -237,9 +238,9 @@ public class RepaymentService {
         Repayment p = new Repayment();
         p.setApplicationReference(applicationReference);
         p.setFacilityRef(facilityRef);
-        p.setAmount(round2(amount));
-        p.setPrincipalComponent(round2(principal));
-        p.setInterestComponent(round2(interest));
+        p.setAmount(Money.of(amount));
+        p.setPrincipalComponent(Money.of(principal));
+        p.setInterestComponent(Money.of(interest));
         p.setCurrency(facility.currency() == null ? "INR" : facility.currency().toUpperCase());
         p.setValueDate(valueDate == null || valueDate.isBlank() ? LocalDate.now() : LocalDate.parse(valueDate));
         p.setSource("MANUAL");
@@ -352,9 +353,9 @@ public class RepaymentService {
         Repayment p = new Repayment();
         p.setApplicationReference(applicationReference);
         p.setFacilityRef(raw.facilityRef());
-        p.setAmount(round2(event.amount()));
-        p.setPrincipalComponent(round2(principal));
-        p.setInterestComponent(round2(event.amount() - principal));
+        p.setAmount(Money.of(event.amount()));
+        p.setPrincipalComponent(Money.of(principal));
+        p.setInterestComponent(Money.of(event.amount() - principal));
         p.setCurrency(event.currency() == null
                 ? (facility.currency() == null ? "INR" : facility.currency().toUpperCase())
                 : event.currency());
@@ -414,10 +415,10 @@ public class RepaymentService {
                 .findByApplicationReferenceAndFacilityRefOrderByDrawdownNoAsc(applicationReference, facilityRef)
                 .stream()
                 .filter(d -> "RELEASED".equals(d.getStatus()))
-                .mapToDouble(Disbursement::getAmount).sum();
+                .map(Disbursement::getAmount).reduce(Money.ZERO, Money::add).doubleValue();
         double repaid = repo.findByApplicationReferenceAndFacilityRefAndStatusIn(
                         applicationReference, facilityRef, List.of("CONFIRMED")).stream()
-                .mapToDouble(Repayment::getPrincipalComponent).sum();
+                .map(Repayment::getPrincipalComponent).reduce(Money.ZERO, Money::add).doubleValue();
         return round2(Math.max(0, released - repaid));
     }
 
@@ -430,7 +431,7 @@ public class RepaymentService {
                     + " on " + p.getApplicationReference());
         }
         LimitClient.UtilisationResponseDto response = limits.release(node.cif(), node.reference(),
-                p.getPrincipalComponent(), p.getCurrency(), txnRef, actor);
+                Money.asDouble(p.getPrincipalComponent()), p.getCurrency(), txnRef, actor);
         if (response == null || !response.success()) {
             String reason = response == null ? "no response from limit-service"
                     : (response.results() == null || response.results().isEmpty()
