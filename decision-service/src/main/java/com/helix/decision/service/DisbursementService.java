@@ -46,11 +46,15 @@ public class DisbursementService {
     private final LimitClient limits;
     private final ActorDirectory roles;
     private final AuditService audit;
+    /** Bank FX margin (bps) applied over the mid rate on cross-currency draws. */
+    private final double fxSpreadBps;
 
     public DisbursementService(DisbursementRepository repo, RepaymentRepository repayments,
                                ConditionPrecedentService cps, PfService pf,
                                UpstreamClient upstream, LimitClient limits,
-                               ActorDirectory roles, AuditService audit) {
+                               ActorDirectory roles, AuditService audit,
+                               @org.springframework.beans.factory.annotation.Value(
+                                       "${helix.disbursement.fx-spread-bps:25}") double fxSpreadBps) {
         this.repo = repo;
         this.repayments = repayments;
         this.cps = cps;
@@ -59,6 +63,7 @@ public class DisbursementService {
         this.limits = limits;
         this.roles = roles;
         this.audit = audit;
+        this.fxSpreadBps = fxSpreadBps;
     }
 
     // ============================================================ request
@@ -93,8 +98,9 @@ public class DisbursementService {
         String facilityCcy = facility.currency() == null ? "INR" : facility.currency().toUpperCase();
         if (!requestedCurrency.equalsIgnoreCase(facilityCcy)) {
             LimitClient.FxQuote q = limits.fxQuote(requestedCurrency, facilityCcy, requestedAmount);
-            facilityAmount = q.convertedAmount();
-            fxRate = q.rate();
+            double effRate = applySpread(q.rate());   // mid + bank FX margin
+            fxRate = round6(effRate);
+            facilityAmount = requestedAmount * effRate;
         }
         double used = repo.findByApplicationReferenceAndFacilityRefOrderByDrawdownNoAsc(applicationReference, facilityRef)
                 .stream()
@@ -139,6 +145,56 @@ public class DisbursementService {
     }
 
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+    private static double round6(double v) { return Math.round(v * 1_000_000.0) / 1_000_000.0; }
+
+    /** Applies the bank's FX margin over the mid rate (customer pays the spread). */
+    private double applySpread(double midRate) {
+        return midRate * (1.0 + fxSpreadBps / 10_000.0);
+    }
+
+    /**
+     * Re-quotes a cross-currency draw at the live rate when it releases. No-op for
+     * same-currency draws. Updates the facility-currency amount, base amount and the
+     * applied rate in place, re-checks headroom (excluding this draw), and stamps a
+     * {@code DISBURSEMENT_FX_REQUOTED} event when the rate has moved.
+     */
+    private void requoteFxAtRelease(Disbursement d) {
+        if (d.getFxRate() == null || d.getRequestedCurrency() == null
+                || d.getRequestedCurrency().equalsIgnoreCase(d.getCurrency())) {
+            return;
+        }
+        LimitClient.FxQuote q = limits.fxQuote(d.getRequestedCurrency(), d.getCurrency(), d.getRequestedAmount());
+        double effRate = applySpread(q.rate());
+        double newAmount = round2(d.getRequestedAmount() * effRate);
+        if (Math.abs(newAmount - d.getAmount()) <= 0.01) {
+            return;   // rate unchanged within rounding — nothing to do
+        }
+        DealEnvelopeDto env = upstream.envelope(d.getApplicationReference());
+        FacilityViewDto facility = findFacility(env, d.getFacilityRef());
+        double sanctioned = facility == null ? Double.MAX_VALUE : facility.amount();
+        double otherUsed = repo.findByApplicationReferenceAndFacilityRefOrderByDrawdownNoAsc(
+                        d.getApplicationReference(), d.getFacilityRef()).stream()
+                .filter(o -> !o.getId().equals(d.getId()))
+                .filter(o -> !"REJECTED".equals(o.getStatus()) && !"CANCELLED".equals(o.getStatus())
+                        && !"REVERSED".equals(o.getStatus()))
+                .mapToDouble(Disbursement::getAmount).sum();
+        if (otherUsed + newAmount > sanctioned + 0.01) {
+            throw ApiException.conflict(("FX moved against the draw at release: re-quoted %.2f %s exceeds "
+                    + "remaining headroom on %s (sanctioned %.2f, other used %.2f) — amend or re-request")
+                    .formatted(newAmount, d.getCurrency(), d.getFacilityRef(), sanctioned, otherUsed));
+        }
+        double oldAmount = d.getAmount();
+        double oldRate = d.getFxRate();
+        d.setAmount(newAmount);
+        d.setBaseAmount(newAmount);
+        d.setFxRate(round6(effRate));
+        audit.engine("DISBURSEMENT_FX_REQUOTED", "Disbursement", String.valueOf(d.getId()),
+                "Release re-quote: %.2f %s @ %.4f -> %.2f %s @ %.4f".formatted(
+                        oldAmount, d.getCurrency(), oldRate, newAmount, d.getCurrency(), effRate),
+                Map.of("requestedAmount", d.getRequestedAmount(), "requestedCurrency", d.getRequestedCurrency(),
+                        "oldAmount", oldAmount, "newAmount", newAmount,
+                        "oldRate", oldRate, "newRate", round6(effRate)));
+    }
 
     /**
      * Every disbursement transition needs a named human. A blank actor would
@@ -186,8 +242,9 @@ public class DisbursementService {
             Double fx = null;
             if (!reqCcy.equalsIgnoreCase(facCcy)) {
                 LimitClient.FxQuote q = limits.fxQuote(reqCcy, facCcy, reqAmt);
-                facAmt = q.convertedAmount();
-                fx = q.rate();
+                double effRate = applySpread(q.rate());   // mid + bank FX margin
+                facAmt = reqAmt * effRate;
+                fx = round6(effRate);
             }
             // Re-check headroom excluding this row.
             double used = repo.findByApplicationReferenceAndFacilityRefOrderByDrawdownNoAsc(
@@ -363,6 +420,13 @@ public class DisbursementService {
                     "Drawdown releaser must differ from the original requester (" + actor
                     + ") — request, authorise and release need three distinct humans");
         }
+        // Cross-currency draws re-quote FX at RELEASE time — the rate may have moved
+        // since the draft was raised, so the facility-currency amount that actually
+        // books must reflect the live rate (the request-time figure was indicative).
+        // The bank's FX margin is applied, and headroom is re-checked on the refreshed
+        // amount; an adverse move that no longer fits the facility blocks the release.
+        requoteFxAtRelease(d);
+
         LimitClient.LimitNodeDto node = limits.nodeForFacility(d.getApplicationReference(), d.getFacilityRef());
         if (node == null) {
             throw ApiException.conflict("No limit node for facility " + d.getFacilityRef()

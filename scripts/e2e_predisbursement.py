@@ -337,6 +337,32 @@ check("amount > requestedAmount (USD → INR at ~83)",
       fx_d["amount"] > fx_d["requestedAmount"] * 50, f"amount={fx_d['amount']} req={fx_d['requestedAmount']}")
 check("fxRate stamped on the row", fx_d.get("fxRate") and fx_d["fxRate"] > 0, str(fx_d.get("fxRate")))
 print(f"    {fx_d['requestedAmount']:,.0f} USD @ {fx_d['fxRate']:.4f} = {fx_d['amount']:,.2f} INR")
+request_rate = fx_d["fxRate"]
+check("request-time rate includes the bank spread (> raw mid ~83)",
+      request_rate > 83.0, str(request_rate))
+
+print("\n== 11b. Release-time FX re-quote: the rate moves between request and release ==")
+# Authorise the USD draw, then move the USD rate UP before releasing.
+st, _ = call("POST", f"/decision/api/disbursement/{fx_d['id']}/authorize", {}, actor="credit.officer")
+must(st, _, "authorize fx draw")
+# Bump USD higher in the platform FX table (INR per USD).
+st, _ = call("POST", "/limits/api/limits/eod/fx/refresh", {"currency": "USD", "rate": 90.0}, actor="treasury.ops")
+must(st, _, "refresh USD rate")
+st, fx_rel = call("POST", f"/decision/api/disbursement/{fx_d['id']}/release", actor="treasury.ops")
+fx_rel = must(st, fx_rel, "release fx draw")
+check("released status RELEASED", fx_rel["status"] == "RELEASED", str(fx_rel["status"]))
+check("booked amount re-quoted at the higher release-time rate",
+      fx_rel["amount"] > fx_d["amount"] + 1, f"request {fx_d['amount']} -> release {fx_rel['amount']}")
+check("re-quoted rate reflects the new USD (~90 + spread)",
+      fx_rel["fxRate"] > 90.0, str(fx_rel["fxRate"]))
+check("booked INR ~= 1,000,000 USD x re-quoted rate",
+      abs(fx_rel["amount"] - fx_d["requestedAmount"] * fx_rel["fxRate"]) < 1.0,
+      f"amount={fx_rel['amount']} rate={fx_rel['fxRate']}")
+st, audit = call("GET", "/decision/api/audit")
+check("DISBURSEMENT_FX_REQUOTED stamped on release",
+      any(a.get("eventType") == "DISBURSEMENT_FX_REQUOTED" for a in audit), "")
+# Restore the seed rate so other suites aren't perturbed (best-effort).
+call("POST", "/limits/api/limits/eod/fx/refresh", {"currency": "USD", "rate": 83.0}, actor="treasury.ops")
 
 print("\n== 12. Per-jurisdiction CP_MASTER override: IN-RBI uses Indian-specific CPs ==")
 # The seed has both a default TERM_LOAN pack and an IN-RBI override. The picker
