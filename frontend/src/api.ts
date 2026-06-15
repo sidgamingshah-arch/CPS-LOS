@@ -1,15 +1,22 @@
-// Thin client over the Helix API gateway. Each call sets X-Actor so the audit
-// trail attributes actions to a named user (PRD §9/§11 human accountability).
+// Thin client over the Helix API gateway. A login mints a bearer token; the gateway
+// verifies it and injects the verified X-Actor (PRD §9/§11 human accountability), so
+// the actor can no longer be spoofed. We still send X-Actor as a hint, but a present
+// token always wins server-side.
 
 const GATEWAY: string =
   (import.meta as any).env?.VITE_GATEWAY_URL || "http://localhost:8080";
 
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+let authToken: string | null = null;
+export function setAuthToken(token: string | null) { authToken = token; }
+
 async function call<T>(path: string, method: Method, body?: unknown, actor = "demo.user"): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json", "X-Actor": actor };
+  if (authToken) headers["Authorization"] = "Bearer " + authToken;
   const res = await fetch(GATEWAY + path, {
     method,
-    headers: { "Content-Type": "application/json", "X-Actor": actor },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
@@ -20,6 +27,19 @@ async function call<T>(path: string, method: Method, body?: unknown, actor = "de
   }
   return data as T;
 }
+
+// ---- authentication ----
+export type LoginResult = {
+  token: string; actor: string; displayName: string;
+  expiresInSeconds: number; roles: string[];
+};
+export const auth = {
+  login: (username: string, password: string) =>
+    call<LoginResult>("/config/api/auth/login", "POST", { username, password }),
+  me: () => call<{ actor: string; roles: string[]; expiresAtMillis: number }>(
+    "/config/api/auth/me", "GET"),
+  mode: () => call<{ mode: string; enforced: boolean }>("/auth/mode", "GET"),
+};
 
 // ---- config / abstraction layer ----
 export const config = {

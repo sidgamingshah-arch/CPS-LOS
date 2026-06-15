@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppContext, ACTORS, AI_BY_NAV, isNavEnabled } from "./app-context";
-import { governance } from "./api";
+import { AppContext, AI_BY_NAV, isNavEnabled } from "./app-context";
+import { governance, setAuthToken } from "./api";
 import { Toast, AiBadge, HumanBadge, DeterministicBadge, GovernanceStrip } from "./ui";
 import CommandPalette from "./CommandPalette";
+import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import RulePacks from "./pages/RulePacks";
 import Governance from "./pages/Governance";
@@ -137,7 +138,11 @@ const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } ca
 export default function App() {
   const [view, setView] = useState(() => lsGet("helix.view", "dashboard"));
   const [ref, setRef] = useState<string | undefined>(() => lsGet("helix.ref", "") || undefined);
-  const [actor, setActor] = useState(() => lsGet("helix.actor", "rm.user"));
+  // Auth: token + logged-in identity. The token is restored into the api client on
+  // boot; without one the app renders the Login screen.
+  const [token, setToken] = useState<string | null>(() => lsGet("helix.token", "") || null);
+  const [actor, setActor] = useState(() => lsGet("helix.actor", "demo.user"));
+  if (token) setAuthToken(token);
   const [msg, setMsg] = useState<{ text: string; err?: boolean } | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(lsGet("helix.nav.collapsed", "{}")); } catch { return {}; }
@@ -167,6 +172,17 @@ export default function App() {
     if (r !== undefined) setRef(r);
     setNavOpen(false); // close the mobile drawer on navigation
   }, []);
+
+  const onLogin = useCallback((tok: string, who: string) => {
+    setAuthToken(tok);
+    setToken(tok);
+    setActor(who);
+  }, []);
+  const onLogout = useCallback(() => {
+    setAuthToken(null);
+    setToken(null);
+    lsSet("helix.token", "");
+  }, []);
   const toggleGroup = useCallback(
     (title: string) => setCollapsed((c) => ({ ...c, [title]: !c[title] })),
     [],
@@ -176,6 +192,7 @@ export default function App() {
   useEffect(() => { lsSet("helix.view", view); }, [view]);
   useEffect(() => { lsSet("helix.ref", ref ?? ""); }, [ref]);
   useEffect(() => { lsSet("helix.actor", actor); }, [actor]);
+  useEffect(() => { if (token) lsSet("helix.token", token); }, [token]);
   useEffect(() => { lsSet("helix.nav.collapsed", JSON.stringify(collapsed)); }, [collapsed]);
 
   // Global ⌘K / Ctrl-K to open the command palette.
@@ -197,6 +214,9 @@ export default function App() {
   // The active-deal context chip: show whenever a deal is selected but we're not
   // already inside its workspace (one-click way back into the deal you're on).
   const showDealChip = !!ref && view !== "workspace";
+
+  // No token → the front door. Everything behind it requires a verified identity.
+  if (!token) return <Login onLogin={onLogin} />;
 
   return (
     <AppContext.Provider value={ctx}>
@@ -266,11 +286,10 @@ export default function App() {
                 <HumanBadge />
                 <DeterministicBadge label="DETERMINISTIC FIGURES" />
               </div>
-              <div className="topbar-actor">
-                <span className="ta-label">Acting as</span>
-                <select value={actor} onChange={(e) => setActor(e.target.value)} title="Named accountable user — drives every SoD check">
-                  {ACTORS.map((a) => <option key={a} value={a}>{a}</option>)}
-                </select>
+              <div className="topbar-actor" title="Verified identity from your login token — drives every SoD check">
+                <span className="ta-label">Signed in</span>
+                <span className="mono" style={{ fontWeight: 600 }}>{actor}</span>
+                <button className="cmdk-btn" style={{ marginLeft: 8 }} onClick={onLogout}>Logout</button>
               </div>
             </div>
           </div>

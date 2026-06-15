@@ -29,6 +29,11 @@ public class ApiException extends RuntimeException {
         return new ApiException(HttpStatus.FORBIDDEN, message);
     }
 
+    /** Authentication failure — bad credentials, missing / invalid / expired token. */
+    public static ApiException unauthorized(String message) {
+        return new ApiException(HttpStatus.UNAUTHORIZED, message);
+    }
+
     public HttpStatus getStatus() {
         return status;
     }
