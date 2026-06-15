@@ -161,6 +161,18 @@ export const risk = {
   ragHistory: (ref: string) => call<any[]>(`/risk/api/risk/${ref}/rag`, "GET"),
   macroImpact: (ref: string, body: any, actor: string) => call<any>(`/risk/api/risk/${ref}/macro-impact`, "POST", body, actor),
   macroHistory: (ref: string) => call<any[]>(`/risk/api/risk/${ref}/macro-impact`, "GET"),
+  // ---- qualitative scorecard (advisory, prompt-driven) ----
+  qualitativeAssess: (ref: string, actor: string) =>
+    call<any>(`/risk/api/risk/${ref}/qualitative/assess`, "POST", undefined, actor),
+  qualitative: (ref: string) => call<any>(`/risk/api/risk/${ref}/qualitative`, "GET"),
+  qualitativeConfirm: (id: number, body: any, actor: string) =>
+    call<any>(`/risk/api/risk/qualitative/${id}/confirm`, "POST", body, actor),
+};
+
+// ---- model document → qualitative prompt library extraction ----
+export const modelDoc = {
+  extract: (body: any, actor: string) =>
+    call<any>(`/config/api/model-doc/extract`, "POST", body, actor),
 };
 
 // ---- specialised deal structures (CP variants) ----

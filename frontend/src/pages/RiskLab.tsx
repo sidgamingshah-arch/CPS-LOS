@@ -3,10 +3,10 @@
  * impact assessments. Non-binding; never rewrites the authoritative deterministic
  * rating produced by the risk engine.
  */
-import { useState } from "react";
-import { origination, risk, fmt } from "../api";
+import { Fragment, useState } from "react";
+import { origination, risk, modelDoc, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, EmptyState, Field, GradeBadge, GovSplit, Stat, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, EmptyState, Field, GradeBadge, GovSplit, Stat, useAsync } from "../ui";
 
 const SECTOR_OUTLOOKS = ["IMPROVING", "STABLE", "DETERIORATING"] as const;
 type SectorOutlook = (typeof SECTOR_OUTLOOKS)[number];
@@ -464,8 +464,110 @@ export default function RiskLab() {
           <div className="muted" style={{ marginTop: 8 }}>No macro assessments yet — configure a scenario and run.</div>
         )}
       </Card>
+
+      {ref && <QualitativeCard refValue={ref} grade={ratingAsync.data?.rating?.finalGrade} />}
       </>
       )}
     </div>
+  );
+}
+
+/**
+ * Qualitative scorecard — advisory, prompt-driven scoring of the qualitative rating
+ * parameters (the QUAL_SCORECARD prompt library). Each parameter is AI-recommended,
+ * grounded on deal data, traceable to the prompt that produced it, and human-confirmed.
+ * The authoritative grade on the right is never touched — pure advisory overlay.
+ */
+function QualitativeCard({ refValue, grade }: { refValue: string; grade?: string }) {
+  const { actor, notify } = useApp();
+  const qa = useAsync(() => risk.qualitative(refValue).catch(() => null), [refValue]);
+  const [busy, setBusy] = useState(false);
+  const [openPrompt, setOpenPrompt] = useState<number | null>(null);
+  const [modelText, setModelText] = useState("");
+
+  async function assess() {
+    setBusy(true);
+    try { await risk.qualitativeAssess(refValue, actor); notify("Qualitative scorecard drafted — advisory; review each parameter"); qa.reload(); }
+    catch (e: any) { notify(e.message, true); } finally { setBusy(false); }
+  }
+  async function confirm(id: number, suggested: number) {
+    const adj = prompt("Confirm score (blank = accept the AI recommendation)", String(suggested));
+    if (adj === null) return;
+    const score = adj.trim() === "" ? undefined : parseFloat(adj);
+    try { await risk.qualitativeConfirm(id, { score }, actor); notify("Parameter confirmed"); qa.reload(); }
+    catch (e: any) { notify(e.message, true); }
+  }
+  async function extractModel() {
+    if (!modelText.trim()) { notify("Paste the rating model's qualitative section first", true); return; }
+    try {
+      const r = await modelDoc.extract({ text: modelText, jurisdiction: null }, actor);
+      notify(`Extracted ${r.parametersFound} parameter(s) + prompts — pending approval in Masters`);
+      setModelText("");
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  const v = qa.data;
+  const bandKind = (b: string) => (b === "STRONG" ? "ok" : b === "WEAK" ? "bad" : "warn");
+  return (
+    <Card title="Qualitative scorecard"
+      sub="AI-recommended qualitative parameter scores, prompt-driven (QUAL_SCORECARD) and grounded on deal data. Advisory & human-confirmed — the authoritative grade is never changed."
+      right={<AiBadge label="ADVISORY · PROMPT-DRIVEN" />}>
+      <div className="btnrow" style={{ marginBottom: 10 }}>
+        <Button kind="primary" busy={busy} onClick={assess}>
+          {v && v.parameterCount > 0 ? "Re-assess" : "Assess qualitative"}
+        </Button>
+        {v && v.parameterCount > 0 && (
+          <>
+            <Stat label="Composite" value={`${v.compositeScore.toFixed(1)}/100`} />
+            <Badge kind={bandKind(v.compositeBand)}>{v.compositeBand}</Badge>
+            <span className="muted">Advisory notch suggestion: {v.suggestedNotch > 0 ? "+" : ""}{v.suggestedNotch}</span>
+            <Badge kind="ok">grade {grade ?? v.authoritativeGrade ?? "—"} · UNCHANGED</Badge>
+          </>
+        )}
+      </div>
+      {v && v.parameters && v.parameters.length > 0 ? (
+        <table>
+          <thead>
+            <tr><th>Parameter</th><th className="num">Weight</th><th className="num">AI score</th>
+                <th className="num">Confirmed</th><th>Band</th><th>Source</th><th>Status</th><th /></tr>
+          </thead>
+          <tbody>
+            {v.parameters.map((p: any) => (
+              <Fragment key={p.id}>
+                <tr>
+                  <td>{p.displayName}</td>
+                  <td className="num">{(p.weight * 100).toFixed(0)}%</td>
+                  <td className="num">{p.suggestedScore.toFixed(0)}</td>
+                  <td className="num">{p.status === "CONFIRMED" ? p.score.toFixed(0) : "—"}</td>
+                  <td><Badge kind={bandKind(p.band)}>{p.band}</Badge></td>
+                  <td><Badge kind={p.promptSource === "MODEL_DOC" ? "info" : ""}>{p.promptSource}</Badge></td>
+                  <td><Badge kind={p.status === "CONFIRMED" ? "ok" : "warn"}>{p.status}</Badge></td>
+                  <td style={{ display: "flex", gap: 4 }}>
+                    <Button kind="ghost" onClick={() => setOpenPrompt(openPrompt === p.id ? null : p.id)}>Why?</Button>
+                    {p.status !== "CONFIRMED" && <Button kind="subtle" onClick={() => confirm(p.id, p.suggestedScore)}>Confirm</Button>}
+                  </td>
+                </tr>
+                {openPrompt === p.id && (
+                  <tr><td colSpan={8} style={{ background: "var(--surface-2, rgba(0,0,0,0.02))", fontSize: 12 }}>
+                    <div style={{ marginBottom: 6 }}><b>Rationale:</b> {p.rationale}</div>
+                    <div style={{ opacity: 0.8 }}><b>Prompt used:</b> {p.prompt}</div>
+                  </td></tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <EmptyState glyph="◷" title="No qualitative assessment yet"
+          sub="Run the qualitative scorecard — it recommends a score per parameter from the configured prompts, grounded on this deal's data." />
+      )}
+      <div style={{ marginTop: 14, borderTop: "1px solid var(--border, #eee)", paddingTop: 12 }}>
+        <Field label="Configure the scorecard from your rating model document">
+          <textarea rows={3} value={modelText} onChange={(e) => setModelText(e.target.value)}
+            placeholder="Paste your model's qualitative module (e.g. 'Management Quality (25%): …'). The parameters + scoring prompts are extracted and queued for maker-checker approval in Masters." />
+        </Field>
+        <Button kind="subtle" onClick={extractModel}>Extract qualitative prompts from model doc</Button>
+      </div>
+    </Card>
   );
 }

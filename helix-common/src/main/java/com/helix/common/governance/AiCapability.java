@@ -20,7 +20,9 @@ public enum AiCapability {
     COVENANT_INTEL("covenant-intel", "Covenant extraction + compliance assessment"),
     CPT("cpt", "Client Planning Template (wallet sizing + nudges)"),
     GROUP_SUGGEST("group-suggest", "Group identification advisory match"),
-    COPILOT("copilot", "Conversational read-only copilot");
+    COPILOT("copilot", "Conversational read-only copilot"),
+    QUALITATIVE_SCORECARD("qualitative-scorecard",
+            "Qualitative rating-parameter scoring (advisory, prompt-driven, human-confirmed)");
 
     private final String key;
     private final String description;

@@ -245,8 +245,7 @@ public class MasterSeeder implements CommandLineRunner {
                     map("enabled", true, "description", cap.description()));
         }
 
-        // ---- floating-rate benchmarks ----
-        // currentRate = the rate the next reset boundary will apply. history is for
+        // ---- floating-rate benchmarks ----        // currentRate = the rate the next reset boundary will apply. history is for
         // back-testing/audit (decision-service reads from it when the schedule's
         // reset date is in the past).
         seedBenchmark("EBLR", "INR", 0.0870, "Reserve Bank of India External Benchmark Lending Rate");
@@ -255,7 +254,39 @@ public class MasterSeeder implements CommandLineRunner {
         seedBenchmark("EIBOR_3M", "AED", 0.0460, "3-month Emirates Interbank Offered Rate");
         seedBenchmark("EURIBOR_3M", "EUR", 0.0375, "3-month Euro Interbank Offered Rate");
 
-        // ---- actor-role directory (RBAC layer over name-equality SoD) ----
+        // ---- qualitative scorecard / prompt library ----
+        // Each QUAL_SCORECARD record is one qualitative rating parameter: a weight, the
+        // SCORING PROMPT the advisory recommender runs (the front-end-editable "prompt
+        // library"), and 0-100 band anchors. The set defines the qualitative scorecard;
+        // a bank can re-weight, re-prompt, or extract a fresh set from an uploaded model
+        // document (ModelDocumentService). Weights across active parameters should sum to
+        // ~1.0; the engine normalises if they don't.
+        seedQual("management_quality", "Management Quality & Track Record", 0.25,
+                "Assess the quality, depth, and track record of the borrower's management and "
+                + "promoters on a 0-100 scale. Consider tenure, succession, governance, related-"
+                + "party conduct, and delivery against prior plans. Ground every point in the "
+                + "model document's management-assessment guidance and the deal's data; cite what "
+                + "drove the score. Return a score and a 2-3 sentence rationale.");
+        seedQual("industry_outlook", "Industry & Business Outlook", 0.20,
+                "Score the borrower's industry and competitive position on a 0-100 scale. Consider "
+                + "cyclicality, demand outlook, regulatory/headwind exposure, and the borrower's "
+                + "relative positioning. Ground in the model document's industry guidance and the "
+                + "deal's sector/segment. Return a score and a 2-3 sentence rationale.");
+        seedQual("business_profile", "Business & Operating Profile", 0.20,
+                "Score the operating profile on a 0-100 scale: scale, diversification (customer, "
+                + "supplier, geography), operating track record, and resilience. Ground in the "
+                + "model document's business-profile guidance. Return a score and rationale.");
+        seedQual("financial_flexibility", "Financial Flexibility & Liquidity", 0.20,
+                "Score financial flexibility on a 0-100 scale: access to funding, banking "
+                + "relationships, refinancing runway, and liquidity buffers beyond the headline "
+                + "ratios. Ground in the model document's guidance and the spread-derived liquidity "
+                + "ratios. Return a score and rationale.");
+        seedQual("governance_esg", "Governance & ESG", 0.15,
+                "Score governance and ESG posture on a 0-100 scale: board independence, disclosure "
+                + "quality, audit standing, and material ESG risks. Ground in the model document's "
+                + "governance guidance. Return a score and rationale.");
+
+
         // recordKey = actor name, payload.roles = the roles the actor holds. The
         // ProtectedAction catalogue (helix-common) maps each money-movement action to
         // its permitted roles; ActorDirectory enforces at the head of the transition.
@@ -287,6 +318,19 @@ public class MasterSeeder implements CommandLineRunner {
                 "CREDIT_OPS", "CREDIT_OFFICER", "TREASURY_OPS", "LOAN_OPS",
                 "CAD_OPS", "CREDIT_COMMITTEE", "BOARD_COMMITTEE", "LIE", "RM",
                 "COLLECTIONS_OPS", "COLLECTIONS_HEAD", "LEGAL");
+    }
+
+    private void seedQual(String key, String displayName, double weight, String prompt) {
+        masters.seedActive("QUAL_SCORECARD", key, null,
+                map("displayName", displayName, "weight", weight, "prompt", prompt,
+                        "source", "SEED",
+                        "anchors", java.util.List.of(
+                                map("band", "WEAK", "min", 0, "guidance",
+                                        "Material concerns / below-peer on " + displayName.toLowerCase()),
+                                map("band", "ADEQUATE", "min", 45, "guidance",
+                                        "In line with peers; no material concerns"),
+                                map("band", "STRONG", "min", 67, "guidance",
+                                        "Clear strength / above-peer on " + displayName.toLowerCase()))));
     }
 
     private void seedActor(String actor, String displayName, String... roles) {
