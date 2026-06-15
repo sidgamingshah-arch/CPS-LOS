@@ -520,7 +520,7 @@ function QualitativeCard({ refValue, grade }: { refValue: string; grade?: string
           <>
             <Stat label="Composite" value={`${v.compositeScore.toFixed(1)}/100`} />
             <Badge kind={bandKind(v.compositeBand)}>{v.compositeBand}</Badge>
-            <span className="muted">Advisory notch suggestion: {v.suggestedNotch > 0 ? "+" : ""}{v.suggestedNotch}</span>
+            <span className="muted">Advisory readout — any rating change is a manual override</span>
             <Badge kind="ok">grade {grade ?? v.authoritativeGrade ?? "—"} · UNCHANGED</Badge>
           </>
         )}

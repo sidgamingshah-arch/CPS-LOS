@@ -25,7 +25,7 @@ import java.util.Map;
  * scorecard. For each qualitative parameter configured in the {@code QUAL_SCORECARD}
  * master (the front-end / model-document prompt library), it runs the parameter's
  * prompt against the deal's data to RECOMMEND a 0-100 score + rationale, rolls them
- * up to a weighted composite + band, and surfaces an advisory notch suggestion.
+ * up to a weighted composite + band — a pure advisory readout.
  *
  * <p>Strictly governed: every score is {@code advisory = true}, stamped
  * {@code audit.ai("qualitative-scorecard", ...)}, and a named human confirms (and may
@@ -117,8 +117,7 @@ public class QualitativeAssessmentService {
                         .formatted(view.compositeBand(), view.compositeScore(), saved.size(),
                                 grade == null ? "n/a" : grade),
                 Map.of("compositeScore", view.compositeScore(), "band", view.compositeBand(),
-                        "advisory", true, "grade", grade == null ? "" : grade,
-                        "suggestedNotch", view.suggestedNotch()));
+                        "advisory", true, "grade", grade == null ? "" : grade));
         return view;
     }
 
@@ -175,9 +174,10 @@ public class QualitativeAssessmentService {
         }
         double composite = weightSum > 0 ? weighted / weightSum : 0;
         String band = bandFor(composite);
-        // Advisory notch suggestion only — never applied to the grade automatically.
-        int suggestedNotch = composite >= 67 ? 1 : composite < 45 ? -1 : 0;
-        return new QualitativeView(reference, round1(composite), band, suggestedNotch,
+        // Advisory readout only: the qualitative score proposes NO notch and has no
+        // mechanical link to the grade. A rating change is a completely manual,
+        // human-entered override (RiskService.overrideRating) — never AI-driven.
+        return new QualitativeView(reference, round1(composite), band,
                 allConfirmed, rows.size(), lines, grade, true);
     }
 

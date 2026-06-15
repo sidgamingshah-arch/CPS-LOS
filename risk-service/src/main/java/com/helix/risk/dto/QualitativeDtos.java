@@ -11,12 +11,13 @@ public class QualitativeDtos {
     }
 
     /**
-     * The qualitative assessment for a deal: per-parameter advisory scores, the
-     * weighted composite + band, and an ADVISORY notch suggestion to the rating
-     * (never applied automatically — the deterministic grade is unchanged).
+     * The qualitative assessment for a deal: per-parameter advisory scores and the
+     * weighted composite + band. A pure advisory READOUT — it proposes no notch and
+     * has no mechanical link to the authoritative grade. Any rating change is a
+     * completely manual, human-entered override (notch-limited + SoD) elsewhere.
      */
     public record QualitativeView(String applicationReference, double compositeScore, String compositeBand,
-                                  int suggestedNotch, boolean allConfirmed, int parameterCount,
+                                  boolean allConfirmed, int parameterCount,
                                   List<QualLine> parameters,
                                   String authoritativeGrade, boolean gradeUnchanged) {
     }
