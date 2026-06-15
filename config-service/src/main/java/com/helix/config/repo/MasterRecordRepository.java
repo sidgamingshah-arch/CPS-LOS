@@ -15,6 +15,22 @@ public interface MasterRecordRepository extends JpaRepository<MasterRecord, Long
 
     List<MasterRecord> findByMasterTypeAndRecordKeyOrderByVersionDesc(String masterType, String recordKey);
 
+    // ---- jurisdiction-scoped (a record is unique on masterType+recordKey+jurisdiction;
+    // null jurisdiction = the default record). JPA can't bind "= null", hence the
+    // explicit IsNull variants. ----
+
+    Optional<MasterRecord> findFirstByMasterTypeAndRecordKeyAndJurisdictionAndStatusOrderByVersionDesc(
+            String masterType, String recordKey, String jurisdiction, String status);
+
+    Optional<MasterRecord> findFirstByMasterTypeAndRecordKeyAndJurisdictionIsNullAndStatusOrderByVersionDesc(
+            String masterType, String recordKey, String status);
+
+    List<MasterRecord> findByMasterTypeAndRecordKeyAndJurisdiction(
+            String masterType, String recordKey, String jurisdiction);
+
+    List<MasterRecord> findByMasterTypeAndRecordKeyAndJurisdictionIsNull(
+            String masterType, String recordKey);
+
     List<MasterRecord> findByStatusOrderByMakerAtAsc(String status);
 
     List<MasterRecord> findByMasterTypeOrderByRecordKeyAsc(String masterType);

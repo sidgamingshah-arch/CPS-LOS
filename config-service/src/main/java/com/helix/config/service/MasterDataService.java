@@ -37,7 +37,9 @@ public class MasterDataService {
     @Transactional
     public MasterRecord submit(String masterType, String recordKey, String jurisdiction,
                                Map<String, Object> payload, String maker) {
-        int version = repo.findByMasterTypeAndRecordKeyOrderByVersionDesc(masterType, recordKey)
+        // Version within the (type, key, jurisdiction) scope — a jurisdiction override
+        // has its own version line, independent of the default record for the key.
+        int version = versionsFor(masterType.toUpperCase(), recordKey, jurisdiction)
                 .stream().mapToInt(MasterRecord::getVersion).max().orElse(0) + 1;
         MasterRecord m = new MasterRecord();
         m.setMasterType(masterType.toUpperCase());
@@ -78,7 +80,10 @@ public class MasterDataService {
         if (checker != null && checker.equalsIgnoreCase(m.getMaker())) {
             throw ApiException.forbiddenAutonomy("Maker and checker must differ (segregation of duties)");
         }
-        repo.findFirstByMasterTypeAndRecordKeyAndStatusOrderByVersionDesc(m.getMasterType(), m.getRecordKey(), ACTIVE)
+        // Supersede ONLY the prior ACTIVE record of the same (type, key, jurisdiction) scope.
+        // A jurisdiction override and the null-jurisdiction default are independent lines:
+        // approving an override must not deactivate the default (and vice-versa).
+        activeFor(m.getMasterType(), m.getRecordKey(), m.getJurisdiction())
                 .ifPresent(prev -> {
                     prev.setStatus(INACTIVE);
                     repo.save(prev);
@@ -133,10 +138,39 @@ public class MasterDataService {
         return repo.findByMasterTypeAndStatusOrderByRecordKeyAsc(masterType.toUpperCase(), ACTIVE);
     }
 
+    /**
+     * Resolve the active record for a key, jurisdiction-agnostic. Prefers the
+     * null-jurisdiction default; if absent, falls back to any active record for the
+     * key. Used by callers that don't carry a jurisdiction (e.g. ACTOR_ROLE).
+     */
     @Transactional(readOnly = true)
     public MasterRecord active(String masterType, String recordKey) {
-        return repo.findFirstByMasterTypeAndRecordKeyAndStatusOrderByVersionDesc(masterType.toUpperCase(), recordKey, ACTIVE)
+        String type = masterType.toUpperCase();
+        return repo.findFirstByMasterTypeAndRecordKeyAndJurisdictionIsNullAndStatusOrderByVersionDesc(type, recordKey, ACTIVE)
+                .or(() -> repo.findFirstByMasterTypeAndRecordKeyAndStatusOrderByVersionDesc(type, recordKey, ACTIVE))
                 .orElseThrow(() -> ApiException.notFound("No active %s/%s".formatted(masterType, recordKey)));
+    }
+
+    /**
+     * Jurisdiction-aware resolution: a jurisdiction-specific override wins, otherwise
+     * the null-jurisdiction default applies. This is the resolution contract every
+     * regime-overlay consumer relies on — overrides and defaults coexist, the override
+     * shadows the default only for its own jurisdiction.
+     */
+    @Transactional(readOnly = true)
+    public MasterRecord resolve(String masterType, String recordKey, String jurisdiction) {
+        String type = masterType.toUpperCase();
+        if (jurisdiction != null && !jurisdiction.isBlank()) {
+            var override = repo.findFirstByMasterTypeAndRecordKeyAndJurisdictionAndStatusOrderByVersionDesc(
+                    type, recordKey, jurisdiction, ACTIVE);
+            if (override.isPresent()) {
+                return override.get();
+            }
+        }
+        return repo.findFirstByMasterTypeAndRecordKeyAndJurisdictionIsNullAndStatusOrderByVersionDesc(type, recordKey, ACTIVE)
+                .or(() -> repo.findFirstByMasterTypeAndRecordKeyAndStatusOrderByVersionDesc(type, recordKey, ACTIVE))
+                .orElseThrow(() -> ApiException.notFound(
+                        "No active %s/%s for jurisdiction %s".formatted(masterType, recordKey, jurisdiction)));
     }
 
     @Transactional(readOnly = true)
@@ -157,5 +191,22 @@ public class MasterDataService {
     @Transactional(readOnly = true)
     public boolean hasAny() {
         return repo.count() > 0;
+    }
+
+    // ---- jurisdiction-scoped helpers: a (type, key, jurisdiction) triple is the unit
+    // of versioning and supersession; a null jurisdiction = the default line. ----
+
+    /** All versions for the (type, key, jurisdiction) scope — the version line that submit increments. */
+    private List<MasterRecord> versionsFor(String masterType, String recordKey, String jurisdiction) {
+        return (jurisdiction == null || jurisdiction.isBlank())
+                ? repo.findByMasterTypeAndRecordKeyAndJurisdictionIsNull(masterType, recordKey)
+                : repo.findByMasterTypeAndRecordKeyAndJurisdiction(masterType, recordKey, jurisdiction);
+    }
+
+    /** The current ACTIVE record for the exact (type, key, jurisdiction) scope, if any. */
+    private java.util.Optional<MasterRecord> activeFor(String masterType, String recordKey, String jurisdiction) {
+        return (jurisdiction == null || jurisdiction.isBlank())
+                ? repo.findFirstByMasterTypeAndRecordKeyAndJurisdictionIsNullAndStatusOrderByVersionDesc(masterType, recordKey, ACTIVE)
+                : repo.findFirstByMasterTypeAndRecordKeyAndJurisdictionAndStatusOrderByVersionDesc(masterType, recordKey, jurisdiction, ACTIVE);
     }
 }
