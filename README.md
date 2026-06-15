@@ -80,6 +80,16 @@ cd frontend && npm install && npm run dev    # http://localhost:5173
 bash scripts/stop-all.sh
 ```
 
+On **Windows / PowerShell**, use the `.ps1` ports of the launch scripts (you may
+need `Set-ExecutionPolicy -Scope Process Bypass` once per session):
+
+```powershell
+mvn -DskipTests package
+.\scripts\run-all.ps1            # waits for health; gateway on :8080
+cd frontend; npm install; npm run dev
+.\scripts\stop-all.ps1
+```
+
 ### Option B — Docker Compose (full stack)
 
 ```bash
