@@ -60,15 +60,15 @@ Hibernate community dialect), React 18, Vite 5, TypeScript 5.
 ## Run it
 
 ### Prerequisites
-- JDK 21, Maven 3.9+
+- JDK 21 (Maven is bundled as `./mvnw` — no separate install)
 - Node 20+ (for the UI)
 - Optionally Docker (for the containerised stack)
 
 ### Option A — local (fastest)
 
 ```bash
-# 1. build all service jars
-mvn -DskipTests package
+# 1. build all service jars (mvnw downloads Maven on first use)
+./mvnw -DskipTests package
 
 # 2. start all services (config, counterparty, origination, risk, decision, portfolio, gateway)
 bash scripts/run-all.sh          # waits for health; gateway on :8080
@@ -84,7 +84,7 @@ On **Windows / PowerShell**, use the `.ps1` ports of the launch scripts (you may
 need `Set-ExecutionPolicy -Scope Process Bypass` once per session):
 
 ```powershell
-mvn -DskipTests package
+.\mvnw.cmd -DskipTests package
 .\scripts\run-all.ps1            # waits for health; gateway on :8080
 cd frontend; npm install; npm run dev
 .\scripts\stop-all.ps1
