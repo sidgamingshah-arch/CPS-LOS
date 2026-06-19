@@ -1,11 +1,8 @@
 name: Refresh prebuilt jars
 
 # Rebuilds the 9 service jars whenever backend code changes and republishes them
-# to the `artifacts-prebuilt` branch, so machines without Maven (or with the wrong
-# JDK major) can run the stack via scripts/run-all.* without a local build.
-#
-# No loop risk: this triggers on the source branches below, never on
-# `artifacts-prebuilt` (the only branch it writes to).
+# as assets on the rolling `prebuilt-latest` GitHub Release. No git history bloat;
+# stable download URLs at /releases/download/prebuilt-latest/<service>-service.jar.
 
 on:
   push:
@@ -24,7 +21,7 @@ on:
 permissions:
   contents: write
 
-# Serialise publishes so two runs never race on the artifacts branch tip.
+# Serialise so two runs never race on the same release tag.
 concurrency:
   group: refresh-artifacts
   cancel-in-progress: false
@@ -35,8 +32,6 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -50,43 +45,43 @@ jobs:
           chmod +x ./mvnw
           ./mvnw -B -DskipTests package
 
-      - name: Publish jars to artifacts-prebuilt
-        env:
-          SRC_SHA: ${{ github.sha }}
-          SRC_REF: ${{ github.ref_name }}
+      - name: Stage jars for release
         run: |
           set -euo pipefail
-          services="config counterparty origination risk decision portfolio copilot limit gateway"
-
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Stash the freshly built jars outside the tree before we add a worktree.
-          mkdir -p "$RUNNER_TEMP/jars"
-          for s in $services; do
-            cp "${s}-service/target/${s}-service.jar" "$RUNNER_TEMP/jars/${s}-service.jar"
+          mkdir -p staging
+          for s in config counterparty origination risk decision portfolio copilot limit gateway; do
+            cp "${s}-service/target/${s}-service.jar" "staging/${s}-service.jar"
           done
+          ls -lh staging/
 
-          # Check out artifacts-prebuilt in a sibling worktree (the main checkout stays
-          # on the source branch). Create it from HEAD if it doesn't exist yet.
-          if git ls-remote --exit-code --heads origin artifacts-prebuilt >/dev/null 2>&1; then
-            git fetch origin artifacts-prebuilt
-            git worktree add -B artifacts-prebuilt ../artifacts origin/artifacts-prebuilt
-          else
-            git worktree add -b artifacts-prebuilt ../artifacts HEAD
-          fi
+      - name: Publish to `prebuilt-latest` release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: prebuilt-latest
+          name: Prebuilt jars (rolling)
+          # Replace assets in place each run so download URLs stay stable.
+          # `make_latest: legacy` lets real semver releases (if you ever add
+          # any) keep the GitHub "Latest" badge.
+          make_latest: legacy
+          prerelease: false
+          files: staging/*-service.jar
+          fail_on_unmatched_files: true
+          body: |
+            Prebuilt service jars for all 9 modules. Targets Java 21 bytecode
+            (`--release 21`); boots on Java 21+ (Spring Boot 3.3.5 wasn't
+            formally tested on Java 25 but starts with deprecation warnings).
 
-          # Drop the jars into their target/ slots (force-add: *.jar is gitignored).
-          for s in $services; do
-            mkdir -p "../artifacts/${s}-service/target"
-            cp "$RUNNER_TEMP/jars/${s}-service.jar" "../artifacts/${s}-service/target/${s}-service.jar"
-          done
+            Source snapshot: `${{ github.ref_name }}@${{ github.sha }}`.
 
-          cd ../artifacts
-          git add -f ./*-service/target/*-service.jar
-          if git diff --cached --quiet; then
-            echo "Jars are byte-identical to the published set — nothing to do."
-            exit 0
-          fi
-          git commit -m "Refresh prebuilt jars from ${SRC_REF}@${SRC_SHA}"
-          git push origin artifacts-prebuilt
+            Fetch all 9 from a checkout:
+
+            ```bash
+            bash scripts/fetch-prebuilt.sh           # Linux / Mac
+            .\scripts\fetch-prebuilt.ps1             # Windows / PowerShell
+            ```
+
+            Or a single jar by name:
+
+            ```
+            https://github.com/${{ github.repository }}/releases/download/prebuilt-latest/<service>-service.jar
+            ```

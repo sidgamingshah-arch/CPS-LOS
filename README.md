@@ -102,21 +102,27 @@ docker compose up --build
 ### Option C — Prebuilt jars (no Maven, no Docker)
 
 If you can't run Maven locally (no admin / locked-down JDK / wrong major
-version), the `artifacts-prebuilt` branch carries the 9 service jars
-pre-compiled against Java 21. Drop them onto your feature branch and run
-the launch scripts directly:
+version), GitHub Actions publishes the 9 service jars to a rolling
+`prebuilt-latest` release on every backend change. Fetch them into your
+checkout and run the launch scripts directly:
 
 ```bash
-# from your feature checkout:
-git fetch origin artifacts-prebuilt
-git checkout origin/artifacts-prebuilt -- '*/target/*-service.jar'
-bash scripts/run-all.sh           # or .\scripts\run-all.ps1 on Windows
+bash scripts/fetch-prebuilt.sh        # Linux / Mac
+bash scripts/run-all.sh
 ```
 
+```powershell
+.\scripts\fetch-prebuilt.ps1          # Windows / PowerShell
+.\scripts\run-all.ps1
+```
+
+Both helpers download into each `<service>/target/` slot (no git involved).
 The jars target Java 21 bytecode (`--release 21`) and boot on Java 21+
 (Spring Boot 3.3.5 wasn't formally tested on Java 25; expect deprecation
-warnings on startup but it runs). The branch is refreshed automatically by
-the `Refresh prebuilt jars` GitHub Actions workflow on every backend change.
+warnings on startup but it runs). The release is refreshed automatically by
+the `Refresh prebuilt jars` GitHub Actions workflow on every backend
+change. Direct URL for a single jar:
+`https://github.com/<owner>/<repo>/releases/download/prebuilt-latest/<svc>-service.jar`.
 
 ### End-to-end tests
 With the services running locally, exercise the entire lifecycle through the gateway:
