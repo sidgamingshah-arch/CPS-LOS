@@ -115,7 +115,8 @@ bash scripts/run-all.sh           # or .\scripts\run-all.ps1 on Windows
 
 The jars target Java 21 bytecode (`--release 21`) and boot on Java 21+
 (Spring Boot 3.3.5 wasn't formally tested on Java 25; expect deprecation
-warnings on startup but it runs).
+warnings on startup but it runs). The branch is refreshed automatically by
+the `Refresh prebuilt jars` GitHub Actions workflow on every backend change.
 
 ### End-to-end tests
 With the services running locally, exercise the entire lifecycle through the gateway:
