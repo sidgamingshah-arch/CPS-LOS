@@ -99,6 +99,24 @@ docker compose up --build
 # Gateway: http://localhost:8080
 ```
 
+### Option C — Prebuilt jars (no Maven, no Docker)
+
+If you can't run Maven locally (no admin / locked-down JDK / wrong major
+version), the `artifacts-prebuilt` branch carries the 9 service jars
+pre-compiled against Java 21. Drop them onto your feature branch and run
+the launch scripts directly:
+
+```bash
+# from your feature checkout:
+git fetch origin artifacts-prebuilt
+git checkout origin/artifacts-prebuilt -- '*/target/*-service.jar'
+bash scripts/run-all.sh           # or .\scripts\run-all.ps1 on Windows
+```
+
+The jars target Java 21 bytecode (`--release 21`) and boot on Java 21+
+(Spring Boot 3.3.5 wasn't formally tested on Java 25; expect deprecation
+warnings on startup but it runs).
+
 ### End-to-end tests
 With the services running locally, exercise the entire lifecycle through the gateway:
 
