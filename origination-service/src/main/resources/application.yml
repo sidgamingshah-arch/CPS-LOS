@@ -18,6 +18,16 @@ spring:
         dialect: org.hibernate.community.dialect.SQLiteDialect
     show-sql: false
 
+helix:
+  config-service:
+    base-url: ${CONFIG_SERVICE_URL:http://localhost:8081}
+  counterparty-service:
+    base-url: ${COUNTERPARTY_SERVICE_URL:http://localhost:8082}
+  limit-service:
+    base-url: ${LIMIT_SERVICE_URL:http://localhost:8088}
+  workflow-service:
+    base-url: ${WORKFLOW_SERVICE_URL:http://localhost:8089}
+
 management:
   endpoints:
     web:
@@ -26,4 +36,3 @@ management:
   endpoint:
     health:
       show-details: always
-

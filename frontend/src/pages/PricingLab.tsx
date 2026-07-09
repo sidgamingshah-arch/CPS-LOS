@@ -6,7 +6,28 @@
 import { useState } from "react";
 import { origination, risk, optimiser, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, Stat, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, Stat, Unchanged, useAsync } from "../ui";
+
+interface PricingException {
+  id: number;
+  applicationReference: string;
+  recommendedRate: number;
+  proposedRate: number;
+  concessionBps: number;
+  proposedRaroc: number;
+  hurdleRaroc: number;
+  belowHurdle: boolean;
+  ead: number;
+  requiredAuthority: "RELATIONSHIP_HEAD" | "CREDIT_OFFICER" | "CREDIT_HEAD" | "CREDIT_COMMITTEE" | "NONE";
+  requiredLevels: 0 | 1 | 2;
+  status: "PENDING_L1" | "PENDING_L2" | "APPROVED" | "REJECTED";
+  reason: string;
+  proposedBy: string;
+  approverL1?: string;
+  approverL2?: string;
+  decisionComment?: string;
+  breakdown: Record<string, unknown>;
+}
 
 interface OptimiserForm {
   targetRaroc: string;
@@ -68,6 +89,16 @@ export default function PricingLab() {
   const [result, setResult] = useState<OptimisationResult | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
+  // Concession / exception state
+  const [excProposedRate, setExcProposedRate] = useState<string>("");
+  const [excReason, setExcReason] = useState<string>("");
+  const [excBusy, setExcBusy] = useState(false);
+
+  const exceptionsAsync = useAsync<PricingException[]>(
+    () => (ref ? optimiser.listExceptions(ref) : Promise.resolve([])),
+    [ref],
+  );
+
   const summaryAsync = useAsync(
     () => (ref ? risk.summary(ref) : Promise.reject(new Error("no-ref"))),
     [ref],
@@ -101,26 +132,67 @@ export default function PricingLab() {
   const setField = (key: keyof OptimiserForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
 
+  const handleProposeException = async () => {
+    if (!ref) { notify("Select a deal first", true); return; }
+    if (!excProposedRate) { notify("Enter a proposed rate", true); return; }
+    setExcBusy(true);
+    try {
+      await optimiser.proposeException(
+        ref,
+        { proposedRate: Number(excProposedRate) / 100, reason: excReason },
+        actor,
+      );
+      notify("Concession proposed — pending authority approval");
+      setExcProposedRate("");
+      setExcReason("");
+      exceptionsAsync.reload();
+    } catch (e: any) {
+      notify(e.message, true);
+    } finally {
+      setExcBusy(false);
+    }
+  };
+
+  const handleDecideException = async (exc: PricingException, approve: boolean) => {
+    const promptMsg = approve
+      ? "Optional approval comment:"
+      : "Reason for rejection (required):";
+    const comment = window.prompt(promptMsg) ?? "";
+    if (!approve && !comment.trim()) {
+      notify("Rejection reason is required", true);
+      return;
+    }
+    try {
+      await optimiser.decideException(exc.id, { approve, comment }, actor);
+      notify(approve ? "Exception approved" : "Exception rejected");
+      exceptionsAsync.reload();
+    } catch (e: any) {
+      notify(e.message, true);
+    }
+  };
+
   const breakdownEntries = result
     ? Object.entries(result.recommended.breakdown)
     : [];
 
   return (
     <div className="grid">
-      {/* AI advisory banner */}
-      <Card
-        title="Pricing Lab"
-        sub="Goal-seek RAROC scenarios against rate/fee/collateral constraints. All outputs are ADVISORY and NON-BINDING — authoritative pricing in the risk engine is never modified."
-        right={<Badge kind="ai">AI · advisory</Badge>}
-      >
-        <div className="muted" style={{ fontSize: 13 }}>
-          Select a priced deal, configure constraints, and run the optimiser. Scenarios
-          are directional inputs only; final pricing decisions remain with a named human.
+      {/* Governance banner */}
+      <div className="gov-banner">
+        <h3>Optimise freely. The price of record stays preserved.</h3>
+        <div className="gb-sub">
+          The goal-seek optimiser explores rate, fee and collateral mixes; concessions route through a
+          maker-checker authority workflow. Through all of it, the <b>authoritative pricing is never overwritten</b>.
         </div>
-      </Card>
+        <div className="gb-chips">
+          <span className="gb-chip"><b>AI</b> · scenario optimiser</span>
+          <span className="gb-chip"><b>Human</b> · concession approval (SoD, 1–2 levels)</span>
+          <span className="gb-chip"><b>Deterministic</b> · RAROC engine</span>
+        </div>
+      </div>
 
       {/* Deal selector + authoritative pricing stats */}
-      <Card title="Deal selector">
+      <Card title="Deal selector" right={pricing ? <Unchanged label="PRICING OF RECORD · PRESERVED" /> : undefined}>
         <Field label="Application">
           <select
             value={ref}
@@ -160,7 +232,18 @@ export default function PricingLab() {
         )}
       </Card>
 
+      {!ref && (
+        <Card>
+          <EmptyState
+            glyph="◎"
+            title="Select a deal to optimise pricing"
+            sub="Pick an application above. The goal-seek optimiser proposes rate/fee/collateral scenarios toward a target RAROC — advisory only; the authoritative pricing of record is never mutated."
+          />
+        </Card>
+      )}
+
       {/* Optimiser form */}
+      {ref && (
       <Card title="Optimiser constraints">
         <div className="btnrow" style={{ marginBottom: 10 }}>
           <Button kind="ghost" onClick={() => setForm(PRESET_STRETCH)}>
@@ -193,6 +276,119 @@ export default function PricingLab() {
           <span className="muted">Acting as {actor}</span>
         </div>
       </Card>
+      )}
+
+      {/* Pricing exceptions / concessions */}
+      {ref && (
+        <Card
+          title="Pricing exceptions / concessions"
+          sub="An RM proposes a rate below the recommended rate; the concession is routed to an authority tier by size and hurdle breach, and approved via maker-checker SoD (1 or 2 levels)."
+        >
+          {/* Propose concession form */}
+          <div className="grid cols-2" style={{ marginBottom: 12 }}>
+            <Field label="Proposed rate (%)">
+              <input
+                type="number"
+                step="0.01"
+                value={excProposedRate}
+                onChange={(e) => setExcProposedRate(e.target.value)}
+                placeholder="e.g. 7.5"
+              />
+            </Field>
+            <Field label="Reason">
+              <input
+                type="text"
+                value={excReason}
+                onChange={(e) => setExcReason(e.target.value)}
+                placeholder="Relationship / competitive pressure…"
+              />
+            </Field>
+          </div>
+          <div className="btnrow" style={{ marginBottom: 16 }}>
+            <Button onClick={handleProposeException} disabled={!excProposedRate} busy={excBusy}>
+              Propose
+            </Button>
+            <span className="muted">Acting as {actor}</span>
+          </div>
+
+          {/* Exceptions table */}
+          {exceptionsAsync.loading && <div className="loading">Loading exceptions…</div>}
+          {!exceptionsAsync.loading && !exceptionsAsync.error && (exceptionsAsync.data ?? []).length === 0 && (
+            <div className="muted">No exceptions raised for this deal.</div>
+          )}
+          {!exceptionsAsync.loading && (exceptionsAsync.data ?? []).length > 0 && (
+            <table>
+              <thead>
+                <tr>
+                  <th className="num">Proposed rate</th>
+                  <th className="num">Concession</th>
+                  <th className="num">Proposed RAROC</th>
+                  <th>Below hurdle</th>
+                  <th>Required authority</th>
+                  <th>Status</th>
+                  <th>Proposed by</th>
+                  <th>Action / decision</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(exceptionsAsync.data ?? []).map((exc: PricingException) => {
+                  const isPending = exc.status === "PENDING_L1" || exc.status === "PENDING_L2";
+                  const statusTone =
+                    isPending ? "warn" : exc.status === "APPROVED" ? "ok" : "bad";
+                  const statusLabel =
+                    exc.status === "PENDING_L1" ? "Pending L1"
+                    : exc.status === "PENDING_L2" ? "Pending L2"
+                    : exc.status === "APPROVED" ? "Approved"
+                    : "Rejected";
+                  return (
+                    <tr key={exc.id}>
+                      <td className="num">{fmt.pct(exc.proposedRate)}</td>
+                      <td className="num">{exc.concessionBps} bps</td>
+                      <td className="num">{fmt.pct(exc.proposedRaroc)}</td>
+                      <td>
+                        <Badge kind={exc.belowHurdle ? "bad" : "ok"}>
+                          {exc.belowHurdle ? "Yes" : "No"}
+                        </Badge>
+                      </td>
+                      <td>
+                        <Badge kind="info">{exc.requiredAuthority}</Badge>
+                      </td>
+                      <td>
+                        <Badge kind={statusTone}>{statusLabel}</Badge>
+                      </td>
+                      <td className="mono">{exc.proposedBy}</td>
+                      <td>
+                        {isPending ? (
+                          <div className="btnrow">
+                            <Button kind="subtle" onClick={() => handleDecideException(exc, true)}>
+                              Approve
+                            </Button>
+                            <Button kind="subtle" onClick={() => handleDecideException(exc, false)}>
+                              Reject
+                            </Button>
+                          </div>
+                        ) : (
+                          <div>
+                            {exc.approverL1 && (
+                              <small className="prov">L1: {exc.approverL1}</small>
+                            )}
+                            {exc.approverL2 && (
+                              <small className="prov"> · L2: {exc.approverL2}</small>
+                            )}
+                            {exc.decisionComment && (
+                              <div><small className="prov">{exc.decisionComment}</small></div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      )}
 
       {/* Result */}
       {result && (
@@ -286,7 +482,14 @@ export default function PricingLab() {
                     const numVal = typeof v === "number" ? v : null;
                     const isRate = ["rate", "raroc"].includes(k);
                     const isMoney = ["ead", "expectedLoss", "capitalCharge"].includes(k);
-                    const displayVal = numVal !== null
+                    // The FTP block is a nested object — show the derived rate + how it was built.
+                    const isObj = v !== null && typeof v === "object";
+                    const displayVal = isObj
+                      ? (k === "ftp" && typeof (v as any).ftp === "number"
+                          ? `${fmt.pct((v as any).ftp)} · ${(v as any).source ?? ""}` +
+                            ((v as any).behaviourType ? ` · ${(v as any).behaviourType} ${(v as any).behaviouralMonths}m` : "")
+                          : JSON.stringify(v))
+                      : numVal !== null
                       ? isRate
                         ? fmt.pct(numVal)
                         : isMoney

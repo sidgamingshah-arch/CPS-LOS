@@ -1,7 +1,9 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.notify.NotificationService;
 import com.helix.common.web.ApiException;
+import com.helix.decision.client.LimitClient;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.entity.Covenant;
 import com.helix.decision.entity.CovenantAction;
@@ -42,17 +44,32 @@ public class CovenantWorkflowService {
     private final CovenantRepository covenants;
     private final CovenantTestRepository tests;
     private final UpstreamClient upstream;
+    private final LimitClient limits;
     private final AuditService audit;
+    private final NotificationService notifications;
 
     public CovenantWorkflowService(CovenantScheduleRepository schedules, CovenantActionRepository actions,
                                    CovenantRepository covenants, CovenantTestRepository tests,
-                                   UpstreamClient upstream, AuditService audit) {
+                                   UpstreamClient upstream, LimitClient limits, AuditService audit,
+                                   NotificationService notifications) {
         this.schedules = schedules;
         this.actions = actions;
         this.covenants = covenants;
         this.tests = tests;
         this.upstream = upstream;
+        this.limits = limits;
         this.audit = audit;
+        this.notifications = notifications;
+    }
+
+    /** Enqueue a notification without ever failing the caller's business operation. */
+    private void safeNotify(NotificationService.Enqueue cmd, String actor) {
+        try {
+            notifications.enqueue(cmd, actor);
+        } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(CovenantWorkflowService.class)
+                    .warn("notification enqueue failed for {} ({})", cmd.eventType(), e.getMessage());
+        }
     }
 
     /** Opens (or re-opens) a schedule for every active covenant on a deal. */
@@ -131,6 +148,15 @@ public class CovenantWorkflowService {
                     "%s %s %s vs observed %.2f -> %s".formatted(c.getMetric(), c.getOperator(),
                             c.getThreshold(), observed, newStatus),
                     Map.of("metric", c.getMetric(), "passed", passed, "status", newStatus));
+            if (BREACHED.equals(newStatus) || OVERDUE.equals(newStatus)) {
+                String action = c.getOnBreach() == null || c.getOnBreach().isEmpty()
+                        ? "review" : String.join(", ", c.getOnBreach());
+                safeNotify(new NotificationService.Enqueue("COVENANT_BREACH", "COVENANT_BREACH",
+                        "Application", reference, "cov:" + c.getId() + ":test:" + today,
+                        inputs.jurisdiction(), Map.of("borrower", inputs.counterpartyName(),
+                        "metric", c.getMetric(), "operator", c.getOperator(), "threshold", c.getThreshold(),
+                        "result", observed, "asOf", today.toString(), "action", action), null), actor);
+            }
         }
         return updated;
     }
@@ -152,6 +178,11 @@ public class CovenantWorkflowService {
                     "EMAIL_TEMPLATE COVENANT_DUE: %s due %s".formatted(s.getMetric(), s.getCurrentDueDate()),
                     Map.of("template", "COVENANT_DUE", "metric", s.getMetric(),
                             "dueDate", s.getCurrentDueDate().toString()));
+            safeNotify(new NotificationService.Enqueue("COVENANT_DUE", "COVENANT_DUE",
+                    "Application", s.getApplicationReference(),
+                    "schedule:" + s.getId() + ":due:" + s.getCurrentDueDate(), null,
+                    Map.of("borrower", s.getApplicationReference(), "metric", s.getMetric(),
+                            "dueDate", s.getCurrentDueDate().toString()), null), actor);
         }
         return due.size();
     }
@@ -225,10 +256,27 @@ public class CovenantWorkflowService {
                 s.setStatus(WAIVED);
                 schedules.save(s);
             }
-            case "FREEZE_ACCOUNTS", "FREEZE_DISBURSEMENT" ->
+            case "FREEZE_ACCOUNTS", "FREEZE_DISBURSEMENT" -> {
+                // REAL feed to limit-service: freeze the obligor's limit nodes for this
+                // application (status -> FROZEN, honoured as a hard-stop on UTILISE/RESERVE).
+                // Governance SIDE-EFFECT of the already-committed approval — a limit-service
+                // outage or a not-yet-built tree must never roll back the covenant decision.
+                LimitClient.AppStatusResultDto frozen = limits.freezeApplication(
+                        s.getApplicationReference(), a.getAction() + ": " + a.getReason(), actor);
+                if (frozen.affectedCount() < 0) {
+                    audit.engine("LIMIT_FREEZE_SKIPPED", "Application", s.getApplicationReference(),
+                            "limit-service unavailable; limits NOT frozen for %s (covenant %s stands, retry freeze)"
+                                    .formatted(s.getApplicationReference(), a.getAction()),
+                            Map.of("metric", s.getMetric(), "action", a.getAction(), "outcome", "SKIPPED"));
+                } else {
                     audit.engine("LIMIT_FREEZE_TRIGGER", "Application", s.getApplicationReference(),
-                            "Freeze trigger emitted to limit-service for " + s.getMetric(),
-                            Map.of("metric", s.getMetric(), "reason", a.getReason()));
+                            "Froze %d/%d limit node(s) for %s (%s on %s) -> limit-service".formatted(
+                                    frozen.affectedCount(), frozen.totalNodes(),
+                                    s.getApplicationReference(), a.getAction(), s.getMetric()),
+                            Map.of("metric", s.getMetric(), "reason", a.getReason(),
+                                    "frozenCount", frozen.affectedCount(), "totalNodes", frozen.totalNodes()));
+                }
+            }
             default -> { }
         }
         audit.human(actor, "COVENANT_ACTION_APPROVED", "CovenantAction", String.valueOf(actionId),
@@ -249,7 +297,7 @@ public class CovenantWorkflowService {
     private LocalDate addPeriod(LocalDate from, String freq) {
         return switch (freq == null ? "QUARTERLY" : freq.toUpperCase()) {
             case "MONTHLY" -> from.plus(1, ChronoUnit.MONTHS);
-            case "HALF_YEARLY" -> from.plus(6, ChronoUnit.MONTHS);
+            case "HALF_YEARLY", "SEMI_ANNUAL" -> from.plus(6, ChronoUnit.MONTHS);
             case "ANNUAL" -> from.plus(1, ChronoUnit.YEARS);
             default -> from.plus(3, ChronoUnit.MONTHS);
         };

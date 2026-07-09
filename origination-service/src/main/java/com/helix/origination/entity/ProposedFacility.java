@@ -59,6 +59,22 @@ public class ProposedFacility {
     /** Indicative pricing carried at structuring; final pricing is the risk engine output. */
     private Double indicativeRate;
 
+    /**
+     * FIXED — interest is the indicative/recommended rate for the whole tenor.
+     * FLOATING — interest = {@link #benchmarkCode} rate (looked up at each reset
+     * boundary from the BENCHMARK master) + {@link #spreadBps}/10000.
+     */
+    @Column(length = 12)
+    private String rateType = "FIXED";
+
+    @Column(length = 30)
+    private String benchmarkCode;
+
+    private Double spreadBps;
+
+    /** How often the floating rate resets (months). Defaults to 3 for QUARTERLY. */
+    private Integer resetFrequencyMonths;
+
     @Column(name = "is_primary", nullable = false)
     private boolean primary;
 

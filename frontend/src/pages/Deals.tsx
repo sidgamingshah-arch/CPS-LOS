@@ -1,22 +1,28 @@
 import { useState } from "react";
 import { counterparty, origination, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, statusTone, useAsync } from "../ui";
-
-const FACILITIES = ["TERM_LOAN", "WORKING_CAPITAL", "REVOLVING_CREDIT", "PROJECT_LOAN", "GUARANTEE", "TRADE_LINE"];
-const COLLATERAL = ["", "CASH", "GOVT_SECURITIES", "PROPERTY", "RECEIVABLES", "EQUITY_LISTED"];
+import { Badge, Button, Card, EmptyState, Field, statusTone, useAsync } from "../ui";
+import { useCodes } from "../code-values";
 
 export default function Deals() {
   const { actor, notify, nav } = useApp();
   const apps = useAsync(() => origination.list(), []);
   const cps = useAsync(() => counterparty.list(), []);
+  const facilities = useCodes("FACILITY_TYPE");
+  const collaterals = useCodes("COLLATERAL_TYPE");
   const [creating, setCreating] = useState(false);
 
   return (
     <div className="grid">
       <Card title="Origination pipeline" sub="Intake → spread → rate → capital → price → approve → book."
         right={<Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New deal"}</Button>}>
-        {apps.loading ? <div className="loading">Loading…</div> : (
+        {apps.loading ? <div className="loading">Loading…</div> : (apps.data || []).length === 0 ? (
+          <EmptyState
+            glyph="✦"
+            title="No deals on the pipeline yet"
+            sub="Click + New deal to start an application — facility, sublimits and collateral. The lifecycle takes it from intake through spreading, rating, pricing, approval and booking."
+          />
+        ) : (
           <table>
             <thead><tr><th>Reference</th><th>Counterparty</th><th>Facility</th><th className="num">Amount</th><th>Status</th></tr></thead>
             <tbody>
@@ -29,7 +35,6 @@ export default function Deals() {
                   <td><Badge kind={statusTone(a.status)}>{a.status}</Badge></td>
                 </tr>
               ))}
-              {(apps.data || []).length === 0 && <tr><td colSpan={5} className="muted">No deals yet — create one.</td></tr>}
             </tbody>
           </table>
         )}
@@ -73,7 +78,7 @@ export default function Deals() {
             <div className="grid cols-2">
               <Field label="Facility type">
                 <select value={f.facilityType} onChange={(e) => setF({ ...f, facilityType: e.target.value })}>
-                  {FACILITIES.map((x) => <option key={x}>{x}</option>)}
+                  {facilities.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
                 </select>
               </Field>
               <Field label="Requested amount">
@@ -83,7 +88,8 @@ export default function Deals() {
               <Field label="Tenor (months)"><input type="number" value={f.tenorMonths} onChange={(e) => setF({ ...f, tenorMonths: +e.target.value })} /></Field>
               <Field label="Collateral type">
                 <select value={f.collateralType} onChange={(e) => setF({ ...f, collateralType: e.target.value })}>
-                  {COLLATERAL.map((x) => <option key={x} value={x}>{x || "(unsecured)"}</option>)}
+                  <option value="">(unsecured)</option>
+                  {collaterals.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
                 </select>
               </Field>
               <Field label="Collateral value">

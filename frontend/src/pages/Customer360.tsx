@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { mis, origination, fmt } from "../api";
-import { Badge, Card, Field, GradeBadge, Stat, useAsync } from "../ui";
+import { Badge, Card, EmptyState, Field, GradeBadge, Stat, useAsync } from "../ui";
 
 /**
  * Customer-360 — single-borrower view aggregating profile, limits, triggers,
@@ -28,6 +28,15 @@ export default function Customer360() {
         </div>
       </Card>
 
+      {!ref && (
+        <Card>
+          <EmptyState
+            glyph="◍"
+            title="Select a deal to load Customer-360"
+            sub="Pick an application above. The view aggregates profile, limits, triggers, financials, ratios, RAROC and provisioning across services — read-only, never credit-binding."
+          />
+        </Card>
+      )}
       {data.loading && <Card><div className="loading">Loading…</div></Card>}
       {data.data && <CustomerView c={data.data} />}
     </div>

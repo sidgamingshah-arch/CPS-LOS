@@ -58,6 +58,18 @@ public class RatingEngine {
         breakdown.put("lgdSource", lgdPack.code() + " v" + lgdPack.version());
         breakdown.put("philosophy", "TTC");   // through-the-cycle (declared per model, PRD open Q3)
 
+        // Quantitative provenance: every factor value is a ratio computed from the
+        // financial spread (the confirmed financial template), NOT model-invented.
+        // Surface the source + the underlying financials so the grade is traceable
+        // straight back to the spread cells the analyst confirmed.
+        Map<String, Object> quantSource = new LinkedHashMap<>();
+        quantSource.put("template", "FINANCIAL_SPREAD");
+        quantSource.put("spreadConfirmed", in.spreadConfirmed());
+        quantSource.put("financialsUsed", in.latestFinancials() == null ? Map.of() : in.latestFinancials());
+        quantSource.put("note", "Factor values are ratios derived from the confirmed financial spread; "
+                + "the scorecard is deterministic and reproducible (no AI in the figure path).");
+        breakdown.put("quantitativeSource", quantSource);
+
         return new Computation(round(score), grade, pd, lgd, ead, breakdown);
     }
 

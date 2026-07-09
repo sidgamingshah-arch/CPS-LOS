@@ -32,3 +32,5 @@ helix:
     base-url: ${CONFIG_SERVICE_URL:http://localhost:8081}
   origination-service:
     base-url: ${ORIGINATION_SERVICE_URL:http://localhost:8083}
+  workflow-service:
+    base-url: ${WORKFLOW_SERVICE_URL:http://localhost:8089}

@@ -1,0 +1,368 @@
+#!/usr/bin/env python3
+"""
+Regression orchestrator — runs every e2e_*.py against the live gateway, parses
+pass/fail counts and durations, snapshots the reference data the suites
+exercise (rule packs, masters, RBAC, AI governance), samples the audit trail
+each backend produced, and emits a single markdown report under
+regression-reports/<timestamp>.md.
+
+Methodology contract (the "actual data" the user approved):
+  * The seeded reference data (IN-RBI & AE-CBUAE rule packs, ~80 masters,
+    ACTOR_ROLE, AI_GOVERNANCE) and the deterministic engines (rating, capital,
+    ECL, RAROC, FTP) are the real system surfaces under test.
+  * Counterparty identities and financial figures the suites POST are
+    illustrative inputs that drive the real engines; the BEHAVIOUR being
+    asserted is real.
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+GW = "http://localhost:8080"
+
+# Suite ordering deliberately follows the lifecycle: smoke first (it lays the
+# foundation), then domain suites, then governance / load.
+SUITES = [
+    ("e2e_smoke",            "Core lifecycle: counterparty -> spread -> rate -> capital -> price -> approve -> book -> ECL/RAROC/MER/CAD/limits/CAP"),
+    ("e2e_masters",          "Generic master-engine: maker-checker + jurisdiction versioning (default vs override coexistence)"),
+    ("e2e_auth",             "Authentication: X-Actor header validation + actor credentials from ACTOR_ROLE master"),
+    ("e2e_rbac",             "Role-based access (RBAC) + segregation of duties enforcement"),
+    ("e2e_ai_governance",    "AI capability on/off switch with per-jurisdiction overrides"),
+    ("e2e_governance_posture", "Fail-closed RBAC posture (G7): default fail-open on directory outage; governed maker-checker flip to fail-closed denies (403) with an RBAC_POSTURE_DENY audit; posture observable; simulate-outage hook proves both postures deterministically"),
+    ("e2e_ai_off",           "Full lifecycle with every AI capability disabled (deterministic-only proof)"),
+    ("e2e_ftp",              "FTP master: tenor-structured curves + behavioural-life pricing lookup"),
+    ("e2e_codevalue",        "Generic CODE_VALUE master: every UI dropdown is master-driven (maker-checker, versioned), domain extension picks up at the resolver immediately, brand-new domains addable without code change"),
+    ("e2e_modelconfig",      "Model configuration engine: sector/segment resolution + sections + visibility/conditional + min/max + iterative + master-driven options + weighted composite + advisory invariant"),
+    ("e2e_ratingmodel",      "Rating model of record (opt-in): ratingModelOfRecord flag + confirmed instance flips authoritative grade via the shared MasterScale ladder; inert until confirmed; advisory model stays advisory (flag is the sole gate)"),
+    ("e2e_fintemplate",      "Configurable financial templates: chart-of-accounts augmentation (extra input/derived lines + formula ratios) resolved by sector/segment; default leaves the canonical chart untouched; maker-checker"),
+    ("e2e_projection",       "Financial projections engine: multi-year proforma from base actuals × drivers × PROJECTION_TEMPLATE; revenue compounding; projected DSCR; driver overrides; sensitivity; human-confirm; advisory invariant; maker-checker"),
+    ("e2e_concentration",    "Single-name / group / sector / geo / rating-x-sector concentration + correlation stress"),
+    ("e2e_sector_provenance", "Sector provenance (D6): a booked exposure records the REAL counterparty sector (not the segment proxy), flowing into the concentration SECTOR dimension; segment-fallback preserved"),
+    ("e2e_group_grade",      "Group grade ladder (D10): deterministic exposure-weighted-notch group grade on the AAA..D master ladder from member grades+exposures; config-driven method (flip -> WORST_OF); advisory + SYSTEM-audited; member ratings unchanged"),
+    ("e2e_amendment",        "Post-sanction facility amendment via DoA"),
+    ("e2e_syndication",      "Syndication agency engine: lead + participants + fee distribution + secondary transfer"),
+    ("e2e_pf",               "Project-finance mechanics: tranche drawdown, DSRA/TRA, milestone certification, LIE approval"),
+    ("e2e_predisbursement",  "Conditions Precedent (CP) gate + mandatory CP clearing + drawdown authorization with SoD"),
+    ("e2e_postdisbursement", "Drawdown release -> limit ledger -> ECL reconciliation -> RAROC actual"),
+    ("e2e_monitoring",       "Covenant testing history + EWS scan + waiver L1/L2 + extension + alerts"),
+    ("e2e_collections",      "NPA workflow: DPD stages, restructure, legal path, write-off DoA, cure"),
+    ("e2e_sicr_notch",       "SICR-by-notch staging: origination-grade snapshot (immutable across re-register) + rating-downgrade >= threshold notches -> ECL STAGE_2 at dpd 0 (notch rule is the sole trigger)"),
+    ("e2e_100_obligors",     "Load test: 100 obligors across 6 segments x 2 jurisdictions; MIS/Customer-360/Portfolio-360"),
+    ("e2e_workflow",         "Workflow engine: WORKFLOW_DEFINITION pack consumption + humanGate/autonomy guard + SLA + grade/pricing invariant"),
+    ("e2e_reporting",        "Self-service ad-hoc reports: whitelisted dataset registry + RBAC/SoD + master-engine saved defs + cross-check vs MIS"),
+    ("e2e_currency",         "Two-level currency: financial-analysis presentation-currency normalisation + consistency guard + shared FX source-of-truth + system-currency base reconciliation"),
+    ("e2e_decisioning",      "Decisioning loop closure: CONDITIONAL_APPROVE conditions -> CP register (fan-out + gate enforcement); sanction letter on approval (advisory + maker-checker confirm); committee/quorum voting with SoD (router can't vote, no double vote, quorum finalises)"),
+    ("e2e_india_rbi",        "India (RBI) regulatory pack: SMA-0/1/2 -> NPA sub-classification + CRILC large-credit feed (idempotent, threshold-filtered); doubtful age-bands D1/D2/D3 with secured/unsecured split; working-capital drawing-power monitoring (advisory); restructure classification floor; all IN-RBI-only (CBUAE unchanged)"),
+    ("e2e_notifications",    "Notification transport (G5-notify): EMAIL_TEMPLATE-rendered outbox for covenant due/breach, CP nudge, CRILC report-due, EWS breach; idempotent per (event,subject,dedupe); additive to the audit event + unchanged business response; SYSTEM-actor; queryable per-service /api/notifications"),
+    ("e2e_cdd_tiers",        "CDD tiering from the CDD_TIERS pack (E3): tier derivation now reads enhanced_triggers/simplified_eligible/default_tier from the rule pack (behaviour-preserving vs the old hardcoded logic); re-authoring the pack (drop PEP trigger) moves the tier; finally-restored"),
+    ("e2e_lifecycle_rekyc",  "Lifecycle terminal states + re-KYC sweep (D9): CLOSED reachable via a governed close transition (audited, idempotent); deterministic re-KYC sweep flips VERIFIED->RE_KYC_DUE past the CDD-tier interval (tier-differentiated from CDD_TIERS), SYSTEM-audited + advisory notification; fresh obligor untouched. Runs LAST (its as-of sweep touches the shared book)"),
+]
+
+RESULT_RE = re.compile(r"(\d+)\s+passed\s*,\s*(\d+)\s+failed\b", re.IGNORECASE)
+# Suites count their own assertions via lines like "  PASS  …" / "  FAIL  …".
+# This is the universal fallback when a suite doesn't print a summary line.
+PASS_LINE = re.compile(r"^\s+PASS\s", re.MULTILINE)
+FAIL_LINE = re.compile(r"^\s+FAIL\s", re.MULTILINE)
+
+
+def http_json(path):
+    try:
+        with urllib.request.urlopen(GW + path, timeout=30) as r:
+            return json.loads(r.read().decode())
+    except Exception as e:
+        return {"_error": str(e)}
+
+
+def run_suite(name):
+    script = ROOT / "scripts" / f"{name}.py"
+    t0 = time.time()
+    proc = subprocess.run(
+        [sys.executable, str(script)],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+        timeout=900,
+    )
+    elapsed = time.time() - t0
+    out = (proc.stdout or "") + ("\n[stderr]\n" + proc.stderr if proc.stderr else "")
+    # Prefer the suite's own summary line ("N passed, M failed") if present;
+    # otherwise fall back to counting PASS/FAIL lines directly.
+    summary_matches = RESULT_RE.findall(out)
+    if summary_matches:
+        passed, failed = int(summary_matches[-1][0]), int(summary_matches[-1][1])
+        tally_source = "summary_line"
+    else:
+        passed = len(PASS_LINE.findall(out))
+        failed = len(FAIL_LINE.findall(out))
+        tally_source = "pass_fail_lines"
+    return {
+        "suite": name,
+        "exit_code": proc.returncode,
+        "duration_sec": round(elapsed, 2),
+        "passed": passed,
+        "failed": failed,
+        "tally_source": tally_source,
+        "stdout_tail": "\n".join(out.splitlines()[-50:]),
+        "ok": proc.returncode == 0 and failed == 0 and passed > 0,
+    }
+
+
+PACK_TYPES = [
+    "CAPITAL_SA", "ECRA_MAPPING", "RATING_PD_MAP", "LGD_MAP", "PROVISIONING",
+    "DOA_MATRIX", "KYC_TIERS", "LARGE_EXPOSURE", "CONCENTRATION_LIMITS",
+    "PRICING", "WORKFLOW_DEF",
+]
+
+
+def snapshot_reference_data():
+    """Snapshot what's seeded in config-service — proof of the real data surface."""
+    snap = {}
+    snap["jurisdictions"] = http_json("/config/api/jurisdictions")
+    # The /rulepacks endpoint returns one ACTIVE pack per (jurisdiction, type);
+    # we walk the known pack types to enumerate what's seeded per jurisdiction.
+    for jur in ("IN-RBI", "AE-CBUAE"):
+        packs = []
+        for pt in PACK_TYPES:
+            p = http_json(f"/config/api/rulepacks?jurisdiction={jur}&type={pt}")
+            if isinstance(p, dict) and "_error" not in p and "status" not in p:
+                packs.append(p)
+        snap[f"rule_packs_{jur.split('-')[0]}"] = packs
+    # Masters — group by type
+    master_types = [
+        "ACTOR_ROLE", "AI_GOVERNANCE", "GOVERNANCE_POSTURE", "FACILITY_MASTER", "COLLATERAL_MASTER",
+        "COVENANT_LIBRARY", "CP_MASTER", "CHECKLIST_MASTER", "EWS_TRIGGER",
+        "FTP_CURVE", "RAROC_PD_TERM_STRUCTURE", "RAROC_BENCHMARK",
+        "DEDUP_RULES", "NEGATIVE_LIST", "MODEL_DEFINITION", "FINANCIAL_TEMPLATE",
+        "PROJECTION_TEMPLATE", "ESG_BAND", "CODE_VALUE",
+        "EXTERNAL_RATING_AGENCY", "VALUATION_AGENCY", "CHARGE_AGENCY",
+        "EMAIL_TEMPLATE",
+    ]
+    by_type = {}
+    for t in master_types:
+        recs = http_json(f"/config/api/masters/{t}")
+        if isinstance(recs, list):
+            by_type[t] = len(recs)
+        else:
+            by_type[t] = recs
+    snap["masters_active_counts"] = by_type
+    return snap
+
+
+def sample_audit_trail():
+    """Hit each backend's audit endpoint for a small sample — proof the real
+    engines and human gates fired during the run (with actorType breakdown)."""
+    services = {
+        "config":       "/config/api/audit",
+        "counterparty": "/counterparty/api/audit",
+        "origination":  "/origination/api/audit",
+        "risk":         "/risk/api/audit",
+        "decision":     "/decision/api/audit",
+        "portfolio":    "/portfolio/api/audit",
+        "limit":        "/limits/api/audit",
+        "workflow":     "/workflow/api/audit",
+    }
+    out = {}
+    for svc, path in services.items():
+        evs = http_json(path)
+        if isinstance(evs, list):
+            by_actor = {}
+            by_event = {}
+            for e in evs:
+                by_actor[e.get("actorType", "?")] = by_actor.get(e.get("actorType", "?"), 0) + 1
+                et = e.get("eventType", "?")
+                by_event[et] = by_event.get(et, 0) + 1
+            top = sorted(by_event.items(), key=lambda kv: -kv[1])[:8]
+            out[svc] = {"total_events": len(evs), "actor_types": by_actor, "top_events": top}
+        else:
+            out[svc] = {"_error": str(evs)}
+    return out
+
+
+def fmt_md(report):
+    lines = []
+    lines.append("# Helix CPS-LOS — Regression Report")
+    lines.append("")
+    lines.append(f"**Run timestamp:** {report['run_started']} (UTC)  ")
+    lines.append(f"**Total duration:** {report['total_duration_sec']:.1f}s  ")
+    lines.append(f"**Gateway:** `{GW}`  ")
+    lines.append(f"**Source SHA:** `{report['git_sha']}` on `{report['git_branch']}`")
+    lines.append("")
+    lines.append("## Methodology")
+    lines.append("")
+    lines.append("Per session contract: this regression exercises **real** seeded")
+    lines.append("reference data (RBI & CBUAE rule packs, ~80 masters, ACTOR_ROLE,")
+    lines.append("AI_GOVERNANCE) and **real** deterministic engines (rating PD/LGD,")
+    lines.append("capital RWA, ECL/IRAC, RAROC, FTP, limit ledger). Counterparty")
+    lines.append("identities and financial figures the suites POST are illustrative")
+    lines.append("inputs driving the real engines; the asserted behaviour is real.")
+    lines.append("")
+    lines.append("The AI-advisory invariant (authoritative grade/pricing unchanged")
+    lines.append("after RAG/macro/qualitative overlays) is verified by the suites.")
+    lines.append("")
+
+    # Headline table
+    lines.append("## Suite results")
+    lines.append("")
+    lines.append("| # | Suite | Passed | Failed | Duration (s) | Status |")
+    lines.append("|---:|---|---:|---:|---:|:---:|")
+    total_pass = total_fail = 0
+    for i, r in enumerate(report["suites"], 1):
+        status = "PASS" if r["ok"] else ("FAIL" if r["passed"] is not None else "ERROR")
+        p = r["passed"] if r["passed"] is not None else "—"
+        f = r["failed"] if r["failed"] is not None else "—"
+        lines.append(f"| {i} | `{r['suite']}` — {next(d for s, d in SUITES if s == r['suite'])} | {p} | {f} | {r['duration_sec']} | {status} |")
+        if isinstance(r["passed"], int): total_pass += r["passed"]
+        if isinstance(r["failed"], int): total_fail += r["failed"]
+    lines.append(f"| | **TOTAL** | **{total_pass}** | **{total_fail}** | **{report['total_duration_sec']:.1f}** | {'PASS' if total_fail == 0 and all(s['ok'] for s in report['suites']) else 'FAIL'} |")
+    lines.append("")
+
+    # Reference data
+    snap = report["reference_data"]
+    lines.append("## Reference data exercised (the 'real config' surface)")
+    lines.append("")
+    if isinstance(snap.get("jurisdictions"), list):
+        lines.append(f"**Jurisdictions seeded:** {', '.join(j.get('code', '?') for j in snap['jurisdictions'])}")
+    for jur_key, label in [("rule_packs_IN", "IN-RBI"), ("rule_packs_AE", "AE-CBUAE")]:
+        packs = snap.get(jur_key)
+        if isinstance(packs, list) and packs:
+            lines.append(f"")
+            lines.append(f"**{label} rule packs ({len(packs)} active):**")
+            lines.append("")
+            lines.append("| Pack | Type | Version | Policy sign-off | Model-risk sign-off | Dual-signed |")
+            lines.append("|---|---|---:|---|---|:---:|")
+            for p in packs:
+                code = p.get("code") or p.get("packId") or p.get("id") or "?"
+                typ = p.get("type") or p.get("packType") or "?"
+                ver = p.get("version", "?")
+                pol = p.get("policySignedOffBy") or "—"
+                mr = p.get("modelRiskSignedOffBy") or "—"
+                dual = "✓" if p.get("fullySignedOff") else "—"
+                lines.append(f"| `{code}` | {typ} | {ver} | {pol} | {mr} | {dual} |")
+    lines.append("")
+    lines.append("**Active master records by type:**")
+    lines.append("")
+    lines.append("| Master type | Active records |")
+    lines.append("|---|---:|")
+    for t, c in snap.get("masters_active_counts", {}).items():
+        lines.append(f"| `{t}` | {c if isinstance(c, int) else 'err'} |")
+    lines.append("")
+
+    # Audit trail
+    lines.append("## Engine-execution evidence (audit trail samples)")
+    lines.append("")
+    lines.append("Sampling each backend's append-only `audit_events` table after the")
+    lines.append("regression. `actorType` breakdown proves which actions were taken")
+    lines.append("by a HUMAN, an AI capability, or a SYSTEM/engine path.")
+    lines.append("")
+    for svc, data in report["audit_samples"].items():
+        if "_error" in data:
+            lines.append(f"### {svc}-service\n\n_error: {data['_error']}_\n")
+            continue
+        lines.append(f"### {svc}-service")
+        lines.append("")
+        lines.append(f"- **Events recorded:** {data['total_events']}")
+        lines.append(f"- **Actor mix:** " + ", ".join(f"`{k}`={v}" for k, v in sorted(data['actor_types'].items())))
+        lines.append(f"- **Top events:** " + ", ".join(f"`{e}`({n})" for e, n in data['top_events']))
+        lines.append("")
+
+    # Tails
+    lines.append("## Per-suite output tails")
+    lines.append("")
+    lines.append("Last 50 lines of each suite's stdout, for spot-checking which")
+    lines.append("specific assertions executed (and how the real engines responded).")
+    lines.append("")
+    for r in report["suites"]:
+        lines.append(f"<details><summary><code>{r['suite']}</code> — {r['passed']} passed, {r['failed']} failed, {r['duration_sec']}s</summary>\n")
+        lines.append("```")
+        lines.append(r["stdout_tail"])
+        lines.append("```\n</details>\n")
+
+    lines.append("## Environment")
+    lines.append("")
+    lines.append("| | |")
+    lines.append("|---|---|")
+    lines.append(f"| Java | {report['java_version']} |")
+    lines.append(f"| Python | {sys.version.split()[0]} |")
+    lines.append(f"| Services | 9 (config, counterparty, origination, risk, decision, portfolio, copilot, limit, gateway) |")
+    lines.append(f"| Database | SQLite per service (1 connection each) in `./data/` |")
+    return "\n".join(lines) + "\n"
+
+
+def main():
+    # --render-only <existing.json>: re-render the markdown from a saved JSON,
+    # refreshing the reference-data + audit-trail snapshots from the live stack
+    # without re-running the suites. Useful when the report template is fixed
+    # after a successful run.
+    if len(sys.argv) >= 3 and sys.argv[1] == "--render-only":
+        prev = json.load(open(sys.argv[2]))
+        prev["reference_data"] = snapshot_reference_data()
+        prev["audit_samples"] = sample_audit_trail()
+        out_dir = ROOT / "regression-reports"
+        out_dir.mkdir(exist_ok=True)
+        stamp = prev["run_started"].replace(":", "").replace("-", "")[:15]
+        (out_dir / f"{stamp}.md").write_text(fmt_md(prev))
+        (out_dir / f"{stamp}.json").write_text(json.dumps(prev, indent=2, default=str))
+        print(f"[+] Re-rendered: regression-reports/{stamp}.md")
+        return
+
+    started = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    t0 = time.time()
+
+    print(f"[*] Regression started {started}", flush=True)
+
+    print("[*] Snapshotting reference data...", flush=True)
+    ref_data = snapshot_reference_data()
+
+    results = []
+    for name, _ in SUITES:
+        print(f"[*] running {name} ...", flush=True)
+        r = run_suite(name)
+        flag = "OK " if r["ok"] else ("FAIL" if r["passed"] is not None else "ERR ")
+        print(f"    [{flag}] {name}: {r['passed']} passed, {r['failed']} failed, {r['duration_sec']}s",
+              flush=True)
+        results.append(r)
+
+    print("[*] Sampling audit trail...", flush=True)
+    audit = sample_audit_trail()
+
+    java = subprocess.run(["java", "-version"], capture_output=True, text=True).stderr.splitlines()[0]
+    git_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(ROOT), capture_output=True, text=True).stdout.strip()
+    git_branch = subprocess.run(["git", "branch", "--show-current"], cwd=str(ROOT), capture_output=True, text=True).stdout.strip()
+
+    report = {
+        "run_started": started,
+        "total_duration_sec": time.time() - t0,
+        "java_version": java,
+        "git_sha": git_sha[:12],
+        "git_branch": git_branch,
+        "reference_data": ref_data,
+        "suites": results,
+        "audit_samples": audit,
+    }
+
+    # Save report.
+    out_dir = ROOT / "regression-reports"
+    out_dir.mkdir(exist_ok=True)
+    stamp = started.replace(":", "").replace("-", "")[:15]
+    md_path = out_dir / f"{stamp}.md"
+    json_path = out_dir / f"{stamp}.json"
+    md_path.write_text(fmt_md(report))
+    json_path.write_text(json.dumps(report, indent=2, default=str))
+
+    overall_pass = all(r["ok"] for r in results)
+    print(f"\n[+] Report written: {md_path.relative_to(ROOT)}")
+    print(f"[+] Raw JSON:       {json_path.relative_to(ROOT)}")
+    print(f"[+] Overall: {'PASS' if overall_pass else 'FAIL'}")
+    sys.exit(0 if overall_pass else 1)
+
+
+if __name__ == "__main__":
+    main()

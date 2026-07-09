@@ -34,25 +34,35 @@ public class PricingOptimiser {
     private final RiskService risk;
     private final ConfigClient config;
     private final OriginationClient origination;
+    private final FtpService ftpService;
     private final AuditService audit;
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
     public PricingOptimiser(RiskService risk, ConfigClient config, OriginationClient origination,
-                            AuditService audit) {
+                            FtpService ftpService, AuditService audit,
+                            com.helix.common.governance.AiGovernanceClient governance) {
         this.risk = risk;
         this.config = config;
         this.origination = origination;
+        this.ftpService = ftpService;
         this.audit = audit;
+        this.governance = governance;
     }
 
     @Transactional
     public OptimisationResult optimise(String reference, OptimiseRequest req, String actor) {
+        // Governance gate first — the jurisdiction source (credit inputs) is the only
+        // upstream call allowed before the gate; nothing else runs when disabled.
+        CreditInputsDto in = origination.creditInputs(reference);
+        governance.enforce(com.helix.common.governance.AiCapability.PRICING_OPTIMISER, in.jurisdiction());
         Rating rating = risk.latestRating(reference);
         CapitalResult capital = risk.latestCapital(reference);
-        CreditInputsDto in = origination.creditInputs(reference);
         RulePackDto pack = config.activePack(in.jurisdiction(), "PRICING");
 
         double hurdle = pack.number("hurdle_raroc", 0.15);
-        double costOfFunds = pack.number("cost_of_funds", 0.075);
+        // Same FTP as the deterministic recommended price, so the optimiser baseline matches.
+        double costOfFunds = ftpService.computeFtp(in.currency(), in.jurisdiction(),
+                in.facilityType(), in.tenorMonths(), pack.number("cost_of_funds", 0.075)).ftp();
         double opexRate = pack.number("opex_rate", 0.010);
         double targetCapitalRatio = pack.number("target_capital_ratio", 0.12);
         double minSpread = pack.number("min_spread", 0.005);

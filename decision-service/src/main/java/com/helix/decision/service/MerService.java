@@ -1,6 +1,7 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.notify.NotificationService;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.CollateralViewDto;
@@ -59,15 +60,27 @@ public class MerService {
     private final DeviationRepository deviations;
     private final UpstreamClient upstream;
     private final AuditService audit;
+    private final NotificationService notifications;
 
     public MerService(MerItemRepository items, CadCaseRepository cases, ChecklistItemRepository checklist,
-                      DeviationRepository deviations, UpstreamClient upstream, AuditService audit) {
+                      DeviationRepository deviations, UpstreamClient upstream, AuditService audit,
+                      NotificationService notifications) {
         this.items = items;
         this.cases = cases;
         this.checklist = checklist;
         this.deviations = deviations;
         this.upstream = upstream;
         this.audit = audit;
+        this.notifications = notifications;
+    }
+
+    private void safeNotify(NotificationService.Enqueue cmd, String actor) {
+        try {
+            notifications.enqueue(cmd, actor);
+        } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(MerService.class)
+                    .warn("notification enqueue failed for {} ({})", cmd.eventType(), e.getMessage());
+        }
     }
 
     // --------------------------------------------------- build the register
@@ -295,6 +308,11 @@ public class MerService {
                 audit.engine("MER_OVERDUE", "Application", m.getApplicationReference(),
                         "'%s' overdue since %s (owner %s)".formatted(m.getDescription(), m.getDueDate(), m.getOwner()),
                         Map.of("itemType", m.getItemType(), "criticality", m.getCriticality()));
+                safeNotify(new NotificationService.Enqueue("MER_OVERDUE", "MER_OVERDUE",
+                        "Application", m.getApplicationReference(),
+                        "mer:" + m.getId() + ":overdue:" + m.getDueDate(), null,
+                        Map.of("borrower", m.getApplicationReference(), "description", m.getDescription(),
+                                "dueDate", m.getDueDate().toString(), "owner", m.getOwner()), null), actor);
             }
         }
         for (MerItem m : items.findByStatusOrderByDueDateAsc(OVERDUE)) {
@@ -306,6 +324,11 @@ public class MerService {
                         "'%s' escalated — overdue %d+ days (owner %s)".formatted(
                                 m.getDescription(), m.getEscalationDaysAfter(), m.getOwner()),
                         Map.of("itemType", m.getItemType(), "criticality", m.getCriticality()));
+                safeNotify(new NotificationService.Enqueue("MER_ESCALATED", "MER_ESCALATED",
+                        "Application", m.getApplicationReference(),
+                        "mer:" + m.getId() + ":escalated:" + m.getDueDate(), null,
+                        Map.of("borrower", m.getApplicationReference(), "description", m.getDescription(),
+                                "escalatedTo", m.getOwner(), "days", m.getEscalationDaysAfter()), null), actor);
             }
         }
         return Map.of("markedOverdue", overdue, "markedEscalated", escalated);
@@ -330,6 +353,11 @@ public class MerService {
                             m.getDescription(), m.getDueDate(), m.getOwner()),
                     Map.of("template", "MER_DUE", "itemType", m.getItemType(),
                             "dueDate", m.getDueDate().toString(), "owner", m.getOwner()));
+            safeNotify(new NotificationService.Enqueue("MER_DUE", "MER_DUE",
+                    "Application", m.getApplicationReference(),
+                    "mer:" + m.getId() + ":due:" + m.getDueDate(), null,
+                    Map.of("borrower", m.getApplicationReference(), "description", m.getDescription(),
+                            "dueDate", m.getDueDate().toString(), "owner", m.getOwner()), null), actor);
             m.setLastReminderAt(today);
             items.save(m);
         }
@@ -388,7 +416,7 @@ public class MerService {
         return switch (freq == null ? "ANNUAL" : freq.toUpperCase()) {
             case "MONTHLY" -> from.plus(1, ChronoUnit.MONTHS);
             case "QUARTERLY" -> from.plus(3, ChronoUnit.MONTHS);
-            case "HALF_YEARLY" -> from.plus(6, ChronoUnit.MONTHS);
+            case "HALF_YEARLY", "SEMI_ANNUAL" -> from.plus(6, ChronoUnit.MONTHS);
             default -> from.plus(1, ChronoUnit.YEARS);
         };
     }

@@ -1,6 +1,7 @@
 package com.helix.limit.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.money.Money;
 import com.helix.common.web.ApiException;
 import com.helix.limit.dto.Dtos.UtilisationAction;
 import com.helix.limit.dto.Dtos.UtilisationRequest;
@@ -143,6 +144,7 @@ public class CountryAndFiService {
         tx.setCashMargin(cashMargin);
         tx.setBreachesLimit(breaches);
         tx.setStatus("PENDING_APPROVAL");
+        tx.setSubmittedBy(actor);
         FiTransaction saved = fiTx.save(tx);
         audit.human(actor, "FI_TX_SUBMITTED", "FiTransaction", saved.getFid(),
                 "FI tx %.0f %s on %s%s".formatted(amount, currency, lineId,
@@ -156,6 +158,10 @@ public class CountryAndFiService {
         FiTransaction tx = fiTx.findById(id).orElseThrow(() -> ApiException.notFound("No FI tx: " + id));
         if (!"PENDING_APPROVAL".equals(tx.getStatus())) {
             throw ApiException.conflict("FI tx already decided");
+        }
+        if (tx.getSubmittedBy() != null && tx.getSubmittedBy().equalsIgnoreCase(actor)) {
+            throw ApiException.forbiddenAutonomy(
+                    "Segregation of duties: FI transaction approver must differ from the submitter (" + tx.getSubmittedBy() + ")");
         }
         tx.setDecidedAt(Instant.now());
         tx.setApprovedBy(actor);

@@ -2,6 +2,7 @@ package com.helix.counterparty.api;
 
 import com.helix.common.ingest.Ingestion.Envelope;
 import com.helix.common.ingest.Ingestion.Result;
+import com.helix.counterparty.dto.Dtos.CloseRequest;
 import com.helix.counterparty.dto.Dtos.CreateCounterpartyRequest;
 import com.helix.counterparty.dto.Dtos.DispositionRequest;
 import com.helix.counterparty.dto.Dtos.UboStructureRequest;
@@ -20,9 +21,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/counterparties")
@@ -57,10 +60,29 @@ public class CounterpartyController {
         return counterparties.get(id);
     }
 
+    @GetMapping("/by-reference/{reference}")
+    public Counterparty getByReference(@PathVariable String reference) {
+        return counterparties.getByReference(reference);
+    }
+
     @PostMapping("/{id}/kyc/verify")
     public Counterparty verifyKyc(@PathVariable Long id,
                                   @RequestHeader(value = "X-Actor", defaultValue = "compliance.officer") String actor) {
         return counterparties.verifyKyc(id, actor);
+    }
+
+    /** Close (exit) an ACTIVE relationship — reachable CLOSED terminal state (D9). */
+    @PostMapping("/{id}/close")
+    public Counterparty close(@PathVariable Long id, @Valid @RequestBody CloseRequest req,
+                              @RequestHeader(value = "X-Actor", defaultValue = "relationship.manager") String actor) {
+        return counterparties.close(id, req.reason(), actor);
+    }
+
+    /** Re-KYC sweep — flags VERIFIED counterparties past their CDD-tier interval as RE_KYC_DUE (D9). */
+    @PostMapping("/rekyc/sweep")
+    public Map<String, Object> reKycSweep(@RequestParam(required = false) String asOf,
+                                          @RequestHeader(value = "X-Actor", defaultValue = "system") String actor) {
+        return counterparties.reKycSweep(asOf, actor);
     }
 
     // ---- UBO graph ----

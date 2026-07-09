@@ -1,6 +1,7 @@
 package com.helix.limit.api;
 
 import com.helix.limit.dto.Dtos.AddChildRequest;
+import com.helix.limit.dto.Dtos.ApplicationStatusResult;
 import com.helix.limit.dto.Dtos.CreateRootRequest;
 import com.helix.limit.dto.Dtos.ExposureCheckResult;
 import com.helix.limit.dto.Dtos.ExtendRequest;
@@ -59,6 +60,12 @@ public class LimitController {
         return limits.buildFromDeal(applicationRef, actor);
     }
 
+    /** G4: override review queue — confirmed utilisations where an override was exercised (optionally by CIF). */
+    @GetMapping("/overrides")
+    public List<Utilisation> overrides(@RequestParam(required = false) String cif) {
+        return utilisation.overridesApplied(cif);
+    }
+
     // ---- View API (product processor) ----
 
     @GetMapping("/view")
@@ -73,6 +80,29 @@ public class LimitController {
     @GetMapping("/line/{reference}")
     public NodeView line(@PathVariable String reference) {
         return limits.node(reference);
+    }
+
+    @GetMapping("/by-application")
+    public List<com.helix.limit.entity.LimitNode> byApplication(@RequestParam String applicationRef) {
+        return limits.nodesByApplication(applicationRef);
+    }
+
+    @GetMapping("/by-facility")
+    public com.helix.limit.entity.LimitNode byFacility(@RequestParam String applicationRef,
+                                                       @RequestParam String facilityRef) {
+        return limits.nodeByFacility(applicationRef, facilityRef);
+    }
+
+    /** Re-sync a facility node after an approved post-sanction amendment (absolute targets; retry-safe). */
+    @PostMapping("/resync-facility")
+    public com.helix.limit.entity.LimitNode resyncFacility(@RequestBody java.util.Map<String, Object> req,
+                                                           @RequestHeader("X-Actor") String actor) {
+        String applicationRef = String.valueOf(req.get("applicationRef"));
+        String facilityRef = String.valueOf(req.get("facilityRef"));
+        Double newAmount = req.get("newAmount") == null ? null : ((Number) req.get("newAmount")).doubleValue();
+        Integer newTenor = req.get("newTenorMonths") == null ? null : ((Number) req.get("newTenorMonths")).intValue();
+        String amendmentRef = req.get("amendmentRef") == null ? null : String.valueOf(req.get("amendmentRef"));
+        return limits.resyncFacility(applicationRef, facilityRef, newAmount, newTenor, amendmentRef, actor);
     }
 
     @GetMapping("/{cif}/exposure")
@@ -115,6 +145,24 @@ public class LimitController {
     public LimitNode unfreeze(@PathVariable Long id,
                               @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
         return limits.setStatus(id, "ACTIVE", null, actor);
+    }
+
+    /** Application-scoped freeze: drives every limit node for the deal to FROZEN (idempotent; empty tree = no-op). */
+    @PostMapping("/by-application/{applicationRef}/freeze")
+    public ApplicationStatusResult freezeApplication(
+            @PathVariable String applicationRef,
+            @RequestBody(required = false) FreezeRequest req,
+            @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+        return limits.setApplicationStatus(applicationRef, "FROZEN", req == null ? null : req.reason(), actor);
+    }
+
+    /** Application-scoped release: drives every (non-closed) limit node for the deal back to ACTIVE. */
+    @PostMapping("/by-application/{applicationRef}/unfreeze")
+    public ApplicationStatusResult unfreezeApplication(
+            @PathVariable String applicationRef,
+            @RequestBody(required = false) FreezeRequest req,
+            @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+        return limits.setApplicationStatus(applicationRef, "ACTIVE", req == null ? null : req.reason(), actor);
     }
 
     @PostMapping("/{id}/extend")

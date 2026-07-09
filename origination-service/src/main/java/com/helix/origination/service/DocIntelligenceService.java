@@ -34,13 +34,16 @@ public class DocIntelligenceService {
     private final DocExtractionRepository extractions;
     private final LoanApplicationRepository applications;
     private final AuditService audit;
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
     public DocIntelligenceService(DocumentRepository documents, DocExtractionRepository extractions,
-                                  LoanApplicationRepository applications, AuditService audit) {
+                                  LoanApplicationRepository applications, AuditService audit,
+                                  com.helix.common.governance.AiGovernanceClient governance) {
         this.documents = documents;
         this.extractions = extractions;
         this.applications = applications;
         this.audit = audit;
+        this.governance = governance;
     }
 
     // --------------------------------------------------- extraction (suggest → confirm)
@@ -48,7 +51,12 @@ public class DocIntelligenceService {
     @Transactional
     public DocExtraction extract(Long docId, String actor) {
         Document doc = documents.findById(docId).orElseThrow(() -> ApiException.notFound("No document: " + docId));
-        String ref = applications.findById(doc.getApplicationId()).map(LoanApplication::getReference).orElse("?");
+        LoanApplication app = applications.findById(doc.getApplicationId()).orElse(null);
+        String ref = app == null ? "?" : app.getReference();
+        // Gate: doc-intel is a governed AI capability. The jurisdiction-scoped check
+        // means a bank can switch AI off for, say, CBUAE while keeping it on for RBI.
+        governance.enforce(com.helix.common.governance.AiCapability.DOC_INTEL,
+                app == null ? null : app.getJurisdiction());
         String type = doc.getClassifiedType() == null ? "OTHER" : doc.getClassifiedType();
         String lang = detectLanguage(doc.getFileName());
 

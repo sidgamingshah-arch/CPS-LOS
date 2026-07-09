@@ -2,18 +2,22 @@ package com.helix.portfolio.api;
 
 import com.helix.common.ingest.Ingestion.Envelope;
 import com.helix.common.ingest.Ingestion.Result;
+import com.helix.portfolio.dto.Dtos.BorrowingBaseRequest;
 import com.helix.portfolio.dto.Dtos.ConcentrationView;
 import com.helix.portfolio.dto.Dtos.DispositionRequest;
 import com.helix.portfolio.dto.Dtos.PortfolioSummary;
 import com.helix.portfolio.dto.Dtos.RegisterExposureRequest;
 import com.helix.portfolio.dto.Dtos.StressResult;
 import com.helix.portfolio.dto.IngestDtos.RawCoreBankingFeed;
+import com.helix.portfolio.entity.DrawingPowerAssessment;
 import com.helix.portfolio.entity.EclResult;
 import com.helix.portfolio.entity.EwsSignal;
 import com.helix.portfolio.entity.ExposureRecord;
 import com.helix.portfolio.entity.RarocTracking;
 import com.helix.portfolio.service.CoreBankingIngestionService;
+import com.helix.portfolio.service.DrawingPowerService;
 import com.helix.portfolio.service.EwsService;
+import com.helix.portfolio.service.MultiDimConcentrationService;
 import com.helix.portfolio.service.PortfolioService;
 import com.helix.portfolio.service.RarocTrackingService;
 
@@ -38,13 +42,18 @@ public class PortfolioController {
     private final EwsService ews;
     private final CoreBankingIngestionService coreBanking;
     private final RarocTrackingService raroc;
+    private final MultiDimConcentrationService multiDim;
+    private final DrawingPowerService drawingPower;
 
     public PortfolioController(PortfolioService portfolio, EwsService ews, CoreBankingIngestionService coreBanking,
-                               RarocTrackingService raroc) {
+                               RarocTrackingService raroc, MultiDimConcentrationService multiDim,
+                               DrawingPowerService drawingPower) {
         this.portfolio = portfolio;
         this.ews = ews;
         this.coreBanking = coreBanking;
         this.raroc = raroc;
+        this.multiDim = multiDim;
+        this.drawingPower = drawingPower;
     }
 
     // ---- exposures ----
@@ -88,6 +97,20 @@ public class PortfolioController {
         return portfolio.latestEcl(reference);
     }
 
+    // ---- drawing power (working-capital DP monitoring, advisory) ----
+
+    @PostMapping("/exposures/{reference}/drawing-power")
+    public DrawingPowerAssessment drawingPower(@PathVariable String reference, @RequestBody BorrowingBaseRequest req,
+                                               @RequestHeader(value = "X-Actor", defaultValue = "credit.ops") String actor) {
+        return drawingPower.compute(reference, req, actor);
+    }
+
+    @GetMapping("/exposures/{reference}/drawing-power")
+    public List<DrawingPowerAssessment> drawingPowerHistory(@PathVariable String reference,
+                                                            @RequestParam(required = false) String facilityRef) {
+        return drawingPower.history(reference, facilityRef);
+    }
+
     @GetMapping("/summary")
     public PortfolioSummary summary() {
         return portfolio.summary();
@@ -96,6 +119,32 @@ public class PortfolioController {
     @GetMapping("/concentration")
     public ConcentrationView concentration(@RequestParam(defaultValue = "IN-RBI") String jurisdiction) {
         return portfolio.concentration(jurisdiction);
+    }
+
+    /**
+     * Multi-dimensional concentration: 8 dimensions + 2 intersections, HHI per dim.
+     * Scoped to the jurisdiction's own book by default; {@code global=true} cuts the
+     * whole book with that jurisdiction's thresholds (group-CRO view).
+     */
+    @GetMapping("/concentration/multi")
+    public com.helix.portfolio.dto.Dtos.MultiDimConcentrationView concentrationMulti(
+            @RequestParam(defaultValue = "IN-RBI") String jurisdiction,
+            @RequestParam(defaultValue = "false") boolean global) {
+        return multiDim.concentration(jurisdiction, global);
+    }
+
+    /**
+     * Correlation-stressed concentration: shock a sector's PD and propagate it through the
+     * correlation matrix to every co-moving sector, rolling stressed expected loss against
+     * the capital buffer. The "hidden" concentration that name diversification masks.
+     */
+    @PostMapping("/concentration/stress")
+    public com.helix.portfolio.dto.Dtos.ConcentrationStressView concentrationStress(
+            @RequestParam(defaultValue = "IN-RBI") String jurisdiction,
+            @RequestParam(defaultValue = "false") boolean global,
+            @org.springframework.web.bind.annotation.RequestBody com.helix.portfolio.dto.Dtos.StressRequest req) {
+        return multiDim.stress(jurisdiction, req.shockedSector(), req.pdMultiplier(),
+                req.capitalBufferPct(), req.correlationOverrides(), global);
     }
 
     @GetMapping("/stress")
@@ -114,6 +163,19 @@ public class PortfolioController {
     @PostMapping("/ews/scan-all")
     public List<EwsSignal> scanAll(@RequestHeader(value = "X-Actor", defaultValue = "portfolio.manager") String actor) {
         return portfolio.scanAll(actor);
+    }
+
+    /** Monitoring loop: EWS scan + auto-escalate severe signals into a collections case. */
+    @PostMapping("/monitoring/sweep/{reference}")
+    public PortfolioService.SweepResult monitorSweep(@PathVariable String reference,
+                                                     @RequestHeader(value = "X-Actor", defaultValue = "portfolio.manager") String actor) {
+        return portfolio.monitorSweep(reference, actor);
+    }
+
+    @PostMapping("/monitoring/sweep")
+    public List<PortfolioService.SweepResult> monitorSweepAll(
+            @RequestHeader(value = "X-Actor", defaultValue = "portfolio.manager") String actor) {
+        return portfolio.monitorSweepAll(actor);
     }
 
     @GetMapping("/ews/watchlist")

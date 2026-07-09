@@ -31,19 +31,10 @@
 import { useState } from "react";
 import { origination, docIntel, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, GovFlow, useAsync } from "../ui";
+import { useCodes } from "../code-values";
 
-const DECLARED_TYPES = [
-  "FINANCIAL_STATEMENT",
-  "KYC_ID",
-  "FACILITY_DOC",
-  "SECURITY_DOC",
-  "BANK_STATEMENT",
-  "TAX_GST",
-  "MOA_AOA",
-  "BUREAU_REPORT",
-  "OTHER",
-];
+const FALLBACK_DECLARED_TYPE = "FINANCIAL_STATEMENT";
 
 type FieldEntry = { value: unknown; confidence: number; sourcePage: number };
 type DocExtraction = {
@@ -111,7 +102,9 @@ export default function DocIntel() {
 
   // Upload form
   const [uploadFileName, setUploadFileName] = useState("");
-  const [uploadDeclaredType, setUploadDeclaredType] = useState(DECLARED_TYPES[0]);
+  const docKinds = useCodes("DOC_KIND");
+  const translationLanguages = useCodes("TRANSLATION_LANGUAGE");
+  const [uploadDeclaredType, setUploadDeclaredType] = useState(FALLBACK_DECLARED_TYPE);
   const [uploading, setUploading] = useState(false);
 
   // Extractions
@@ -247,7 +240,8 @@ export default function DocIntel() {
     <div className="grid">
 
       {/* ── Deal selector ── */}
-      <Card title="Document Intelligence" sub="Select a deal to browse and analyse its documents. AI extraction is advisory — it never auto-applies to the figure path; a human analyst must confirm.">
+      <Card title="Document Intelligence" sub="Select a deal to browse and analyse its documents. AI extraction is advisory — it never auto-applies to the figure path; a human analyst must confirm."
+        right={<GovFlow ai="AI EXTRACTS" human="HUMAN CONFIRMS" note="figures stay human-spread" />}>
         <Field label="Deal">
           <select value={selectedRef} onChange={(e) => handleSelectRef(e.target.value)}>
             <option value="">— select deal —</option>
@@ -259,6 +253,16 @@ export default function DocIntel() {
           </select>
         </Field>
       </Card>
+
+      {!selectedRef && (
+        <Card>
+          <EmptyState
+            glyph="◴"
+            title="Select a deal to load its documents"
+            sub="Pick an application above. You can then upload financials / approvals / KYC docs and let AI classify and extract — every extraction is advisory until an analyst confirms it."
+          />
+        </Card>
+      )}
 
       {/* ── Documents table + upload ── */}
       {selectedRef && (
@@ -277,8 +281,8 @@ export default function DocIntel() {
                 value={uploadDeclaredType}
                 onChange={(e) => setUploadDeclaredType(e.target.value)}
               >
-                {DECLARED_TYPES.map((t) => (
-                  <option key={t}>{t}</option>
+                {docKinds.map((t) => (
+                  <option key={t.code} value={t.code}>{t.label}</option>
                 ))}
               </select>
               <Button onClick={handleUpload} busy={uploading} disabled={!uploadFileName.trim()}>
@@ -289,7 +293,11 @@ export default function DocIntel() {
         >
           {docs.loading && <div className="loading">Loading documents…</div>}
           {!docs.loading && (docs.data || []).length === 0 && (
-            <div className="muted">No documents yet — upload one above.</div>
+            <EmptyState
+              glyph="⤴"
+              title="No documents on this deal yet"
+              sub="Upload one with the controls above. AI will classify it and extract structured fields — you confirm what's right before any data lands on the figure path."
+            />
           )}
           {(docs.data || []).length > 0 && (
             <table>
@@ -350,7 +358,11 @@ export default function DocIntel() {
 
           {extractions.loading && <div className="loading">Loading extractions…</div>}
           {!extractions.loading && (extractions.data || []).length === 0 && (
-            <div className="muted">No extractions yet — click Extract above.</div>
+            <EmptyState
+              glyph="✦"
+              title="No extractions on this document yet"
+              sub="Click Extract to let AI pull structured fields. The results are advisory — they only reach the figure path when an analyst confirms them."
+            />
           )}
 
           {(extractions.data || []).map((ex) => (
@@ -544,10 +556,9 @@ export default function DocIntel() {
             </Field>
             <Field label="Target language">
               <select value={transLang} onChange={(e) => setTransLang(e.target.value)}>
-                <option value="en">English (en)</option>
-                <option value="ar">Arabic (ar)</option>
-                <option value="hi">Hindi (hi)</option>
-                <option value="fr">French (fr)</option>
+                {translationLanguages.map((l) => (
+                  <option key={l.code} value={l.code}>{l.label} ({l.code})</option>
+                ))}
               </select>
             </Field>
             <div className="btnrow">

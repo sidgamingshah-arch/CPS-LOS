@@ -6,12 +6,15 @@ import com.helix.config.service.ConfigService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -55,4 +58,21 @@ public class ConfigController {
                             @RequestHeader(value = "X-Actor", defaultValue = "policy.officer") String actor) {
         return configService.signOff(id, control, actor);
     }
+
+    /** G6 — propose a NEW draft rule-pack version (maker). effectiveFrom optional (defaults today). */
+    @PostMapping("/rulepacks")
+    public RulePack create(@RequestBody CreateRulePackRequest req,
+                           @RequestHeader(value = "X-Actor", defaultValue = "config.author") String actor) {
+        return configService.createDraft(req.jurisdiction(), req.type(), req.code(),
+                req.payload(), req.effectiveFrom(), actor);
+    }
+
+    /** G6 — checker queue: unsigned, inactive drafts awaiting sign-off. */
+    @GetMapping("/rulepacks/drafts")
+    public List<RulePack> drafts() {
+        return configService.draftQueue();
+    }
+
+    public record CreateRulePackRequest(String jurisdiction, String type, String code,
+                                        Map<String, Object> payload, LocalDate effectiveFrom) {}
 }

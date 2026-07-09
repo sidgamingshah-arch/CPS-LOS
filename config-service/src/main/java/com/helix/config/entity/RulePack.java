@@ -64,6 +64,12 @@ public class RulePack {
     private String modelRiskSignedOffBy;
     private Instant modelRiskSignedOffAt;
 
+    /** Maker who authored this draft version (maker-checker, layered on the dual sign-off).
+     *  Nullable: legacy rows are null; seeded packs are 'seed'. A null author never equals a
+     *  real sign-off actor, so the author != signer guard is a no-op for them. */
+    @Column(length = 120)
+    private String createdBy;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;

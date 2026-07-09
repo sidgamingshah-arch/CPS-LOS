@@ -9,6 +9,11 @@ import { Badge, Button, Card, Field, useAsync } from "../ui";
  * reject pending submissions. Server-side enforces checker ≠ maker.
  */
 const TYPES: { key: string; label: string }[] = [
+  { key: "ACTOR_ROLE", label: "Actor roles (RBAC)" },
+  { key: "MODEL_DEFINITION", label: "Scoring models (definitions)" },
+  { key: "FINANCIAL_TEMPLATE", label: "Financial templates (charts of accounts)" },
+  { key: "ESG_BAND", label: "ESG bands (model-driven options)" },
+  { key: "BENCHMARK", label: "Floating-rate benchmarks" },
   { key: "DEDUP_RULES", label: "Dedup rules" },
   { key: "NEGATIVE_LIST", label: "Negative list" },
   { key: "FACILITY_MASTER", label: "Facility master" },

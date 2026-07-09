@@ -11,4 +11,6 @@ public interface CounterpartyRepository extends JpaRepository<Counterparty, Long
     java.util.List<Counterparty> findByGroupId(Long groupId);
 
     java.util.List<Counterparty> findByRecordTypeAndLifecycleStatus(String recordType, String lifecycleStatus);
+
+    java.util.List<Counterparty> findByKycStatus(String kycStatus);
 }

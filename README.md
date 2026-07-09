@@ -60,15 +60,15 @@ Hibernate community dialect), React 18, Vite 5, TypeScript 5.
 ## Run it
 
 ### Prerequisites
-- JDK 21, Maven 3.9+
+- JDK 21 (Maven is bundled as `./mvnw` — no separate install)
 - Node 20+ (for the UI)
 - Optionally Docker (for the containerised stack)
 
 ### Option A — local (fastest)
 
 ```bash
-# 1. build all service jars
-mvn -DskipTests package
+# 1. build all service jars (mvnw downloads Maven on first use)
+./mvnw -DskipTests package
 
 # 2. start all services (config, counterparty, origination, risk, decision, portfolio, gateway)
 bash scripts/run-all.sh          # waits for health; gateway on :8080
@@ -80,6 +80,16 @@ cd frontend && npm install && npm run dev    # http://localhost:5173
 bash scripts/stop-all.sh
 ```
 
+On **Windows / PowerShell**, use the `.ps1` ports of the launch scripts (you may
+need `Set-ExecutionPolicy -Scope Process Bypass` once per session):
+
+```powershell
+.\mvnw.cmd -DskipTests package
+.\scripts\run-all.ps1            # waits for health; gateway on :8080
+cd frontend; npm install; npm run dev
+.\scripts\stop-all.ps1
+```
+
 ### Option B — Docker Compose (full stack)
 
 ```bash
@@ -88,6 +98,31 @@ docker compose up --build
 # UI:      http://localhost:5173
 # Gateway: http://localhost:8080
 ```
+
+### Option C — Prebuilt jars (no Maven, no Docker)
+
+If you can't run Maven locally (no admin / locked-down JDK / wrong major
+version), GitHub Actions publishes the 9 service jars to a rolling
+`prebuilt-latest` release on every backend change. Fetch them into your
+checkout and run the launch scripts directly:
+
+```bash
+bash scripts/fetch-prebuilt.sh        # Linux / Mac
+bash scripts/run-all.sh
+```
+
+```powershell
+.\scripts\fetch-prebuilt.ps1          # Windows / PowerShell
+.\scripts\run-all.ps1
+```
+
+Both helpers download into each `<service>/target/` slot (no git involved).
+The jars target Java 21 bytecode (`--release 21`) and boot on Java 21+
+(Spring Boot 3.3.5 wasn't formally tested on Java 25; expect deprecation
+warnings on startup but it runs). The release is refreshed automatically by
+the `Refresh prebuilt jars` GitHub Actions workflow on every backend
+change. Direct URL for a single jar:
+`https://github.com/<owner>/<repo>/releases/download/prebuilt-latest/<svc>-service.jar`.
 
 ### End-to-end tests
 With the services running locally, exercise the entire lifecycle through the gateway:

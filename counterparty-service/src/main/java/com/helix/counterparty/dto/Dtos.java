@@ -19,6 +19,7 @@ public final class Dtos {
             @NotBlank String segment,
             String sector,
             String country,
+            String presentationCurrency,
             boolean listedEntity,
             boolean regulatedFi,
             boolean pep,
@@ -41,5 +42,8 @@ public final class Dtos {
     }
 
     public record DispositionRequest(@NotBlank String disposition, String note) {
+    }
+
+    public record CloseRequest(@NotBlank String reason) {
     }
 }

@@ -1,0 +1,300 @@
+#!/usr/bin/env python3
+"""
+Project-finance post-drawdown mechanics — e2e.
+
+Proves the PF drawdown gate (layered on top of the CP gate):
+  1. Define construction milestones + DSRA/TRA reserves on a PF facility.
+  2. A PF drawdown that names an uncertified milestone is blocked (403).
+  3. A drawdown is also blocked while a reserve is underfunded.
+  4. LIE-certify the milestone + fund the reserves -> drawdown authorises.
+  5. Releasing the tranche marks the milestone DRAWN; it can't be re-drawn.
+  6. The next tranche's milestone must be certified independently.
+"""
+import json
+import sys
+import urllib.error
+import urllib.request
+
+GW = "http://localhost:8080"
+PASS, FAIL = 0, 0
+
+
+def call(method, path, body=None, actor="rm.user"):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(GW + path, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    req.add_header("X-Actor", actor)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            txt = r.read().decode()
+            return r.status, (json.loads(txt) if txt else None)
+    except urllib.error.HTTPError as e:
+        txt = e.read().decode()
+        try:
+            return e.code, json.loads(txt) if txt else None
+        except Exception:
+            return e.code, txt
+
+
+def check(name, cond, detail=""):
+    global PASS, FAIL
+    if cond:
+        PASS += 1; print(f"  PASS  {name}")
+    else:
+        FAIL += 1; print(f"  FAIL  {name}  {detail}")
+
+
+def must(st, b, label, status=200):
+    if st != status:
+        print(f"  ERROR {label}: HTTP {st} {b}"); sys.exit(1)
+    return b
+
+
+print("== 0. Setup: PROJECT_FINANCE deal + facility + limit tree + cleared CPs ==")
+st, cp = call("POST", "/counterparty/api/counterparties", {
+    "legalName": "Solaris Power SPV Ltd", "legalForm": "PUBLIC_LTD", "registrationNo": "PF-SPV-1",
+    "jurisdiction": "IN-RBI", "segment": "LARGE_CORPORATE", "sector": "INFRASTRUCTURE", "country": "IN",
+    "listedEntity": False, "regulatedFi": False, "pep": False, "adverseMedia": False,
+    "highRiskJurisdiction": False, "complexOwnership": False}, actor="rm.user")
+cp = must(st, cp, "cp")
+st, app = call("POST", "/origination/api/applications", {
+    "counterpartyId": cp["id"], "counterpartyRef": cp["reference"], "counterpartyName": cp["legalName"],
+    "jurisdiction": "IN-RBI", "segment": "LARGE_CORPORATE", "facilityType": "PROJECT_FINANCE",
+    "requestedAmount": 5_000_000_000, "currency": "INR", "tenorMonths": 180, "purpose": "Solar park",
+    "collateralType": "PROPERTY", "collateralValue": 6_000_000_000, "secured": True}, actor="rm.user")
+app = must(st, app, "app")
+ref = app["reference"]
+st, facs = call("GET", f"/origination/api/applications/{ref}/facilities")
+facs = must(st, facs, "facilities")
+fref = facs[0]["reference"]
+
+# Build limit tree (release books utilisation).
+call("POST", f"/limits/api/limits/build/{ref}", actor="credit.ops")
+
+# Seed + clear ALL mandatory CPs so the CP gate is open (we want to test the PF gate).
+call("POST", f"/decision/api/cps/{ref}/seed", actor="credit.ops")
+st, reg = call("GET", f"/decision/api/cps/{ref}")
+for c in reg:
+    if c["mandatory"] and c["status"] == "OPEN":
+        call("POST", f"/decision/api/cps/{c['id']}/clear", {"evidenceRef": "DOC-" + c["code"]}, actor="cad.maker")
+print(f"    PF deal {ref}, facility {fref}, CPs cleared")
+
+print("\n== 1. Define milestones + reserves ==")
+st, m1 = call("POST", f"/decision/api/pf/{ref}/milestones",
+              {"facilityRef": fref, "sequence": 1, "name": "Land + financial close",
+               "plannedAmount": 1_000_000_000, "plannedDate": "2026-09-30"},
+              actor="credit.ops")
+m1 = must(st, m1, "milestone 1")
+st, m2 = call("POST", f"/decision/api/pf/{ref}/milestones",
+              {"facilityRef": fref, "sequence": 2, "name": "EPC 50% complete",
+               "plannedAmount": 2_000_000_000, "plannedDate": "2027-03-31"},
+              actor="credit.ops")
+m2 = must(st, m2, "milestone 2")
+check("milestones start PLANNED", m1["status"] == "PLANNED" and m2["status"] == "PLANNED")
+check("plannedDate captured on milestone 1", m1.get("plannedDate") == "2026-09-30", str(m1.get("plannedDate")))
+check("plannedDate captured on milestone 2", m2.get("plannedDate") == "2027-03-31", str(m2.get("plannedDate")))
+st, dsra = call("POST", f"/decision/api/pf/{ref}/reserves",
+                {"accountType": "DSRA", "requiredAmount": 250_000_000}, actor="credit.ops")
+dsra = must(st, dsra, "dsra")
+check("DSRA starts SHORTFALL (zero balance)", dsra["status"] == "SHORTFALL", str(dsra["status"]))
+
+print("\n== 2. PF drawdown blocked: milestone not certified + DSRA short ==")
+st, d1 = call("POST", f"/decision/api/disbursement/{ref}/request",
+              {"facilityRef": fref, "amount": 1_000_000_000, "currency": "INR",
+               "purpose": "tranche 1", "milestoneSequence": 1}, actor="credit.ops")
+d1 = must(st, d1, "request d1")
+st, body = call("POST", f"/decision/api/disbursement/{d1['id']}/authorize", {}, actor="credit.officer")
+check("authorise blocked by PF gate (403)", st == 403, f"{st} {body}")
+check("403 cites milestone not certified", "NOT_CERTIFIED" in str(body) or "LIE" in str(body), str(body))
+
+st, gate = call("GET", f"/decision/api/pf/gate/{ref}/{fref}?milestoneSequence=1")
+check("gate shows milestone + reserve blockers", len(gate["blockers"]) >= 2, str(gate["blockers"]))
+
+print("\n== 3. Certify milestone 1 but DSRA still short -> still blocked ==")
+st, _ = call("POST", f"/decision/api/pf/milestones/{m1['id']}/certify",
+             {"certificationRef": "LIE-CERT-001", "note": "site inspection passed"}, actor="lie.engineer")
+must(st, _, "certify m1")
+st, body = call("POST", f"/decision/api/disbursement/{d1['id']}/authorize", {}, actor="credit.officer")
+check("still blocked while DSRA underfunded", st == 403, f"{st} {body}")
+check("403 cites DSRA shortfall", "DSRA" in str(body), str(body))
+
+print("\n== 4. Fund DSRA to requirement -> gate opens -> authorise + release ==")
+st, funded = call("POST", f"/decision/api/pf/reserves/{dsra['id']}/fund",
+                  {"amount": 250_000_000, "note": "initial funding"}, actor="treasury.ops")
+funded = must(st, funded, "fund dsra")
+check("DSRA now FUNDED", funded["status"] == "FUNDED", str(funded["status"]))
+
+st, gate2 = call("GET", f"/decision/api/pf/gate/{ref}/{fref}?milestoneSequence=1")
+check("PF gate now open for milestone 1", gate2["canDrawdown"] is True, str(gate2))
+
+st, d1a = call("POST", f"/decision/api/disbursement/{d1['id']}/authorize", {}, actor="credit.officer")
+check("drawdown authorises once milestone certified + DSRA funded", st == 200 and d1a["status"] == "AUTHORIZED", f"{st} {d1a}")
+# SoD: requester (credit.ops) can't also release — three distinct humans per draw.
+st, body = call("POST", f"/decision/api/disbursement/{d1['id']}/release", actor="credit.ops")
+check("release by requester blocked (403 SoD)", st == 403, f"{st} {body}")
+st, d1r = call("POST", f"/decision/api/disbursement/{d1['id']}/release", actor="treasury.ops")
+check("tranche releases with distinct third actor", st == 200 and d1r["status"] == "RELEASED", f"{st} {d1r}")
+
+print("\n== 5. Milestone 1 is now DRAWN and cannot be re-drawn ==")
+st, ms = call("GET", f"/decision/api/pf/{ref}/milestones?facilityRef={fref}")
+m1_now = next(m for m in ms if m["sequence"] == 1)
+check("milestone 1 marked DRAWN", m1_now["status"] == "DRAWN", str(m1_now["status"]))
+st, dx = call("POST", f"/decision/api/disbursement/{ref}/request",
+              {"facilityRef": fref, "amount": 100_000_000, "currency": "INR",
+               "purpose": "re-draw m1", "milestoneSequence": 1}, actor="credit.ops")
+st, body = call("POST", f"/decision/api/disbursement/{dx['id']}/authorize", {}, actor="credit.officer")
+check("re-drawing a DRAWN milestone is blocked", st == 403, f"{st} {body}")
+check("403 cites already drawn", "ALREADY_DRAWN" in str(body), str(body))
+
+print("\n== 6. Second tranche needs milestone 2 certified independently ==")
+st, d2 = call("POST", f"/decision/api/disbursement/{ref}/request",
+              {"facilityRef": fref, "amount": 2_000_000_000, "currency": "INR",
+               "purpose": "tranche 2", "milestoneSequence": 2}, actor="credit.ops")
+d2 = must(st, d2, "request d2")
+st, body = call("POST", f"/decision/api/disbursement/{d2['id']}/authorize", {}, actor="credit.officer")
+check("tranche 2 blocked until milestone 2 certified", st == 403, f"{st} {body}")
+call("POST", f"/decision/api/pf/milestones/{m2['id']}/certify",
+     {"certificationRef": "LIE-CERT-002"}, actor="lie.engineer")
+st, d2a = call("POST", f"/decision/api/disbursement/{d2['id']}/authorize", {}, actor="credit.officer")
+check("tranche 2 authorises after milestone 2 certified", st == 200 and d2a["status"] == "AUTHORIZED", f"{st} {d2a}")
+
+print("\n== 7. Reserve withdrawal SoD: withdrawer must differ from the last funder ==")
+# DSRA was funded by treasury.ops in section 4 — the same actor pulling money
+# back out is exactly the fund-then-quietly-drain pattern the SoD exists to stop.
+st, body = call("POST", f"/decision/api/pf/reserves/{dsra['id']}/withdraw",
+                {"amount": 50_000_000, "note": "drain attempt"}, actor="treasury.ops")
+check("withdraw by last funder blocked (403 SoD)", st == 403, f"{st} {body}")
+st, wd = call("POST", f"/decision/api/pf/reserves/{dsra['id']}/withdraw",
+              {"amount": 50_000_000, "note": "approved sweep"}, actor="finance.ops")
+check("withdraw by different actor succeeds", st == 200, f"{st} {wd}")
+check("withdrawal drops DSRA back to SHORTFALL", wd["status"] == "SHORTFALL"
+      and abs(wd["currentBalance"] - 200_000_000) < 1, str(wd))
+
+print("\n== 8. Reversal reinstates the milestone — the tranche becomes re-drawable ==")
+# d1 (tranche 1, RELEASED by treasury.ops against milestone 1) is reversed; the
+# milestone must go DRAWN -> LIE_CERTIFIED so the draw can be re-run.
+st, body = call("POST", f"/decision/api/disbursement/{d1['id']}/reverse",
+                {"reason": "funding error"}, actor="treasury.ops")
+check("reversal by the releaser blocked (403 SoD)", st == 403, f"{st} {body}")
+st, d1v = call("POST", f"/decision/api/disbursement/{d1['id']}/reverse",
+               {"reason": "funding error — wrong escrow account"}, actor="ops.checker")
+check("reversal succeeds with a distinct actor", st == 200 and d1v["status"] == "REVERSED", f"{st} {d1v}")
+
+st, ms2 = call("GET", f"/decision/api/pf/{ref}/milestones?facilityRef={fref}")
+m1_after = next(m for m in ms2 if m["sequence"] == 1)
+check("milestone 1 reinstated to LIE_CERTIFIED", m1_after["status"] == "LIE_CERTIFIED",
+      str(m1_after["status"]))
+
+# Re-fund the DSRA (section 7 left it SHORTFALL) so the PF gate can open again.
+call("POST", f"/decision/api/pf/reserves/{dsra['id']}/fund",
+     {"amount": 50_000_000, "note": "top-up after sweep"}, actor="treasury.ops")
+st, d1b = call("POST", f"/decision/api/disbursement/{ref}/request",
+               {"facilityRef": fref, "amount": 1_000_000_000, "currency": "INR",
+                "purpose": "tranche 1 re-draw", "milestoneSequence": 1}, actor="credit.ops")
+d1b = must(st, d1b, "re-draw request")
+st, d1ba = call("POST", f"/decision/api/disbursement/{d1b['id']}/authorize", {}, actor="credit.officer")
+check("milestone 1 re-draw authorises after reversal (was ALREADY_DRAWN)",
+      st == 200 and d1ba["status"] == "AUTHORIZED", f"{st} {d1ba}")
+
+# Release that re-drawn tranche so we have a 1bn debt-service stream to project against.
+call("POST", f"/decision/api/disbursement/{d1b['id']}/release", actor="treasury.ops")
+
+print("\n== 9. Waterfall + forward DSCR projection (computed view, never persisted) ==")
+# Comfortably-covered case: 400M annual CFADS against 1bn outstanding over the
+# Solaris facility's 180-month monthly EMI. 30% O&M leaves 280M for debt
+# service / DSRA / distributions per year — comfortably above contractual debt
+# service so DSCR sits well clear of the 1.20 covenant.
+st, w1 = call("POST", f"/decision/api/pf/{ref}/waterfall",
+              {"facilityRef": fref, "baseAnnualCfads": 400_000_000,
+               "omRatio": 0.30, "minDscrCovenant": 1.20},
+              actor="credit.officer")
+w1 = must(st, w1, "waterfall projection")
+check("projection has rows for every schedule period (180)",
+      w1["periods"] == 180 and len(w1["rows"]) == 180, str(w1["periods"]))
+check("first row carries O&M + debtService + DSCR",
+      all(k in w1["rows"][0] for k in ("om", "debtService", "dscr", "cfads")), str(w1["rows"][0]))
+check("frequency inherited from the schedule",
+      w1["frequency"] in ("MONTHLY", "QUARTERLY"), str(w1["frequency"]))
+check("O&M = 30% of CFADS each period",
+      abs(w1["rows"][0]["om"] - 0.30 * w1["rows"][0]["cfads"]) < 1, str(w1["rows"][0]))
+check("min DSCR > covenant in the healthy case",
+      w1["summary"]["minDscr"] >= 1.20, str(w1["summary"]["minDscr"]))
+check("zero breaches in the healthy case",
+      w1["summary"]["totalBreachPeriods"] == 0
+      and w1["summary"]["firstBreachPeriod"] == -1, str(w1["summary"]))
+check("cushion to covenant reported (>0)",
+      w1["summary"]["cushionToCovenantPct"] > 0, str(w1["summary"]["cushionToCovenantPct"]))
+check("LLCR > 1 in the healthy case (NPV cash > outstanding)",
+      w1["summary"]["llcr"] > 1.0, str(w1["summary"]["llcr"]))
+
+# DSRA was refunded in section 8 — at waterfall time the reserve is FULL, so
+# top-ups stay zero throughout and the post-debt-service surplus flows straight
+# to distributions. (The shortfall lane is exercised separately below.)
+check("no DSRA top-up when the reserve is already at requirement",
+      all(r["dsraTopUp"] == 0 for r in w1["rows"]), str(w1["rows"][0]))
+check("distributions flow every period (surplus after debt service)",
+      all(r["distributions"] > 0 for r in w1["rows"][:10]), str(w1["rows"][0]))
+
+# Now create a real DSRA shortfall and re-project: the waterfall should top up
+# the reserve from period-1's surplus until balance is back to required.
+st, ds = call("GET", f"/decision/api/pf/{ref}/reserves")
+dsra_id = next(r["id"] for r in ds if r["accountType"] == "DSRA")
+# finance.ops was the last funder (in section 4 setup); withdraw needs a
+# different actor — use treasury.ops who hasn't acted on this reserve recently.
+call("POST", f"/decision/api/pf/reserves/{dsra_id}/withdraw",
+     {"amount": 30_000_000, "note": "force shortfall for waterfall test"},
+     actor="finance.ops")
+st, ws = call("POST", f"/decision/api/pf/{ref}/waterfall",
+              {"facilityRef": fref, "baseAnnualCfads": 400_000_000,
+               "omRatio": 0.30, "minDscrCovenant": 1.20},
+              actor="credit.officer")
+ws = must(st, ws, "waterfall after shortfall")
+first10_topup = sum(r["dsraTopUp"] for r in ws["rows"][:10])
+check("DSRA shortfall pulled top-ups from period-1 surplus",
+      first10_topup > 25_000_000, f"first-10 top-ups: {first10_topup:.0f}")
+# Once refilled the top-ups stop and distributions resume.
+late_topup = sum(r["dsraTopUp"] for r in ws["rows"][20:30])
+check("top-ups stop after DSRA is refilled", late_topup == 0,
+      f"periods 20-30 top-ups: {late_topup}")
+
+print("\n== 10. Stress: low CFADS triggers covenant + cash breaches ==")
+# CFADS so low that net of 30% O&M it falls below debt service in early periods.
+# 8M annual against ~9M monthly debt service is well below 1x coverage.
+st, w2 = call("POST", f"/decision/api/pf/{ref}/waterfall",
+              {"facilityRef": fref, "baseAnnualCfads": 8_000_000,
+               "omRatio": 0.30, "minDscrCovenant": 1.20,
+               "cfadsRampFactor": 0.5},
+              actor="credit.officer")
+w2 = must(st, w2, "stress projection")
+check("min DSCR collapses well below covenant under stress",
+      w2["summary"]["minDscr"] < 1.0, str(w2["summary"]["minDscr"]))
+check("totalBreachPeriods > 0", w2["summary"]["totalBreachPeriods"] > 0, str(w2["summary"]))
+check("firstBreachPeriod identified", w2["summary"]["firstBreachPeriod"] >= 1, str(w2["summary"]))
+check("cushion to covenant negative under stress",
+      w2["summary"]["cushionToCovenantPct"] < 0, str(w2["summary"]["cushionToCovenantPct"]))
+breach_rows = [r for r in w2["rows"] if r["covenantBreach"]]
+check("breached rows flagged covenantBreach",
+      len(breach_rows) == w2["summary"]["totalBreachPeriods"], str(len(breach_rows)))
+cash_breaches = [r for r in w2["rows"] if r["cashBreach"]]
+check("cash shortfall flagged where CFADS net of O&M < debt service",
+      len(cash_breaches) > 0 and all(r["cashShortfall"] > 0 for r in cash_breaches), str(len(cash_breaches)))
+check("no distributions in any breached period",
+      all(r["distributions"] == 0 for r in breach_rows), str(breach_rows[0] if breach_rows else None))
+
+print("\n== 11. Covenant override + audit ==")
+# Same CFADS, lower covenant — fewer breaches.
+st, w3 = call("POST", f"/decision/api/pf/{ref}/waterfall",
+              {"facilityRef": fref, "baseAnnualCfads": 8_000_000,
+               "omRatio": 0.30, "minDscrCovenant": 0.50,
+               "cfadsRampFactor": 0.5}, actor="credit.officer")
+w3 = must(st, w3, "lower-covenant projection")
+check("lower covenant -> fewer covenant breaches than 1.20",
+      w3["summary"]["totalBreachPeriods"] <= w2["summary"]["totalBreachPeriods"],
+      f"{w3['summary']['totalBreachPeriods']} vs {w2['summary']['totalBreachPeriods']}")
+
+st, audit_rows = call("GET", "/decision/api/audit")
+check("PF_WATERFALL_PROJECTED stamped on the audit trail",
+      any(a.get("eventType") == "PF_WATERFALL_PROJECTED" for a in audit_rows), "")
+
+print(f"\n== PF mechanics e2e: {PASS} passed, {FAIL} failed ==")
+sys.exit(1 if FAIL else 0)

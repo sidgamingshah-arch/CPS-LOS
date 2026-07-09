@@ -13,6 +13,7 @@ public record CreditInputsDto(
         String counterpartyName,
         String jurisdiction,
         String segment,
+        String sector,
         String facilityType,
         double requestedAmount,
         String currency,

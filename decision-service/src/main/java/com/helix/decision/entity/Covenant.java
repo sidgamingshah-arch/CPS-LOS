@@ -48,7 +48,7 @@ public class Covenant {
     private double threshold;
 
     @Column(nullable = false, length = 20)
-    private String testFrequency;      // MONTHLY | QUARTERLY | ANNUAL
+    private String testFrequency;      // MONTHLY | QUARTERLY | HALF_YEARLY | ANNUAL
 
     private String source;             // borrower_management_accounts, ...
 

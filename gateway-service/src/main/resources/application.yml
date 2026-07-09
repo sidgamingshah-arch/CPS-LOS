@@ -64,6 +64,12 @@ spring:
             - Path=/limits/**
           filters:
             - StripPrefix=1
+        - id: workflow-service
+          uri: ${WORKFLOW_SERVICE_URL:http://localhost:8089}
+          predicates:
+            - Path=/workflow/**
+          filters:
+            - StripPrefix=1
 
 management:
   endpoints:

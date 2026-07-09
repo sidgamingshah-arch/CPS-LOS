@@ -4,11 +4,14 @@ import com.helix.decision.dto.Dtos.AddCovenantRequest;
 import com.helix.decision.dto.Dtos.DecisionRequest;
 import com.helix.decision.entity.Covenant;
 import com.helix.decision.entity.CovenantTest;
+import com.helix.decision.entity.CommitteeVote;
 import com.helix.decision.entity.CreditDecision;
 import com.helix.decision.entity.CreditProposal;
+import com.helix.decision.entity.GeneratedDocument;
 import com.helix.decision.service.CovenantService;
 import com.helix.decision.service.CreditProposalService;
 import com.helix.decision.service.DecisionService;
+import com.helix.decision.service.DocGenService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,11 +33,14 @@ public class DecisionController {
     private final DecisionService decisions;
     private final CovenantService covenants;
     private final CreditProposalService proposals;
+    private final DocGenService docGen;
 
-    public DecisionController(DecisionService decisions, CovenantService covenants, CreditProposalService proposals) {
+    public DecisionController(DecisionService decisions, CovenantService covenants, CreditProposalService proposals,
+                             DocGenService docGen) {
         this.decisions = decisions;
         this.covenants = covenants;
         this.proposals = proposals;
+        this.docGen = docGen;
     }
 
     @PostMapping("/{reference}/route")
@@ -62,6 +68,19 @@ public class DecisionController {
     @GetMapping("/{reference}/committee-note")
     public Map<String, String> committeeNote(@PathVariable String reference) {
         return decisions.committeeNote(reference);
+    }
+
+    /** Committee votes cast against the latest decision (committee/quorum tiers). */
+    @GetMapping("/{reference}/votes")
+    public List<CommitteeVote> votes(@PathVariable String reference) {
+        return decisions.votes(reference);
+    }
+
+    /** Generate the sanction letter for an approved deal (DRAFT + advisory; human-confirm via /api/docs). */
+    @PostMapping("/{reference}/sanction-letter")
+    public GeneratedDocument sanctionLetter(@PathVariable String reference,
+                                            @RequestHeader(value = "X-Actor", defaultValue = "cad.officer") String actor) {
+        return docGen.generateSanctionLetter(reference, actor);
     }
 
     // ---- covenants ----

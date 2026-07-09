@@ -87,6 +87,15 @@ services:
     volumes: ["limit-data:/data"]
     depends_on: [config-service, origination-service]
 
+  workflow-service:
+    build: { <<: *service-build, args: { SERVICE: workflow-service } }
+    environment:
+      SERVER_PORT: "8089"
+      CONFIG_SERVICE_URL: http://config-service:8081
+    ports: ["8089:8089"]
+    volumes: ["workflow-data:/data"]
+    depends_on: [config-service]
+
   gateway-service:
     build: { <<: *service-build, args: { SERVICE: gateway-service } }
     environment:
@@ -99,6 +108,7 @@ services:
       PORTFOLIO_SERVICE_URL: http://portfolio-service:8086
       COPILOT_SERVICE_URL: http://copilot-service:8087
       LIMIT_SERVICE_URL: http://limit-service:8088
+      WORKFLOW_SERVICE_URL: http://workflow-service:8089
     ports: ["8080:8080"]
     depends_on:
       - config-service
@@ -109,6 +119,7 @@ services:
       - portfolio-service
       - copilot-service
       - limit-service
+      - workflow-service
 
   frontend:
     build:
@@ -128,3 +139,4 @@ volumes:
   portfolio-data:
   copilot-data:
   limit-data:
+  workflow-data:

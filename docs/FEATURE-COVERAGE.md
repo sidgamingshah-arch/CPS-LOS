@@ -52,8 +52,8 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 
 | Requested | Status |
 |---|---|
-| Canonical spreading, multi-period, provenance to source doc/page/coords, analyst override with material-change gate, ratios, benchmark flags, downstream consumption | ✅ |
-| Template selection (auto/override), template maintenance master, financial rule validations | ◑ (`FINANCIAL_TEMPLATE`/rules via master engine; SpreadJS UI is impl) |
+| Canonical spreading, multi-period, provenance to source doc/page/coords, analyst override with material-change gate, ratios, benchmark flags, downstream consumption | ✅ (+ React **Financial Spreading** grid: rows = line items, columns = periods, inline-editable extracted cells with confidence dots + source-doc/page provenance, override-with-reason gate, derived rows read-only, per-period ratios + trends + benchmark flags) |
+| Template selection (auto/override), template maintenance master, financial rule validations | ◑ (`FINANCIAL_TEMPLATE`/rules via master engine; spreadsheet-style grid built, full SpreadJS formula authoring is roadmap) |
 | GenAI extraction (PDF/scanned/Arabic/Chinese), side-by-side view, multilingual | ✅ (`/api/doc-intel`: type-aware field extraction with per-field confidence + source-page provenance, language detection [en/ar/hi/fr], **suggest → human-confirm gate** [never auto-applied to the figure path], reject; React **Doc Intelligence** page) |
 | Projections (borrower / analyst / 3-scenario best-worst-likely), peer analysis (≤5), benchmarking, rolling/TTM, multi-company consolidation, multicurrency, version control | ◑ (trends + benchmark flags built; scenario/rolling/peer engines roadmap) |
 | Auto financial analysis (cash flow, ratios), downloadable, currency rate, annualization | ◑ |
@@ -111,7 +111,7 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 | Initiate independently or from CP; capture facility/collateral/limit/guarantor/group/rating/repayment/price | ◑ (computed from deal; standalone RAROC workflow roadmap) |
 | Roll-ups (facility → transaction → CIF → group), output detailed/summary, projected vs existing | ◑ |
 | Periodic actual RAROC from source data, variance analysis, re-run on source change, approval workflow | ✅ (projected-vs-actual tracking + variance + material-miss governance; source-fed actuals via connector) |
-| Price recommendation engine (ML), scenario optimiser (goal-seek), pricing-approval sub-workflow, downstream ERM/Finance/CPR interface | ✅ / ◑ (`/api/risk/{ref}/pricing/optimise` goal-seek — finds the rate / fee / collateral mix that clears a target RAROC subject to caps; advisory, the authoritative pricing is provably unchanged; React **Pricing Lab** page. Approval sub-workflow + downstream ERM/Finance interfaces remain roadmap.) |
+| Price recommendation engine (ML), scenario optimiser (goal-seek), pricing-approval sub-workflow, downstream ERM/Finance/CPR interface | ✅ (`/api/risk/{ref}/pricing/optimise` goal-seek; `/api/risk/{ref}/pricing/exception` **concession-approval sub-workflow** — authority tier sized to concession + hurdle breach, maker-checker SoD 1–2 levels, RAROC recomputed at the proposed rate, authoritative pricing provably unchanged; `/api/exports` **downstream ERM / Finance-GL / CPR feeds** (below). React **Pricing Lab** + **Downstream Exports** pages.) |
 
 ---
 
@@ -170,22 +170,25 @@ The platform is exercised by two end-to-end suites: `scripts/e2e_smoke.py`
 | Corrective Action Plan (CAP) — raise · respond · close (SoD) · escalate · auto-overdue sweep | ✅ (`/api/cap/actions`, `/api/cap/sweep`) |
 | RAG/ML borrower scoring, statistical thresholds, macro directional impact, AI commentary | ✅ (`/api/risk/{ref}/rag` statistical Red/Amber/Green with transparent per-factor contributions + thresholds; `/api/risk/{ref}/macro-impact` directional PD/notch projection from rate/GDP/FX/sector/commodity shifts. Both **advisory & non-binding** — the deterministic rating is provably unchanged; audited as AI events. React **Risk Lab** page) |
 | ECL/IRAC provisioning, concentration vs limits, stress testing | ✅ |
+| Downstream canonical export feeds (ERM obligor-risk · Finance/GL provision entries · CPR portfolio composition) — the outbound counterpart to connector ingestion | ✅ (`/api/exports/{erm,finance-gl,cpr}` + `com.helix.common.export` typed contract; idempotent `ExportBatch` per as-of day, full canonical envelope persisted & examiner-retrievable; React **Downstream Exports** page) |
 
 ---
 
 ## Honest scope statement
 
 The **architecture, generic engines, and the credit-decision spine are built and
-tested** (222 assertions through the gateway, clean-DB). The credit lifecycle now
-runs end to end — initiation → spreading → rating (+ advisory RAG & macro overlays
-& goal-seek pricing optimiser) → capital/RAROC → DoA decision → CAD documentation
-→ document generation (clause-surgery, human-confirm gate) → AI narrative commentary
-→ MER monitoring → limit tree & product-processor APIs → portfolio ECL/EWS/
-Customer-360 — with specialised deal structures (group/joint/dual-obligor/
-syndication/FI-ICR/renewal-copy). The remaining ○ items (e.g. SpreadJS UI,
-pricing-approval sub-workflow, downstream ERM/Finance feeds) are intentionally **not stubbed as if
-complete** — each sits on an existing seam (master engine, workflow definitions,
-connector ingestion, audit) and is additive without core change. Every AI/ML output
-is advisory, human-gated, and provably never alters a credit-consequential figure.
+tested** (239 assertions through the gateway, clean-DB). The credit lifecycle now
+runs end to end — initiation → spreading (editable provenance grid) → rating
+(+ advisory RAG & macro overlays) → capital/RAROC → goal-seek pricing optimiser +
+concession-approval sub-workflow → DoA decision → CAD documentation → document
+generation (clause-surgery, human-confirm gate) → AI narrative commentary → MER
+monitoring → limit tree & product-processor APIs → portfolio ECL/EWS/Customer-360 →
+downstream ERM/Finance-GL/CPR export feeds — with specialised deal structures
+(group/joint/dual-obligor/syndication/FI-ICR/renewal-copy). The few remaining ○ items
+(full SpreadJS formula authoring, regulatory-report templates) are intentionally
+**not stubbed as if complete** — each sits on an existing seam (master engine,
+workflow definitions, connector ingestion/export, audit) and is additive without
+core change. Every AI/ML output is advisory, human-gated, and provably never alters
+a credit-consequential figure.
 This is a reference platform demonstrating the patterns, not a production deployment
 of every bank-specific feature.

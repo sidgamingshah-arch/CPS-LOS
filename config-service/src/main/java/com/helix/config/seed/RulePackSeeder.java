@@ -67,8 +67,10 @@ public class RulePackSeeder implements CommandLineRunner {
         pack("rbi_lgd_foundation", "LGD_MAP", "IN-RBI", lgdMap());
         pack("ind_as_109_sicr_v2", "PROVISIONING", "IN-RBI", provisioningIn());
         pack("rbi_doa_matrix", "DOA_MATRIX", "IN-RBI", doaMatrix(50_000_000d, 250_000_000d, 1_000_000_000d));
+        pack("rbi_group_grade", "GROUP_GRADE", "IN-RBI", groupGrade());
         pack("rbi_kyc_md_tiers", "CDD_TIERS", "IN-RBI", cddTiers());
         pack("rbi_large_exposure_framework", "EXPOSURE_LIMITS", "IN-RBI", exposureLimits(0.15, 0.25));
+        pack("rbi_concentration_limits", "CONCENTRATION_LIMITS", "IN-RBI", concentrationLimits(0.15, 0.25, 0.15));
         pack("rbi_pricing_v1", "PRICING", "IN-RBI", pricing(0.15, 0.075, 0.010));
         pack("workflow_mid_corp_rbi_v1", "WORKFLOW_DEFINITION", "IN-RBI",
                 workflowMidCorporate("MID_CORPORATE", true));
@@ -106,8 +108,10 @@ public class RulePackSeeder implements CommandLineRunner {
         pack("cbuae_lgd", "LGD_MAP", "AE-CBUAE", lgdMap());
         pack("ifrs_9_sicr_v1", "PROVISIONING", "AE-CBUAE", provisioningAe());
         pack("cbuae_doa_matrix", "DOA_MATRIX", "AE-CBUAE", doaMatrix(20_000_000d, 100_000_000d, 500_000_000d));
+        pack("cbuae_group_grade", "GROUP_GRADE", "AE-CBUAE", groupGrade());
         pack("cbuae_aml_tiers", "CDD_TIERS", "AE-CBUAE", cddTiers());
         pack("cbuae_large_exposure", "EXPOSURE_LIMITS", "AE-CBUAE", exposureLimits(0.25, 0.25));
+        pack("cbuae_concentration_limits", "CONCENTRATION_LIMITS", "AE-CBUAE", concentrationLimits(0.25, 0.25, 0.18));
         pack("cbuae_pricing", "PRICING", "AE-CBUAE", pricing(0.135, 0.045, 0.011));
         pack("workflow_mid_corp_cbuae_v1", "WORKFLOW_DEFINITION", "AE-CBUAE",
                 workflowMidCorporate("MID_CORPORATE", false));
@@ -212,7 +216,27 @@ public class RulePackSeeder implements CommandLineRunner {
                 ),
                 "irac_dpd_substandard", 90,
                 "irac_dpd_doubtful", 365,
-                "reported_provision_policy", "max(ecl,irac)"
+                "reported_provision_policy", "max(ecl,irac)",
+                // ---- RBI supervisory overlay (IN-RBI only; absent keys => current behaviour) ----
+                // SMA sub-classification of standard accounts by DPD (SMA-0/1/2 -> NPA at substandard cut).
+                "sma_enabled", 1,
+                "sma_0_max_dpd", 30,
+                "sma_1_max_dpd", 60,
+                "sma_2_max_dpd", 90,
+                // CRILC large-credit reporting threshold (aggregate exposure).
+                "crilc_exposure_threshold", 50_000_000d,
+                // Doubtful-asset age-banded provisioning on the SECURED portion; unsecured is 100%.
+                "irac_doubtful_age_bands", map("D1", 0.25, "D2", 0.40, "D3", 1.00),
+                "irac_doubtful_unsecured_rate", 1.00,
+                "irac_doubtful_d1_max_dpd", 730,
+                "irac_doubtful_d2_max_dpd", 1460,
+                // Restructured accounts are held at (at least) SUB_STANDARD for a hold period.
+                "restructure_npa_hold_months", 12,
+                "restructure_classification_floor", "SUB_STANDARD",
+                // Working-capital drawing-power monitoring margins (advisory).
+                "drawing_power_enabled", 1,
+                "dp_stock_margin_pct", 0.25,
+                "dp_debtor_margin_pct", 0.40
         );
     }
 
@@ -224,6 +248,16 @@ public class RulePackSeeder implements CommandLineRunner {
                 "ecl_macro_overlay", 1.05,
                 "irac_provision_rates", Map.of(),
                 "reported_provision_policy", "ecl"
+        );
+    }
+
+    /** Group-grade rollup method (D10): exposure-weighted average notch on the AAA..D ladder. */
+    private Map<String, Object> groupGrade() {
+        return map(
+                "method", "EXPOSURE_WEIGHTED_NOTCH",   // | WORST_OF | PARENT_ANCHORED
+                "rounding", "HALF_UP_WORSE",           // | HALF_UP_BETTER
+                "parent_support_notches", 0,
+                "min_rated_members", 1
         );
     }
 
@@ -259,6 +293,68 @@ public class RulePackSeeder implements CommandLineRunner {
                 "geography_cap_pct_portfolio", 0.30,
                 "capital_base", 50_000_000_000d
         );
+    }
+
+    /**
+     * Multi-dimensional concentration thresholds. Each dimension carries its limit
+     * basis (CAPITAL or PORTFOLIO) and limit %. The intersection cells
+     * (sector × geography, rating × sector) are deliberately tight — they are where
+     * correlated tail risk hides. {@code singleName}/{@code group} flow through so a
+     * jurisdiction's large-exposure stance is consistent across both views.
+     */
+    private Map<String, Object> concentrationLimits(double singleName, double group, double sectorGeoCell) {
+        return map(
+                "capital_base", 50_000_000_000d,
+                // Early-warning bands: NORMAL < 80% ≤ WATCH < 90% ≤ WARNING < 100% ≤ BREACH.
+                "watch_pct", 0.80,
+                "warning_pct", 0.90,
+                // Capital buffer the correlation-stress engine rolls stressed loss against.
+                "capital_buffer_pct", 0.10,
+                "dimensions", map(
+                        "SINGLE_NAME", map("basis", "CAPITAL", "limitPct", singleName),
+                        "GROUP", map("basis", "CAPITAL", "limitPct", group),
+                        "SECTOR", map("basis", "PORTFOLIO", "limitPct", 0.20),
+                        "GEOGRAPHY", map("basis", "PORTFOLIO", "limitPct", 0.40),
+                        "INSTRUMENT", map("basis", "PORTFOLIO", "limitPct", 0.50),
+                        "DURATION_BUCKET", map("basis", "PORTFOLIO", "limitPct", 0.45),
+                        "RATING", map("basis", "PORTFOLIO", "limitPct", 0.35),
+                        "CURRENCY", map("basis", "PORTFOLIO", "limitPct", 0.60),
+                        "SECTOR_x_GEOGRAPHY", map("basis", "PORTFOLIO", "limitPct", sectorGeoCell),
+                        "RATING_x_SECTOR", map("basis", "PORTFOLIO", "limitPct", 0.12)),
+                // Sector co-movement matrix for correlation-stress: ρ of each sector to a
+                // shock in the row sector. Symmetric in spirit; only the shocked row is read.
+                "correlations", sectorCorrelations());
+    }
+
+    /**
+     * A pragmatic sector correlation matrix for the demo book. The clusters that matter:
+     * the real-estate / construction / steel / infrastructure / power complex moves
+     * together (a property or capex downturn hits all of them), while retail / trade /
+     * logistics form a looser consumer cluster.
+     */
+    private Map<String, Object> sectorCorrelations() {
+        return map(
+                "INFRASTRUCTURE", map("CONSTRUCTION", 0.80, "STEEL", 0.70, "POWER", 0.65,
+                        "REAL_ESTATE", 0.55, "MANUFACTURING", 0.45, "LOGISTICS", 0.40,
+                        "RETAIL", 0.20, "TRADE", 0.20),
+                "REAL_ESTATE", map("CONSTRUCTION", 0.85, "STEEL", 0.60, "INFRASTRUCTURE", 0.55,
+                        "MANUFACTURING", 0.35, "RETAIL", 0.30, "POWER", 0.30,
+                        "LOGISTICS", 0.25, "TRADE", 0.20),
+                "MANUFACTURING", map("STEEL", 0.65, "LOGISTICS", 0.55, "TRADE", 0.50,
+                        "INFRASTRUCTURE", 0.45, "CONSTRUCTION", 0.40, "RETAIL", 0.40,
+                        "POWER", 0.35, "REAL_ESTATE", 0.35),
+                "RETAIL", map("TRADE", 0.75, "LOGISTICS", 0.60, "MANUFACTURING", 0.40,
+                        "REAL_ESTATE", 0.30, "INFRASTRUCTURE", 0.20),
+                "TRADE", map("RETAIL", 0.75, "LOGISTICS", 0.65, "MANUFACTURING", 0.50,
+                        "INFRASTRUCTURE", 0.20),
+                "LOGISTICS", map("TRADE", 0.65, "RETAIL", 0.60, "MANUFACTURING", 0.55,
+                        "INFRASTRUCTURE", 0.40),
+                "STEEL", map("INFRASTRUCTURE", 0.70, "MANUFACTURING", 0.65, "CONSTRUCTION", 0.65,
+                        "REAL_ESTATE", 0.60, "POWER", 0.45),
+                "CONSTRUCTION", map("REAL_ESTATE", 0.85, "INFRASTRUCTURE", 0.80, "STEEL", 0.65,
+                        "MANUFACTURING", 0.40, "POWER", 0.40),
+                "POWER", map("INFRASTRUCTURE", 0.65, "STEEL", 0.45, "CONSTRUCTION", 0.40,
+                        "MANUFACTURING", 0.35, "REAL_ESTATE", 0.30));
     }
 
     /**
@@ -315,7 +411,9 @@ public class RulePackSeeder implements CommandLineRunner {
                 "cost_of_funds", costOfFunds,
                 "opex_rate", opexRate,
                 "target_capital_ratio", 0.12,
-                "min_spread", 0.005
+                "min_spread", 0.005,
+                "exception_single_level_bps", 100,
+                "exception_two_level_bps", 200
         );
     }
 
@@ -330,6 +428,7 @@ public class RulePackSeeder implements CommandLineRunner {
         p.setEffectiveFrom(LocalDate.of(2026, 1, 1));
         p.setActive(true);
         p.setPayload(payload);
+        p.setCreatedBy("seed");   // G6: seeded packs authored by 'seed' (distinct from every signer)
         // Seed data ships pre-approved by both control functions.
         p.setPolicySignedOffBy("seed.policy.officer");
         p.setPolicySignedOffAt(Instant.now());

@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { counterparty } from "../api";
+import { config, counterparty } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, statusTone, useAsync } from "../ui";
-
-const SEGMENTS = ["MID_CORPORATE", "LARGE_CORPORATE", "SME", "PROJECT_FINANCE", "TRADE_FINANCE", "FINANCIAL_INSTITUTION"];
+import { Badge, Button, Card, EmptyState, Field, statusTone, useAsync } from "../ui";
+import { useCodes } from "../code-values";
 
 const SAMPLE_UBO = JSON.stringify({
   nodes: [
@@ -23,13 +22,23 @@ const SAMPLE_UBO = JSON.stringify({
 export default function Counterparties() {
   const { actor, notify } = useApp();
   const list = useAsync(() => counterparty.list(), []);
+  const segments = useCodes("SEGMENT");
+  const jurisdictionsAsync = useAsync<any[]>(() => config.jurisdictions(), []);
+  const jurisdictions = (jurisdictionsAsync.data || []) as any[];
   const [selId, setSelId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
 
   return (
     <div className="grid cols-2">
       <div className="grid">
-        <Card title="Counterparties" right={<Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New"}</Button>}>
+        <Card title="Counterparties" right={
+          <div className="btnrow">
+            <Button kind="subtle" onClick={async () => {
+              try { const r = await counterparty.reKycSweep(undefined, actor); notify(`Re-KYC sweep: ${r.flagged} of ${r.scanned} flagged`); list.reload(); }
+              catch (e: any) { notify(e.message, true); }
+            }}>Run re-KYC sweep</Button>
+            <Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New"}</Button>
+          </div>}>
           {list.loading ? <div className="loading">Loading…</div> : (
             <table>
               <thead><tr><th>Name</th><th>Segment</th><th>CDD</th><th>KYC</th></tr></thead>
@@ -52,8 +61,12 @@ export default function Counterparties() {
 
       <div>
         {selId ? <Detail id={selId} onChange={() => list.reload()} /> :
-          <Card title="Select a counterparty" sub="KYC/KYB · CDD tiering · UBO graph · screening — PRD Stage 1.">
-            <div className="muted">Pick a counterparty on the left, or create one.</div>
+          <Card>
+            <EmptyState
+              glyph="◴"
+              title="Select a counterparty to open its profile"
+              sub="Pick one from the list on the left or use + New to onboard a new obligor — KYC/KYB, CDD tiering, UBO graph and screening live inside."
+            />
           </Card>}
       </div>
     </div>
@@ -83,12 +96,12 @@ export default function Counterparties() {
         <div className="grid cols-2">
           <Field label="Jurisdiction">
             <select value={f.jurisdiction} onChange={(e) => setF({ ...f, jurisdiction: e.target.value })}>
-              <option>IN-RBI</option><option>AE-CBUAE</option>
+              {jurisdictions.map((j: any) => <option key={j.code} value={j.code}>{j.code}</option>)}
             </select>
           </Field>
           <Field label="Segment">
             <select value={f.segment} onChange={(e) => setF({ ...f, segment: e.target.value })}>
-              {SEGMENTS.map((s) => <option key={s}>{s}</option>)}
+              {segments.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
             </select>
           </Field>
           <Field label="Sector"><input value={f.sector} onChange={(e) => setF({ ...f, sector: e.target.value })} /></Field>
@@ -150,6 +163,11 @@ export default function Counterparties() {
             <Button onClick={() => act(() => counterparty.runScreening(id, actor), "Screening run")}>Run screening</Button>
             <Button kind="ghost" disabled={c.kycStatus === "VERIFIED"}
               onClick={() => act(() => counterparty.verifyKyc(id, actor), "KYC verified")}>Verify KYC</Button>
+            <Button kind="ghost" disabled={c.lifecycleStatus === "CLOSED"}
+              onClick={() => {
+                const reason = window.prompt("Close relationship — reason?");
+                if (reason) act(() => counterparty.close(id, { reason }, actor), "Relationship closed");
+              }}>{c.lifecycleStatus === "CLOSED" ? "Closed" : "Close relationship"}</Button>
           </div>
         </Card>
 

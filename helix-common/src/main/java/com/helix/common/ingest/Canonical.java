@@ -53,6 +53,12 @@ public final class Canonical {
                                       Provenance provenance) {
     }
 
+    /** A repayment event from the servicing system (principal/interest split, value-dated). */
+    public record RepaymentEvent(String facilityRef, double amount, double principalComponent,
+                                 double interestComponent, String currency, LocalDate valueDate,
+                                 String externalRef, Provenance provenance) {
+    }
+
     /** A single market-data observation (for SA-CCR/CVA inputs, peer/macro). */
     public record MarketDataPoint(String instrument, LocalDate asOf, double value, String unit,
                                   Provenance provenance) {

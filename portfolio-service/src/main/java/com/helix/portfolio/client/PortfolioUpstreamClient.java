@@ -19,18 +19,67 @@ public class PortfolioUpstreamClient {
     private static final Logger log = LoggerFactory.getLogger(PortfolioUpstreamClient.class);
 
     private final RestClient config;
+    private final RestClient counterparty;
     private final RestClient origination;
     private final RestClient risk;
     private final RestClient decision;
 
     public PortfolioUpstreamClient(@Value("${helix.config-service.base-url}") String configUrl,
+                                   @Value("${helix.counterparty-service.base-url}") String counterpartyUrl,
                                    @Value("${helix.origination-service.base-url}") String originationUrl,
                                    @Value("${helix.risk-service.base-url}") String riskUrl,
                                    @Value("${helix.decision-service.base-url}") String decisionUrl) {
         this.config = RestClient.builder().baseUrl(configUrl).build();
+        this.counterparty = RestClient.builder().baseUrl(counterpartyUrl).build();
         this.origination = RestClient.builder().baseUrl(originationUrl).build();
         this.risk = RestClient.builder().baseUrl(riskUrl).build();
         this.decision = RestClient.builder().baseUrl(decisionUrl).build();
+    }
+
+    /**
+     * Best-effort counterparty-group key for the concentration group dimension.
+     * Returns {@code GRP-<id>} when the obligor is tagged to a group, else the
+     * obligor's own reference (ungrouped obligors are their own group of one).
+     */
+    @SuppressWarnings("unchecked")
+    public String groupRefFor(String counterpartyRef) {
+        if (counterpartyRef == null) return null;
+        try {
+            Map<String, Object> cp = counterparty.get()
+                    .uri("/api/counterparties/by-reference/{ref}", counterpartyRef)
+                    .retrieve().body(Map.class);
+            if (cp != null && cp.get("groupId") != null) {
+                return "GRP-" + cp.get("groupId");
+            }
+        } catch (Exception e) {
+            log.debug("group lookup failed for {} ({})", counterpartyRef, e.getMessage());
+        }
+        return counterpartyRef;
+    }
+
+    /**
+     * Escalates a monitoring signal into a SYSTEM-opened collections case on
+     * decision-service. Idempotent on its side (one active case per facility);
+     * best-effort here — a sweep never fails because the escalation call hiccuped,
+     * but a real failure is logged at WARN so it's discoverable. Returns the case id
+     * when known, else null.
+     */
+    @SuppressWarnings("unchecked")
+    public Long openCollectionsCase(String applicationReference, int dpd, double overdueAmount, String trigger) {
+        try {
+            Map<String, Object> body = Map.of("daysPastDue", dpd, "overdueAmount", overdueAmount,
+                    "trigger", trigger == null ? "" : trigger);
+            Map<String, Object> res = decision.post()
+                    .uri("/api/collections/{ref}/monitoring/open", applicationReference)
+                    .header("X-Actor", "SYSTEM:monitoring")
+                    .body(body)
+                    .retrieve().body(Map.class);
+            Object id = res == null ? null : res.get("id");
+            return id instanceof Number n ? n.longValue() : null;
+        } catch (Exception e) {
+            log.warn("collections auto-open failed for {} ({})", applicationReference, e.getMessage());
+            return null;
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -49,8 +98,13 @@ public class PortfolioUpstreamClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record CreditInputsDto(String applicationReference, String counterpartyRef, String counterpartyName,
-                                  String jurisdiction, String segment, String facilityType, double requestedAmount,
-                                  String currency, Map<String, Double> ratios, Map<String, Double> latestFinancials) {
+                                  String jurisdiction, String segment, String sector, String facilityType,
+                                  double requestedAmount, String currency, int tenorMonths, double collateralValue,
+                                  boolean secured, Map<String, Double> ratios, Map<String, Double> latestFinancials) {
+    }
+
+    /** Restructure state pulled from decision-service for the RBI classification floor. */
+    public record RestructureContextDto(boolean restructured, java.time.Instant restructuredAt) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -116,6 +170,33 @@ public class PortfolioUpstreamClient {
         }
     }
 
+    /**
+     * Pulls the restructure state for a deal from decision-service's collections register:
+     * the latest RESTRUCTURED case with a restructure timestamp. Resilient — any failure
+     * (or no such case) returns not-restructured, so the ECL floor is simply not applied.
+     */
+    public RestructureContextDto restructureContext(String reference) {
+        try {
+            java.time.Instant latest = null;
+            for (Map<String, Object> c : getList("decision", "/api/collections?reference={r}", reference)) {
+                if (!"RESTRUCTURED".equals(String.valueOf(c.get("status")))) continue;
+                Object ts = c.get("restructuredAt");
+                if (ts == null) continue;
+                try {
+                    java.time.Instant when = java.time.Instant.parse(String.valueOf(ts));
+                    if (latest == null || when.isAfter(latest)) latest = when;
+                } catch (Exception ignored) {
+                    // non-parseable timestamp — treat the case as restructured-now-unknown
+                    if (latest == null) latest = java.time.Instant.now();
+                }
+            }
+            return new RestructureContextDto(latest != null, latest);
+        } catch (Exception e) {
+            log.warn("decision-service restructure context unavailable for {} ({})", reference, e.getMessage());
+            return new RestructureContextDto(false, null);
+        }
+    }
+
     /** Generic GET wrapper so portfolio aggregations can pull from any upstream by URL. */
     @SuppressWarnings("unchecked")
     public Map<String, Object> getMap(String svc, String uri, Object... vars) {
@@ -133,6 +214,39 @@ public class PortfolioUpstreamClient {
             log.warn("upstream {} {} unavailable ({})", svc, uri, e.getMessage());
             return Map.of();
         }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record EwsTriggerDto(boolean enabled, Double amber, Double red) {
+        public double amberThreshold(double fallback) { return amber != null ? amber : fallback; }
+        public double redThreshold(double fallback) { return red != null ? red : fallback; }
+        @SuppressWarnings("unchecked")
+        static EwsTriggerDto from(Map<String, Object> payload) {
+            boolean enabled = !Boolean.FALSE.equals(payload.get("enabled"));
+            Map<String, Object> th = payload.get("thresholds") instanceof Map<?, ?> m
+                    ? (Map<String, Object>) m : Map.of();
+            return new EwsTriggerDto(enabled, numberIn(th.get("amber")), numberIn(th.get("red")));
+        }
+        private static Double numberIn(Object v) {   // ">60" / "<=30" / bare number -> bound; operator ignored
+            if (v == null) return null;
+            if (v instanceof Number n) return n.doubleValue();
+            String s = String.valueOf(v).trim().replaceAll("^[<>=]+", "").trim();
+            try { return s.isEmpty() ? null : Double.valueOf(s); }
+            catch (NumberFormatException e) { return null; }
+        }
+    }
+
+    /** EWS_TRIGGER master keyed by triggerType; empty on failure so EwsService falls back to built-in thresholds. */
+    @SuppressWarnings("unchecked")
+    public Map<String, EwsTriggerDto> ewsTriggers() {
+        Map<String, EwsTriggerDto> out = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> r : getList("config", "/api/masters/{t}", "EWS_TRIGGER")) {
+            Object key = r.get("recordKey");
+            if (key != null && r.get("payload") instanceof Map<?, ?> p) {
+                out.put(String.valueOf(key), EwsTriggerDto.from((Map<String, Object>) p));
+            }
+        }
+        return out;
     }
 
     @SuppressWarnings("unchecked")

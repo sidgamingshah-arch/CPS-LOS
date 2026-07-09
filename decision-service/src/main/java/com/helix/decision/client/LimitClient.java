@@ -1,0 +1,210 @@
+package com.helix.decision.client;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Cross-service client for limit-service. Used by the disbursement release path
+ * to book a {@code UTILISE} action on the facility's limit node — so the
+ * disbursement workflow integrates with the existing limit ledger rather than
+ * being a parallel system.
+ */
+@Component
+public class LimitClient {
+
+    private static final Logger log = LoggerFactory.getLogger(LimitClient.class);
+
+    private final RestClient client;
+
+    public LimitClient(@Value("${helix.limit-service.base-url}") String baseUrl) {
+        this.client = RestClient.builder().baseUrl(baseUrl).build();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record UtilisationActionDto(String lineId, String action, double amount, String currency,
+                                       String transactionRef) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record UtilisationRequestDto(String cif, List<UtilisationActionDto> actions,
+                                        String productProcessor, boolean overrideFlag) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ActionResultDto(String lineId, String action, boolean success, String message,
+                                  double newOutstanding, double newAvailable) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record UtilisationResponseDto(String cif, boolean success, List<ActionResultDto> results) {
+    }
+
+    /** Books a UTILISE against the limit node identified by {@code lineId} (the node's reference). */
+    public UtilisationResponseDto utilise(String cif, String lineId, double amount, String currency,
+                                          String transactionRef, String actor) {
+        return book("UTILISE", cif, lineId, amount, currency, transactionRef, actor);
+    }
+
+    /** Books a RELEASE (repayment reduces outstanding) against the limit node. */
+    public UtilisationResponseDto release(String cif, String lineId, double amount, String currency,
+                                          String transactionRef, String actor) {
+        return book("RELEASE", cif, lineId, amount, currency, transactionRef, actor);
+    }
+
+    /** Books a REVERSAL (undoes a prior UTILISE: outstanding AND cumulative drawn) against the node. */
+    public UtilisationResponseDto reversal(String cif, String lineId, double amount, String currency,
+                                           String transactionRef, String actor) {
+        return book("REVERSAL", cif, lineId, amount, currency, transactionRef, actor);
+    }
+
+    private UtilisationResponseDto book(String action, String cif, String lineId, double amount,
+                                        String currency, String transactionRef, String actor) {
+        UtilisationRequestDto body = new UtilisationRequestDto(cif,
+                List.of(new UtilisationActionDto(lineId, action, amount, currency, transactionRef)),
+                "disbursement-service", false);
+        try {
+            return client.post().uri("/api/limits/utilise")
+                    .header("X-Actor", actor == null ? "disbursement" : actor)
+                    .body(body)
+                    .retrieve()
+                    .body(UtilisationResponseDto.class);
+        } catch (Exception e) {
+            log.warn("limit-service unavailable for {} {}/{} ({})", action, cif, lineId, e.getMessage());
+            return new UtilisationResponseDto(cif, false, List.of(
+                    new ActionResultDto(lineId, action, false,
+                            "limit-service unavailable: " + e.getMessage(), 0, 0)));
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record LimitNodeDto(Long id, String reference, String cif, String applicationRef,
+                               String facilityRef, String code, String currency,
+                               double sanctionedAmount) {
+    }
+
+    /**
+     * Resolves the limit-node entity for the given (applicationRef, facilityRef). Used
+     * by the disbursement release path to find the correct {@code lineId} (the node's
+     * {@code reference}) to pass to UTILISE — multiple facilities of the same type
+     * would otherwise be ambiguous on {@code code} alone.
+     */
+    public LimitNodeDto nodeForFacility(String applicationRef, String facilityRef) {
+        try {
+            return client.get()
+                    .uri(u -> u.path("/api/limits/by-facility")
+                            .queryParam("applicationRef", applicationRef)
+                            .queryParam("facilityRef", facilityRef).build())
+                    .retrieve()
+                    .body(LimitNodeDto.class);
+        } catch (Exception e) {
+            log.warn("limit lookup by-facility failed for {}/{} ({})", applicationRef, facilityRef, e.getMessage());
+            return null;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record AppStatusResultDto(String applicationRef, String targetStatus,
+                                     int affectedCount, int totalNodes, List<String> affectedRefs) {
+    }
+
+    /**
+     * Freezes every limit node for an application (status -> FROZEN) as a governance
+     * SIDE-EFFECT of an APPROVED covenant FREEZE_ACCOUNTS / FREEZE_DISBURSEMENT action.
+     * NON-THROWING (mirrors {@link #utilise}): a limit-service outage must never roll back
+     * the already-committed covenant decision — on failure we log WARN and return a sentinel
+     * with affectedCount == -1 (the caller records a *_SKIPPED note). An empty tree returns
+     * affectedCount == 0 from the server — a legitimate no-op success.
+     */
+    public AppStatusResultDto freezeApplication(String applicationRef, String reason, String actor) {
+        return setApplicationStatus(applicationRef, "freeze", reason, actor);
+    }
+
+    /** Releases (unfreezes -> ACTIVE) every limit node for an application after CAD limit-release. NON-THROWING; see {@link #freezeApplication}. */
+    public AppStatusResultDto releaseApplication(String applicationRef, String reason, String actor) {
+        return setApplicationStatus(applicationRef, "unfreeze", reason, actor);
+    }
+
+    private AppStatusResultDto setApplicationStatus(String applicationRef, String op, String reason, String actor) {
+        try {
+            return client.post()
+                    .uri(u -> u.path("/api/limits/by-application/{ref}/{op}").build(applicationRef, op))
+                    .header("X-Actor", actor == null ? "decision" : actor)
+                    .body(Map.of("reason", reason == null ? "" : reason))
+                    .retrieve()
+                    .body(AppStatusResultDto.class);
+        } catch (Exception e) {
+            log.warn("limit-service unavailable for {} of {} ({}) — freeze/release skipped, decision stands",
+                    op, applicationRef, e.getMessage());
+            return new AppStatusResultDto(applicationRef, op.equals("freeze") ? "FROZEN" : "ACTIVE", -1, 0, List.of());
+        }
+    }
+
+    /**
+     * Re-syncs a facility limit node after an approved amendment. Throws on failure
+     * so the approval transaction rolls back and the retry re-runs both applies
+     * (absolute targets — replays are no-ops on the limit side).
+     */
+    public void resyncFacility(String applicationRef, String facilityRef, Double newAmount,
+                               Integer newTenorMonths, String amendmentRef, String actor) {
+        try {
+            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("applicationRef", applicationRef);
+            body.put("facilityRef", facilityRef);
+            if (newAmount != null) body.put("newAmount", newAmount);
+            if (newTenorMonths != null) body.put("newTenorMonths", newTenorMonths);
+            body.put("amendmentRef", amendmentRef);
+            client.post().uri("/api/limits/resync-facility")
+                    .header("X-Actor", actor)
+                    .body(body)
+                    .retrieve().toBodilessEntity();
+        } catch (Exception e) {
+            throw com.helix.common.web.ApiException.conflict(
+                    "limit-service could not re-sync facility " + facilityRef + ": " + e.getMessage());
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record FxView(String base, Map<String, Double> rates) {
+    }
+
+    /** A single FX quote derived from limit-service's rate table (base = INR). */
+    public record FxQuote(String from, String to, double rate, double convertedAmount) { }
+
+    /**
+     * Cross-currency conversion for the disbursement path. limit-service's FxService
+     * is the platform's source of truth for FX rates; it stores rates as
+     * (base-currency per unit of foreign currency) on an INR base. We compose
+     * arbitrary cross-rates as: {@code amount * rate(from) / rate(to)}.
+     */
+    public FxQuote fxQuote(String from, String to, double amount) {
+        if (from == null || to == null) throw new IllegalArgumentException("from and to required");
+        if (from.equalsIgnoreCase(to)) return new FxQuote(from.toUpperCase(), to.toUpperCase(), 1.0, amount);
+        FxView fx;
+        try {
+            fx = client.get().uri("/api/limits/eod/fx").retrieve().body(FxView.class);
+        } catch (Exception e) {
+            log.warn("limit-service /eod/fx unavailable ({}); cannot quote {}->{}", e.getMessage(), from, to);
+            throw com.helix.common.web.ApiException.conflict(
+                    "FX rates unavailable from limit-service; cannot convert " + from + " to " + to);
+        }
+        if (fx == null || fx.rates() == null) {
+            throw com.helix.common.web.ApiException.conflict("Empty FX rates from limit-service");
+        }
+        Double rFrom = fx.rates().get(from.toUpperCase());
+        Double rTo = fx.rates().get(to.toUpperCase());
+        if (rFrom == null || rTo == null || rTo == 0) {
+            throw com.helix.common.web.ApiException.badRequest(
+                    "Unknown FX pair " + from + "/" + to + " — neither leg in the rate table");
+        }
+        double rate = rFrom / rTo;
+        double converted = Math.round(amount * rate * 100.0) / 100.0;
+        return new FxQuote(from.toUpperCase(), to.toUpperCase(), rate, converted);
+    }
+}

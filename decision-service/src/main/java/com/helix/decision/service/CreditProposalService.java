@@ -5,6 +5,8 @@ import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.DealEnvelopeDto;
 import com.helix.decision.client.UpstreamClient.RiskSummaryDto;
+import com.helix.decision.dto.GroupDtos.GroupInsights;
+import com.helix.decision.dto.GroupDtos.GroupMemberInsight;
 import com.helix.decision.entity.Covenant;
 import com.helix.decision.entity.CreditDecision;
 import com.helix.decision.entity.CreditProposal;
@@ -33,14 +35,17 @@ public class CreditProposalService {
     private final CovenantRepository covenants;
     private final CreditDecisionRepository decisions;
     private final UpstreamClient upstream;
+    private final GroupInsightsService groupInsights;
     private final AuditService audit;
 
     public CreditProposalService(CreditProposalRepository proposals, CovenantRepository covenants,
-                                 CreditDecisionRepository decisions, UpstreamClient upstream, AuditService audit) {
+                                 CreditDecisionRepository decisions, UpstreamClient upstream,
+                                 GroupInsightsService groupInsights, AuditService audit) {
         this.proposals = proposals;
         this.covenants = covenants;
         this.decisions = decisions;
         this.upstream = upstream;
+        this.groupInsights = groupInsights;
         this.audit = audit;
     }
 
@@ -242,6 +247,172 @@ public class CreditProposalService {
         return proposals.findByApplicationReferenceOrderByVersionDesc(reference);
     }
 
+    /**
+     * Combined credit proposal across every member of a borrower group (PRD §8,
+     * "combining credit proposal of group companies"). Stored as a normal
+     * {@link CreditProposal} with {@code applicationReference = "GRP:" + groupRef}
+     * so versioning/history reuse the existing repository, and the figures are
+     * <em>quoted</em> from each member's upstream services — never invented and
+     * never mutated. Stamped {@code audit.ai("proposal-generator", ...)}.
+     */
+    @Transactional
+    public CreditProposal generateForGroup(String groupReference, String actor) {
+        // The insights service already fetches group + exposure + per-member envelope/risk
+        // and stamps audit.ai("GROUP_INSIGHTS_GENERATED"). Re-fetching them here doubles
+        // the cross-service round-trips AND double-stamps the audit trail, so we read
+        // everything we need off the insights record.
+        GroupInsights insights = groupInsights.insights(groupReference, actor);
+
+        Md md = new Md();
+        md.h1("Combined credit proposal · " + nv(insights.groupName())
+                + " (" + insights.groupReference() + ")");
+        md.muted("Group-level rollup of every tagged member's authoritative figures. Advisory, grounded, "
+                + "human-gated. No figure below is computed by the model — they are quoted verbatim from the "
+                + "rating / capital / pricing / origination services.");
+        md.spacer();
+
+        // 1) Group summary
+        md.h2("1. Group summary");
+        md.bullets(
+                bullet("Group reference", insights.groupReference()),
+                bullet("Group RM", nv(insights.groupRm())),
+                bullet("Country", nv(insights.country())),
+                bullet("Multi-country", String.valueOf(insights.multiCountry())),
+                bullet("Members tagged", String.valueOf(insights.memberCount())),
+                bullet("Active obligors", String.valueOf(insights.obligorCount())),
+                bullet("Members with live application", String.valueOf(insights.membersWithApplication())),
+                bullet("Members below RAROC hurdle (advisory)", String.valueOf(insights.membersBelowHurdle())),
+                bullet("Members with rating override", String.valueOf(insights.membersOverridden())));
+
+        // 2) Group-level aggregates
+        md.h2("2. Group-level aggregates (deterministic, unchanged)");
+        Map<String, String> rollup = new LinkedHashMap<>();
+        insights.totalExposureByCurrency().forEach((ccy, amt) ->
+                rollup.put("Proposed exposure · " + ccy, String.format(Locale.UK, "%,.0f", amt)));
+        if (insights.weightedAveragePd() != null) {
+            rollup.put("Weighted-average PD", pct(insights.weightedAveragePd()));
+        }
+        if (insights.weightedAverageRaroc() != null) {
+            rollup.put("Weighted-average RAROC", pct(insights.weightedAverageRaroc()));
+        }
+        if (insights.lowestGrade() != null) {
+            rollup.put("Grade band (best → weakest)",
+                    insights.highestGrade() + " → " + insights.lowestGrade());
+        }
+        if (insights.groupGrade() != null) {
+            rollup.put("Group grade (advisory, derived)", insights.groupGrade());
+            rollup.put("Group grade method", insights.groupGradeMethod());
+        }
+        md.kvBlock(rollup);
+
+        // Section numbering is dynamic so we don't skip an integer when concentrations
+        // or callouts are empty (a single-currency / single-segment book had been
+        // rendering "2. → 4. → 5." with no "3.").
+        int section = 3;
+        if (!insights.concentrations().isEmpty()) {
+            md.h2(section++ + ". Concentrations (advisory)");
+            for (String c : insights.concentrations()) {
+                md.line("- " + c);
+            }
+        }
+        if (!insights.riskCallouts().isEmpty()) {
+            md.h2(section++ + ". Risk callouts (advisory)");
+            for (String c : insights.riskCallouts()) {
+                md.line("- " + c);
+            }
+        }
+
+        // Per-member sections — each pulls the member's deterministic figures verbatim.
+        md.h2(section++ + ". Per-member breakdown");
+        for (GroupMemberInsight m : insights.members()) {
+            md.line("**" + m.counterpartyName() + "** · " + m.counterpartyRef()
+                    + " · " + nv(m.segment()) + " · " + nv(m.recordType())
+                    + " · RM " + nv(m.rm()));
+            if (m.latestApplicationReference() == null) {
+                md.line("_No live application on file._");
+                continue;
+            }
+            Map<String, String> mv = new LinkedHashMap<>();
+            mv.put("Latest application", m.latestApplicationReference()
+                    + " · " + nv(m.applicationStatus()));
+            if (m.finalGrade() != null) {
+                mv.put("Rating (model → final)",
+                        nv(m.modelGrade()) + " → " + m.finalGrade()
+                                + (m.ratingConfirmed() ? " ✓" : " · unconfirmed")
+                                + (m.ratingOverridden() ? " · OVERRIDDEN" : ""));
+            }
+            if (m.pd() != null) mv.put("PD", pct(m.pd()));
+            if (m.exposure() != null) mv.put("Proposed exposure",
+                    String.format(Locale.UK, "%,.0f", m.exposure()) + " " + nv(m.currency()));
+            mv.put("Facilities", String.valueOf(m.facilityCount()));
+            mv.put("Covenants", String.valueOf(m.covenantCount()));
+            if (m.recommendedRate() != null) {
+                mv.put("Pricing (advisory)",
+                        "rate " + pct(m.recommendedRate())
+                                + " · RAROC " + (m.raroc() == null ? "—" : pct(m.raroc()))
+                                + " vs hurdle " + (m.hurdleRaroc() == null ? "—" : pct(m.hurdleRaroc()))
+                                + (m.belowHurdle() ? " · BELOW HURDLE" : ""));
+            }
+            md.kvBlock(mv);
+        }
+
+        // Narrative
+        md.h2(section++ + ". Advisory narrative");
+        md.line(insights.narrative());
+
+        // Provenance
+        md.h2(section + ". Provenance and governance");
+        md.bullets(
+                bullet("Generated by", "Helix · proposal-generator (AI-assisted; human signs)"),
+                bullet("Grounding",
+                        "Every figure above is quoted verbatim from a platform service — none are invented or "
+                                + "recomputed by this report"),
+                bullet("Approval",
+                        "AI cannot approve. A named human at the required group-level authority must sign each "
+                                + "member proposal AND this combined rollup."),
+                bullet("Member proposals",
+                        "Linkages to per-member credit proposals remain authoritative; this rollup never "
+                                + "supersedes them."));
+
+        // Citations: one upstream lookup per member + the group endpoints.
+        Map<String, Object> citations = new LinkedHashMap<>();
+        citations.put("group",
+                "counterparty-service GET /api/initiation/groups/by-reference/" + groupReference);
+        citations.put("groupExposure",
+                "counterparty-service GET /api/initiation/groups/by-reference/" + groupReference + "/exposure");
+        Map<String, Object> memberCitations = new LinkedHashMap<>();
+        for (GroupMemberInsight m : insights.members()) {
+            memberCitations.put(m.counterpartyRef(),
+                    "origination-service GET /api/applications/by-counterparty/" + m.counterpartyRef());
+        }
+        citations.put("members", memberCitations);
+
+        String groupKey = "GRP:" + groupReference;
+        int version = proposals.findFirstByApplicationReferenceOrderByVersionDesc(groupKey)
+                .map(p -> p.getVersion() + 1).orElse(1);
+
+        CreditProposal p = new CreditProposal();
+        p.setApplicationReference(groupKey);
+        p.setVersion(version);
+        p.setMarkdown(md.markdown());
+        p.setHtml(md.html());
+        p.setCitations(citations);
+        p.setSections(List.of(
+                "Group summary", "Group-level aggregates", "Concentrations", "Risk callouts",
+                "Per-member breakdown", "Advisory narrative", "Provenance"));
+        p.setGeneratedBy(actor);
+        CreditProposal saved = proposals.save(p);
+        audit.ai("proposal-generator", "GROUP_CREDIT_PROPOSAL_GENERATED", "Group", insights.groupReference(),
+                "Generated combined group proposal v%d for %s — %d member(s), %d with application"
+                        .formatted(version, nv(insights.groupName()), insights.memberCount(), insights.membersWithApplication()),
+                Map.of("version", version,
+                        "memberCount", insights.memberCount(),
+                        "membersWithApplication", insights.membersWithApplication(),
+                        "membersBelowHurdle", insights.membersBelowHurdle(),
+                        "advisory", true));
+        return saved;
+    }
+
     // ----------------------------------------------------------- helpers
 
     private static String[] bullet(String k, String v) {
@@ -282,17 +453,31 @@ public class CreditProposalService {
         return out;
     }
 
-    /** Minimal Markdown + HTML accumulator (no external templating engine). */
+    /**
+     * Minimal Markdown + HTML accumulator (no external templating engine). Tracks an
+     * {@code inTable} flag so non-table blocks emitted between tables close the previous
+     * tbody/table cleanly, and {@code html()} doesn't emit a dangling
+     * {@code </tbody></table>} when no table was ever opened.
+     */
     private static class Md {
         private final StringBuilder mdBuf = new StringBuilder();
         private final StringBuilder htmlBuf = new StringBuilder("<article class='credit-proposal'>");
+        private boolean inTable = false;
 
-        void h1(String t) { mdBuf.append("# ").append(t).append("\n\n"); htmlBuf.append("<h1>").append(esc(t)).append("</h1>"); }
-        void h2(String t) { mdBuf.append("## ").append(t).append("\n\n"); htmlBuf.append("<h2>").append(esc(t)).append("</h2>"); }
-        void line(String s) { mdBuf.append(s).append("\n\n"); htmlBuf.append("<p>").append(mdToHtml(s)).append("</p>"); }
-        void spacer() { mdBuf.append("\n"); htmlBuf.append("<div class='spacer'></div>"); }
-        void muted(String s) { mdBuf.append("_").append(s).append("_\n\n"); htmlBuf.append("<p class='muted'>").append(esc(s)).append("</p>"); }
+        private void closeTableIfOpen() {
+            if (inTable) {
+                htmlBuf.append("</tbody></table>");
+                inTable = false;
+            }
+        }
+
+        void h1(String t) { closeTableIfOpen(); mdBuf.append("# ").append(t).append("\n\n"); htmlBuf.append("<h1>").append(esc(t)).append("</h1>"); }
+        void h2(String t) { closeTableIfOpen(); mdBuf.append("## ").append(t).append("\n\n"); htmlBuf.append("<h2>").append(esc(t)).append("</h2>"); }
+        void line(String s) { closeTableIfOpen(); mdBuf.append(s).append("\n\n"); htmlBuf.append("<p>").append(mdToHtml(s)).append("</p>"); }
+        void spacer() { closeTableIfOpen(); mdBuf.append("\n"); htmlBuf.append("<div class='spacer'></div>"); }
+        void muted(String s) { closeTableIfOpen(); mdBuf.append("_").append(s).append("_\n\n"); htmlBuf.append("<p class='muted'>").append(esc(s)).append("</p>"); }
         void bullets(String[]... pairs) {
+            closeTableIfOpen();
             htmlBuf.append("<ul>");
             for (String[] p : pairs) {
                 mdBuf.append("- **").append(p[0]).append(":** ").append(p[1]).append("\n");
@@ -302,6 +487,7 @@ public class CreditProposalService {
             htmlBuf.append("</ul>");
         }
         void kvBlock(Map<String, String> kv) {
+            closeTableIfOpen();
             htmlBuf.append("<table class='kv'>");
             kv.forEach((k, v) -> {
                 mdBuf.append("- **").append(k).append(":** ").append(v).append("\n");
@@ -311,11 +497,13 @@ public class CreditProposalService {
             htmlBuf.append("</table>");
         }
         void table(String[] cols) {
+            closeTableIfOpen();
             mdBuf.append("| ").append(String.join(" | ", cols)).append(" |\n");
             mdBuf.append("|").append("---|".repeat(cols.length)).append("\n");
             htmlBuf.append("<table><thead><tr>");
             for (String c : cols) htmlBuf.append("<th>").append(esc(c)).append("</th>");
             htmlBuf.append("</tr></thead><tbody>");
+            inTable = true;
         }
         void row(String... cells) {
             mdBuf.append("| ").append(String.join(" | ", cells)).append(" |\n");
@@ -324,7 +512,7 @@ public class CreditProposalService {
             htmlBuf.append("</tr>");
         }
         String markdown() { return mdBuf.toString(); }
-        String html() { return htmlBuf.append("</tbody></table></article>").toString(); }
+        String html() { closeTableIfOpen(); return htmlBuf.append("</article>").toString(); }
 
         private String esc(String s) {
             return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");

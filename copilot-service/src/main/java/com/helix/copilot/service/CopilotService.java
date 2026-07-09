@@ -44,13 +44,19 @@ public class CopilotService {
 
     private final CopilotUpstreamClient up;
     private final AuditService audit;
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
-    public CopilotService(CopilotUpstreamClient up, AuditService audit) {
+    public CopilotService(CopilotUpstreamClient up, AuditService audit,
+                          com.helix.common.governance.AiGovernanceClient governance) {
         this.up = up;
         this.audit = audit;
+        this.governance = governance;
     }
 
     public CopilotAnswer ask(String persona, AskRequest req) {
+        // Copilot is a global capability — no per-deal jurisdiction; default
+        // AI_GOVERNANCE record applies unless the operator sets an override.
+        governance.enforce(com.helix.common.governance.AiCapability.COPILOT, null);
         Role role = PersonaScope.roleOf(persona);
         List<String> scope = PersonaScope.scopeOf(role);
         String q = req.question() == null ? "" : req.question().toLowerCase(Locale.ROOT);

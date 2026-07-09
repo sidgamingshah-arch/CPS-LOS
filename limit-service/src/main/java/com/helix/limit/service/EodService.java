@@ -1,6 +1,8 @@
 package com.helix.limit.service;
 
 import com.helix.common.audit.AuditService;
+import java.math.BigDecimal;
+import com.helix.common.money.Money;
 import com.helix.common.web.ApiException;
 import com.helix.limit.entity.EodBatchRun;
 import com.helix.limit.entity.LimitNode;
@@ -100,27 +102,27 @@ public class EodService {
             if (!"ACTIVE".equalsIgnoreCase(n.getStatus())) continue;
             if (FxService.BASE.equalsIgnoreCase(n.getCurrency())) continue;
             double rate = fx.rate(n.getCurrency());
-            double newBase = fx.toBase(n.getSanctionedAmount(), n.getCurrency());
-            double delta = newBase - n.getBaseAmount();
+            double newBase = fx.toBase(Money.asDouble(n.getSanctionedAmount()), n.getCurrency());
+            double delta = newBase - Money.asDouble(n.getBaseAmount());
             if (Math.abs(delta) < TOLERANCE) continue;
             RevaluationEntry e = new RevaluationEntry();
             e.setRunId(saved.getId());
             e.setNodeId(n.getId());
             e.setCode(n.getCode());
             e.setCurrency(n.getCurrency());
-            e.setSanctionedAmount(n.getSanctionedAmount());
-            e.setOldBase(n.getBaseAmount());
+            e.setSanctionedAmount(Money.asDouble(n.getSanctionedAmount()));
+            e.setOldBase(Money.asDouble(n.getBaseAmount()));
             e.setNewBase(newBase);
             e.setDelta(delta);
             e.setFxRate(rate);
             revaluations.save(e);
-            n.setBaseAmount(newBase);
+            n.setBaseAmount(Money.of(newBase));
             nodes.save(n);
             netDelta += delta;
             revalued++;
             audit.engine("LIMIT_REVALUED", "LimitNode", String.valueOf(n.getId()),
                     "%s %s %.2f @ %.4f: %.2f -> %.2f (Δ %.2f)".formatted(
-                            n.getCode(), n.getCurrency(), n.getSanctionedAmount(), rate,
+                            n.getCode(), n.getCurrency(), Money.asDouble(n.getSanctionedAmount()), rate,
                             e.getOldBase(), newBase, delta),
                     Map.of("runId", saved.getId(), "currency", n.getCurrency(), "delta", delta));
         }
@@ -176,10 +178,11 @@ public class EodService {
         for (Utilisation u : utilisations.findByLimitNodeIdOrderByCreatedAtDesc(n.getId())) {
             if (!"CONFIRMED".equalsIgnoreCase(u.getStatus())) continue;
             switch (u.getAction().toUpperCase()) {
-                case "UTILISE" -> { outstanding += u.getBaseAmount(); drawn += u.getBaseAmount(); }
-                case "RELEASE" -> outstanding -= u.getBaseAmount();
-                case "RESERVE" -> reserved += u.getBaseAmount();
-                case "REVERSAL" -> { outstanding -= u.getBaseAmount(); drawn -= u.getBaseAmount(); }
+                case "UTILISE" -> { outstanding += Money.asDouble(u.getBaseAmount()); drawn += Money.asDouble(u.getBaseAmount()); }
+                case "RELEASE" -> outstanding -= Money.asDouble(u.getBaseAmount());
+                case "RESERVE" -> reserved += Money.asDouble(u.getBaseAmount());
+                case "RELEASE_RESERVE" -> reserved -= Money.asDouble(u.getBaseAmount());
+                case "REVERSAL" -> { outstanding -= Money.asDouble(u.getBaseAmount()); drawn -= Money.asDouble(u.getBaseAmount()); }
                 default -> { }
             }
         }
@@ -191,9 +194,9 @@ public class EodService {
         double drawn = 0;
         double reserved = 0;
         for (LimitNode c : children) {
-            outstanding += c.getOutstanding();
-            drawn += c.getCumulativeDrawn();
-            reserved += c.getReserved();
+            outstanding += Money.asDouble(c.getOutstanding());
+            drawn += Money.asDouble(c.getCumulativeDrawn());
+            reserved += Money.asDouble(c.getReserved());
         }
         return writeVariances(runId, n, "PARENT", outstanding, drawn, reserved);
     }
@@ -201,9 +204,9 @@ public class EodService {
     private int writeVariances(Long runId, LimitNode n, String scope,
                                double outstandingComputed, double drawnComputed, double reservedComputed) {
         int count = 0;
-        count += recordIfDiff(runId, n, scope, "outstanding", n.getOutstanding(), outstandingComputed);
-        count += recordIfDiff(runId, n, scope, "cumulativeDrawn", n.getCumulativeDrawn(), drawnComputed);
-        count += recordIfDiff(runId, n, scope, "reserved", n.getReserved(), reservedComputed);
+        count += recordIfDiff(runId, n, scope, "outstanding", Money.asDouble(n.getOutstanding()), outstandingComputed);
+        count += recordIfDiff(runId, n, scope, "cumulativeDrawn", Money.asDouble(n.getCumulativeDrawn()), drawnComputed);
+        count += recordIfDiff(runId, n, scope, "reserved", Money.asDouble(n.getReserved()), reservedComputed);
         return count;
     }
 

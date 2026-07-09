@@ -40,3 +40,8 @@ Thumbs.db
 
 # TS build info
 frontend/tsconfig.tsbuildinfo
+
+# Python bytecode (e2e scripts + orchestrator)
+__pycache__/
+*.pyc
+*.pyo

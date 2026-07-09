@@ -9,13 +9,15 @@
  */
 
 import { useState } from "react";
-import { origination, structure, fmt } from "../api";
+import { amendments, origination, structure, syndication, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Field, Stat, useAsync } from "../ui";
+import { useCodes } from "../code-values";
 
-const STRUCTURE_TYPES = ["SINGLE", "GROUP", "JOINT_OBLIGOR", "DUAL_OBLIGOR", "SYNDICATION", "FI_ICR"];
-const PARTICIPANT_ROLES = ["PRIMARY_OBLIGOR", "CO_OBLIGOR", "GUARANTOR", "GROUP_MEMBER", "LEAD_BANK", "PARTICIPANT_LENDER"];
-const LIABILITY_TYPES = ["JOINT", "SEVERAL", "JOINT_AND_SEVERAL"];
+// CODE_VALUE domain fallbacks — used ONLY for non-hook initial-state defaults
+// before the master loads; the dropdowns themselves render from useCodes.
+const FALLBACK_PARTICIPANT_ROLES = ["PRIMARY_OBLIGOR"];
+const FALLBACK_LIABILITY_TYPES = ["JOINT"];
 
 function findingKind(level: string): string {
   if (level === "OK") return "ok";
@@ -26,6 +28,9 @@ function findingKind(level: string): string {
 
 export default function Structuring() {
   const { actor, notify } = useApp();
+  const structureTypes = useCodes("STRUCTURE_TYPE");
+  const participantRoles = useCodes("PARTICIPANT_ROLE");
+  const liabilityTypes = useCodes("LIABILITY_TYPE");
 
   // ── Deal selector ──────────────────────────────────────────────────────────
   const deals = useAsync(() => origination.list(), []);
@@ -49,12 +54,12 @@ export default function Structuring() {
 
   // ── Add participant form state ────────────────────────────────────────────
   const [pOpen, setPOpen] = useState(false);
-  const [pRole, setPRole] = useState(PARTICIPANT_ROLES[0]);
+  const [pRole, setPRole] = useState(FALLBACK_PARTICIPANT_ROLES[0]);
   const [pName, setPName] = useState("");
   const [pExtRef, setPExtRef] = useState("");
   const [pSharePct, setPSharePct] = useState(0);
   const [pCommitted, setPCommitted] = useState(0);
-  const [pLiability, setPLiability] = useState(LIABILITY_TYPES[0]);
+  const [pLiability, setPLiability] = useState(FALLBACK_LIABILITY_TYPES[0]);
   const [pBusy, setPBusy] = useState(false);
 
   // ── Copy-from state ───────────────────────────────────────────────────────
@@ -191,7 +196,7 @@ export default function Structuring() {
           <div className="grid cols-2">
             <Field label="Structure type">
               <select value={sType} onChange={(e) => setSType(e.target.value)}>
-                {STRUCTURE_TYPES.map((t) => <option key={t}>{t}</option>)}
+                {structureTypes.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
               </select>
             </Field>
             <Field label="Islamic window">
@@ -328,7 +333,7 @@ export default function Structuring() {
                 <div className="grid cols-2">
                   <Field label="Role">
                     <select value={pRole} onChange={(e) => setPRole(e.target.value)}>
-                      {PARTICIPANT_ROLES.map((r) => <option key={r}>{r}</option>)}
+                      {participantRoles.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}
                     </select>
                   </Field>
                   <Field label="Name">
@@ -339,7 +344,7 @@ export default function Structuring() {
                   </Field>
                   <Field label="Liability type">
                     <select value={pLiability} onChange={(e) => setPLiability(e.target.value)}>
-                      {LIABILITY_TYPES.map((l) => <option key={l}>{l}</option>)}
+                      {liabilityTypes.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
                     </select>
                   </Field>
                   <Field label="Share %">
@@ -359,9 +364,338 @@ export default function Structuring() {
         </>
       )}
 
+      {hasStructure && s?.structureType === "SYNDICATION" && (
+        <SyndicationLifecycleCard refValue={ref} participants={parts} />
+      )}
+
+      {ref && <AmendmentsCard refValue={ref} />}
+
       {/* Loading / empty state */}
       {ref && sv.loading && <div className="muted">Loading structure…</div>}
       {!ref && <div className="muted">Select a deal above to view or configure its structure.</div>}
     </div>
+  );
+}
+
+/**
+ * Post-sanction facility amendments: propose an increase / decrease / tenor
+ * extension; the required authority is routed from the DoA matrix on the
+ * post-amendment total exposure, and approval needs that authority RANK plus a
+ * different human than the proposer. On approval the facility of record and the
+ * limit tree update immediately.
+ */
+function AmendmentsCard({ refValue }: { refValue: string }) {
+  const { actor, notify } = useApp();
+  const facs = useAsync(() => origination.facilities(refValue), [refValue]);
+  const history = useAsync(() => amendments.history(refValue), [refValue]);
+  const [facilityRef, setFacilityRef] = useState("");
+  const [newAmount, setNewAmount] = useState("");
+  const [newTenor, setNewTenor] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function propose() {
+    if (!facilityRef || !reason) { notify("Pick a facility and give a reason", true); return; }
+    setBusy(true);
+    try {
+      const body: any = { facilityRef, reason };
+      const amt = parseFloat(newAmount.replace(/[, ]/g, ""));
+      if (!Number.isNaN(amt) && amt > 0) body.newAmount = amt;
+      const ten = parseInt(newTenor, 10);
+      if (!Number.isNaN(ten) && ten > 0) body.newTenorMonths = ten;
+      const a = await amendments.propose(refValue, body, actor);
+      notify(`Amendment proposed — needs ${a.requiredAuthority} to approve`);
+      setNewAmount(""); setNewTenor(""); setReason("");
+      history.reload();
+    } catch (e: any) { notify(e.message, true); } finally { setBusy(false); }
+  }
+
+  async function decide(id: number, approve: boolean) {
+    try {
+      if (approve) await amendments.approve(id, { comment: "approved via UI" }, actor);
+      else {
+        const r = prompt("Rejection reason") || "";
+        if (!r) return;
+        await amendments.reject(id, { reason: r }, actor);
+      }
+      notify(approve ? "Amendment approved — facility + limit tree updated" : "Amendment rejected");
+      history.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  return (
+    <Card title="Post-sanction amendments"
+      sub="Increase / decrease / tenor extension — routed through the SAME DoA matrix that sanctioned the deal. Approver needs the routed authority rank; proposer ≠ approver.">
+      <div className="grid cols-2">
+        <div>
+          <Field label="Facility">
+            <select value={facilityRef} onChange={(e) => setFacilityRef(e.target.value)}>
+              <option value="">— select —</option>
+              {(facs.data ?? []).map((f: any) => (
+                <option key={f.reference} value={f.reference}>
+                  {f.facilityType} · {f.amount.toLocaleString()} {f.currency} · {f.tenorMonths}m
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="New amount (blank = unchanged)">
+            <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} placeholder="e.g. 900000000" />
+          </Field>
+          <Field label="New tenor months (blank = unchanged)">
+            <input value={newTenor} onChange={(e) => setNewTenor(e.target.value)} placeholder="e.g. 84" />
+          </Field>
+          <Field label="Reason (required)">
+            <input value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+          <Button kind="primary" busy={busy} onClick={propose}>Propose amendment</Button>
+        </div>
+        <div>
+          {(history.data ?? []).length === 0 ? (
+            <div className="muted">No amendments on this deal yet.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr><th>#</th><th>Type</th><th>Change</th><th>Authority</th><th>Status</th><th /></tr>
+              </thead>
+              <tbody>
+                {(history.data ?? []).map((a: any) => (
+                  <tr key={a.id}>
+                    <td>{a.id}</td>
+                    <td className="mono">{a.amendmentType}</td>
+                    <td style={{ fontSize: 12 }}>
+                      {a.proposedAmount != null &&
+                        <>{a.currentAmount.toLocaleString()} → <b>{a.proposedAmount.toLocaleString()}</b><br /></>}
+                      {a.proposedTenorMonths != null &&
+                        <>{a.currentTenorMonths}m → <b>{a.proposedTenorMonths}m</b></>}
+                    </td>
+                    <td><Badge kind="info">{a.requiredAuthority}</Badge></td>
+                    <td>
+                      <Badge kind={a.status === "APPROVED" ? "ok" : a.status === "REJECTED" ? "bad" : "warn"}>
+                        {a.status}
+                      </Badge>
+                    </td>
+                    <td>
+                      {a.status === "PROPOSED" && (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <Button kind="subtle" onClick={() => decide(a.id, true)}>Approve</Button>
+                          <Button kind="ghost" onClick={() => decide(a.id, false)}>Reject</Button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Syndication lifecycle: invitations (lead sends, invitee accepts/declines —
+ * accepted invitees materialise as DealParticipant rows) and secondary
+ * transfers (transferor sells unfunded commitment to a new bank, agent
+ * settles — funded historical allocations stay with the seller).
+ */
+function SyndicationLifecycleCard({ refValue, participants }: { refValue: string; participants: any[] }) {
+  const { actor, notify } = useApp();
+  const invs = useAsync(() => syndication.invitations(refValue), [refValue]);
+  const xfers = useAsync(() => syndication.transfers(refValue), [refValue]);
+
+  const [iName, setIName] = useState("");
+  const [iRef, setIRef] = useState("");
+  const [iAmt, setIAmt] = useState("");
+  const [iDays, setIDays] = useState("30");
+  const [iBusy, setIBusy] = useState(false);
+
+  const [tFromId, setTFromId] = useState<number | "">("");
+  const [tToBank, setTToBank] = useState("");
+  const [tToBankRef, setTToBankRef] = useState("");
+  const [tAmt, setTAmt] = useState("");
+  const [tReason, setTReason] = useState("");
+  const [tBusy, setTBusy] = useState(false);
+
+  const lenders = participants.filter((p: any) =>
+    p.role === "LEAD_BANK" || p.role === "PARTICIPANT_LENDER");
+
+  async function sendInvitation() {
+    const amt = parseFloat(iAmt.replace(/[, ]/g, ""));
+    if (!iName || !amt) { notify("Bank name and commitment are required", true); return; }
+    setIBusy(true);
+    try {
+      await syndication.invite(refValue, {
+        invitedBank: iName, invitedBankRef: iRef || undefined,
+        proposedCommitment: amt, proposedRole: "PARTICIPANT_LENDER",
+        currency: "INR", terms: "standard",
+        expiresInDays: parseInt(iDays, 10) || 30,
+      }, actor);
+      notify(`Invitation sent to ${iName}`);
+      setIName(""); setIRef(""); setIAmt("");
+      invs.reload();
+    } catch (e: any) { notify(e.message, true); } finally { setIBusy(false); }
+  }
+
+  async function decideInvitation(inv: any, action: "accept" | "decline" | "withdraw") {
+    try {
+      if (action === "accept") {
+        await syndication.acceptInvitation(inv.id, actor);
+      } else {
+        const reason = prompt(action === "decline" ? "Decline reason" : "Withdraw reason") || "";
+        if (!reason && action === "decline") return;
+        if (action === "decline") await syndication.declineInvitation(inv.id, { reason }, actor);
+        else await syndication.withdrawInvitation(inv.id, { reason }, actor);
+      }
+      notify(`Invitation ${action}ed`);
+      invs.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  async function proposeTransfer() {
+    const amt = parseFloat(tAmt.replace(/[, ]/g, ""));
+    if (!tFromId || !tToBank || !amt) { notify("Source lender, target bank and amount are required", true); return; }
+    setTBusy(true);
+    try {
+      await syndication.proposeTransfer(refValue, {
+        fromParticipantId: tFromId, toBank: tToBank,
+        toBankRef: tToBankRef || undefined,
+        transferAmount: amt, currency: "INR", reason: tReason || "balance-sheet rotation",
+      }, actor);
+      notify(`Transfer proposed: ${tToBank} buys ${amt.toLocaleString()}`);
+      setTToBank(""); setTToBankRef(""); setTAmt(""); setTReason("");
+      xfers.reload();
+    } catch (e: any) { notify(e.message, true); } finally { setTBusy(false); }
+  }
+
+  async function decideTransfer(t: any, action: "settle" | "reject") {
+    try {
+      if (action === "settle") {
+        await syndication.settleTransfer(t.id, { comment: "agent settles" }, actor);
+      } else {
+        const reason = prompt("Rejection reason") || "";
+        if (!reason) return;
+        await syndication.rejectTransfer(t.id, { reason }, actor);
+      }
+      notify(`Transfer ${action === "settle" ? "settled" : "rejected"}`);
+      xfers.reload();
+    } catch (e: any) { notify(e.message, true); }
+  }
+
+  return (
+    <>
+      <Card title="Syndicate invitations"
+        sub="Lead bank invites a participant lender. Accept materialises a syndicate member; SoD: invitee ≠ inviter."
+        right={<Badge kind="info">SYNDICATION LIFECYCLE</Badge>}>
+        <div className="grid cols-4" style={{ alignItems: "end" }}>
+          <Field label="Bank name">
+            <input value={iName} onChange={(e) => setIName(e.target.value)} placeholder="e.g. New Capital Bank" />
+          </Field>
+          <Field label="External ref">
+            <input value={iRef} onChange={(e) => setIRef(e.target.value)} placeholder="optional" />
+          </Field>
+          <Field label="Proposed commitment (INR)">
+            <input value={iAmt} onChange={(e) => setIAmt(e.target.value)} placeholder="500000000" />
+          </Field>
+          <Field label="Expires in (days)">
+            <input value={iDays} onChange={(e) => setIDays(e.target.value)} />
+          </Field>
+        </div>
+        <div className="btnrow" style={{ marginTop: 8 }}>
+          <Button kind="primary" busy={iBusy} onClick={sendInvitation}>Send invitation</Button>
+        </div>
+        {(invs.data ?? []).length > 0 && (
+          <table>
+            <thead>
+              <tr><th>#</th><th>Bank</th><th>Commitment</th><th>Role</th><th>Status</th><th>By</th><th /></tr>
+            </thead>
+            <tbody>
+              {(invs.data ?? []).map((inv: any) => (
+                <tr key={inv.id}>
+                  <td>{inv.id}</td>
+                  <td>{inv.invitedBank}</td>
+                  <td>{fmt.money(inv.proposedCommitment)}</td>
+                  <td className="mono">{inv.proposedRole}</td>
+                  <td>
+                    <Badge kind={inv.status === "ACCEPTED" ? "ok"
+                                : inv.status === "DECLINED" || inv.status === "WITHDRAWN" || inv.status === "EXPIRED" ? "bad"
+                                : "warn"}>{inv.status}</Badge>
+                  </td>
+                  <td className="mono" style={{ fontSize: 12 }}>{inv.decidedBy ?? inv.invitedBy}</td>
+                  <td>
+                    {inv.status === "SENT" && (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <Button kind="subtle" onClick={() => decideInvitation(inv, "accept")}>Accept</Button>
+                        <Button kind="ghost" onClick={() => decideInvitation(inv, "decline")}>Decline</Button>
+                        <Button kind="ghost" onClick={() => decideInvitation(inv, "withdraw")}>Withdraw</Button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <Card title="Secondary market transfers"
+        sub="Sell down UNFUNDED commitment to a new bank. Funded historical allocations stay with the original lender. SoD: agent settler ≠ transferor.">
+        <div className="grid cols-4" style={{ alignItems: "end" }}>
+          <Field label="Selling lender">
+            <select value={tFromId} onChange={(e) => setTFromId(e.target.value ? Number(e.target.value) : "")}>
+              <option value="">— select —</option>
+              {lenders.map((p: any) => (
+                <option key={p.id} value={p.id}>{p.name} ({p.role}, {fmt.money(p.committedAmount || 0)})</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Buyer (bank)">
+            <input value={tToBank} onChange={(e) => setTToBank(e.target.value)} placeholder="e.g. Polestar Asset Mgmt" />
+          </Field>
+          <Field label="Buyer external ref">
+            <input value={tToBankRef} onChange={(e) => setTToBankRef(e.target.value)} placeholder="optional" />
+          </Field>
+          <Field label="Transfer amount (INR)">
+            <input value={tAmt} onChange={(e) => setTAmt(e.target.value)} placeholder="300000000" />
+          </Field>
+        </div>
+        <Field label="Reason">
+          <input value={tReason} onChange={(e) => setTReason(e.target.value)} placeholder="balance-sheet rotation" />
+        </Field>
+        <div className="btnrow" style={{ marginTop: 8 }}>
+          <Button kind="primary" busy={tBusy} onClick={proposeTransfer}>Propose transfer</Button>
+        </div>
+        {(xfers.data ?? []).length > 0 && (
+          <table>
+            <thead>
+              <tr><th>#</th><th>From</th><th>To</th><th>Amount</th><th>Status</th><th>Agent</th><th /></tr>
+            </thead>
+            <tbody>
+              {(xfers.data ?? []).map((t: any) => (
+                <tr key={t.id}>
+                  <td>{t.id}</td>
+                  <td>{t.fromName}</td>
+                  <td>{t.toBank}</td>
+                  <td>{fmt.money(t.transferAmount)}</td>
+                  <td>
+                    <Badge kind={t.status === "SETTLED" ? "ok"
+                                : t.status === "REJECTED" ? "bad" : "warn"}>{t.status}</Badge>
+                  </td>
+                  <td className="mono" style={{ fontSize: 12 }}>{t.agentDecidedBy ?? t.proposedBy}</td>
+                  <td>
+                    {t.status === "PROPOSED" && (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <Button kind="subtle" onClick={() => decideTransfer(t, "settle")}>Settle</Button>
+                        <Button kind="ghost" onClick={() => decideTransfer(t, "reject")}>Reject</Button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+    </>
   );
 }

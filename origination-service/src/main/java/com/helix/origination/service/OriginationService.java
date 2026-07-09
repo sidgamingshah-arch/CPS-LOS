@@ -4,6 +4,8 @@ import com.helix.common.audit.AuditService;
 import com.helix.common.model.Enums.ApplicationStatus;
 import com.helix.common.util.References;
 import com.helix.common.web.ApiException;
+import com.helix.common.workflow.WorkflowClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.helix.origination.dto.Dtos.AddCollateralRequest;
 import com.helix.origination.dto.Dtos.AddFacilityRequest;
 import com.helix.origination.dto.Dtos.AddSublimitRequest;
@@ -61,12 +63,25 @@ public class OriginationService {
     private final SublimitRepository sublimits;
     private final DocumentClassifier classifier;
     private final AuditService audit;
+    /** Optional best-effort hook into workflow-service; bean is absent when the URL isn't configured. */
+    private final WorkflowClient workflow;
+    /** Level-1 financial-analysis currency normalisation source (shared FX table with limit-service). */
+    private final com.helix.origination.client.FxRatesClient fx;
+    /** Configurable chart-of-accounts augmentation (extra input/derived lines + ratios). */
+    private final com.helix.origination.client.FinancialTemplateClient financialTemplates;
+    /** Borrower sector lookup (counterparty-service) — pinned on the application at create. */
+    private final com.helix.origination.client.CounterpartyClient counterparties;
 
     public OriginationService(LoanApplicationRepository applications, DocumentRepository documents,
                               FinancialPeriodRepository periods, SpreadCellRepository cells,
                               ProposedFacilityRepository facilities, CollateralRepository collaterals,
                               SublimitRepository sublimits,
-                              DocumentClassifier classifier, AuditService audit) {
+                              DocumentClassifier classifier, AuditService audit,
+                              com.helix.origination.client.FxRatesClient fx,
+                              com.helix.origination.client.FinancialTemplateClient financialTemplates,
+                              com.helix.origination.client.CounterpartyClient counterparties,
+                              @Autowired(required = false) WorkflowClient workflow) {
+        this.counterparties = counterparties;
         this.applications = applications;
         this.documents = documents;
         this.periods = periods;
@@ -75,7 +90,10 @@ public class OriginationService {
         this.collaterals = collaterals;
         this.sublimits = sublimits;
         this.classifier = classifier;
+        this.financialTemplates = financialTemplates;
         this.audit = audit;
+        this.fx = fx;
+        this.workflow = workflow;
     }
 
     // ---------------------------------------------------------------- application
@@ -89,6 +107,8 @@ public class OriginationService {
         app.setCounterpartyName(req.counterpartyName());
         app.setJurisdiction(req.jurisdiction());
         app.setSegment(req.segment());
+        // Pin the borrower's sector so sector-specific templates resolve downstream.
+        app.setSector(counterparties.sectorFor(req.counterpartyRef()));
         app.setFacilityType(req.facilityType());
         app.setRequestedAmount(req.requestedAmount());
         app.setCurrency(req.currency());
@@ -130,6 +150,11 @@ public class OriginationService {
                 "Created %s facility of %.0f %s for %s".formatted(
                         req.facilityType(), req.requestedAmount(), req.currency(), req.counterpartyName()),
                 Map.of("segment", req.segment(), "jurisdiction", req.jurisdiction()));
+        // Best-effort lifecycle materialisation in workflow-service. Outage / mismatched
+        // pack must never break origination — the WorkflowClient swallows + logs.
+        if (workflow != null) {
+            workflow.materialise(saved.getReference(), req.jurisdiction(), req.segment(), actor);
+        }
         return saved;
     }
 
@@ -147,6 +172,11 @@ public class OriginationService {
     @Transactional(readOnly = true)
     public List<LoanApplication> list() {
         return applications.findAll();
+    }
+
+    @Transactional(readOnly = true)
+    public List<LoanApplication> listByCounterparty(String counterpartyRef) {
+        return applications.findByCounterpartyRef(counterpartyRef);
     }
 
     @Transactional(readOnly = true)
@@ -217,14 +247,76 @@ public class OriginationService {
         existing.forEach(p -> cells.deleteAll(cells.findByPeriodId(p.getId())));
         periods.deleteAll(existing);
 
+        // ---- Level-1 currency: resolve the presentation currency every period is
+        // normalised into. Explicit on the request, else the latest period's
+        // native currency (request order: index 0 = latest).
+        String presentationCurrency = req.presentationCurrency() != null && !req.presentationCurrency().isBlank()
+                ? req.presentationCurrency().toUpperCase()
+                : (req.periods().isEmpty() ? null
+                        : req.periods().get(0).currency() == null ? null
+                        : req.periods().get(0).currency().toUpperCase());
+
+        // Resolve the configurable chart-of-accounts augmentation for this deal (extra
+        // lines/ratios on top of the canonical chart). EMPTY when none/unreachable.
+        com.helix.origination.client.FinancialTemplateClient.FinancialTemplate tmpl =
+                financialTemplates.resolve(app.getJurisdiction(), app.getSector(), app.getSegment());
+
         int ordinal = 0;
         int lineCount = 0;
         for (var p : req.periods()) {
+            String nativeCcy = p.currency() == null ? null : p.currency().toUpperCase();
+            // Resolve the native->presentation rate, in priority order:
+            //   1. explicit analyst rate (SUPPLIED)
+            //   2. 1.0 when currencies match (SAME_CURRENCY)
+            //   3. the dated FX_RATE master as at the period-end (DATED_MASTER)
+            //   4. the current spot table (CURRENT_SPOT)
+            // If a foreign period has no resolvable rate we FAIL the spread rather
+            // than silently treating it as 1.0 — the currency-consistency guard.
+            Double fxToPres;
+            String fxSource;
+            if (p.fxToPresentation() != null) {
+                if (p.fxToPresentation() <= 0) {
+                    throw ApiException.badRequest("fxToPresentation must be positive for period " + p.label());
+                }
+                fxToPres = p.fxToPresentation();
+                fxSource = "SUPPLIED";
+            } else if (nativeCcy != null && nativeCcy.equalsIgnoreCase(presentationCurrency)) {
+                fxToPres = 1.0;
+                fxSource = "SAME_CURRENCY";
+            } else {
+                Double dated = null;
+                java.time.LocalDate asOf = parsePeriodEnd(p.periodEnd());
+                if (fx != null && asOf != null) {
+                    dated = fx.crossRateAsOf(nativeCcy, presentationCurrency, asOf);
+                }
+                if (dated != null) {
+                    fxToPres = dated;
+                    fxSource = "DATED_MASTER";
+                } else {
+                    Double spot = fx == null ? null : fx.crossRate(nativeCcy, presentationCurrency);
+                    if (spot == null) {
+                        throw ApiException.badRequest(
+                                ("Period %s is in %s but the spread presentation currency is %s and no FX rate "
+                                + "is available (supply fxToPresentation, add a dated FX_RATE master point on/before "
+                                + "%s, or ensure %s->%s is in the spot FX table) — refusing to mix currencies silently")
+                                .formatted(p.label(), nativeCcy, presentationCurrency,
+                                        p.periodEnd() == null ? "the period-end" : p.periodEnd(),
+                                        nativeCcy, presentationCurrency));
+                    }
+                    fxToPres = spot;
+                    fxSource = "CURRENT_SPOT";
+                }
+            }
+
             FinancialPeriod period = new FinancialPeriod();
             period.setApplicationId(app.getId());
             period.setLabel(p.label());
             period.setGaap(p.gaap());
             period.setCurrency(p.currency());
+            period.setPresentationCurrency(presentationCurrency);
+            period.setFxToPresentation(fxToPres);
+            period.setFxRateSource(fxSource);
+            period.setPeriodEnd(p.periodEnd());
             period.setOrdinal(ordinal++);
             FinancialPeriod savedPeriod = periods.save(period);
 
@@ -249,7 +341,8 @@ public class OriginationService {
                 lineCount++;
             }
             // Derived lines are computed deterministically and itemised, never silently merged.
-            for (var d : CanonicalTaxonomy.deriveAll(values).entrySet()) {
+            Map<String, Double> derived = CanonicalTaxonomy.deriveAll(values);
+            for (var d : derived.entrySet()) {
                 SpreadCell cell = new SpreadCell();
                 cell.setPeriodId(savedPeriod.getId());
                 cell.setApplicationId(app.getId());
@@ -261,14 +354,40 @@ public class OriginationService {
                 cell.setConfidence(1.0);
                 cells.save(cell);
             }
+            // Template extra derived lines — formulas over the canonical inputs + derived
+            // (+ any template extra input lines that arrived in this period's data).
+            Map<String, Double> all = new LinkedHashMap<>(values);
+            all.putAll(derived);
+            for (var d : tmpl.extraDerived()) {
+                if (d.key() == null || d.formula() == null) continue;
+                double v = com.helix.common.formula.FormulaEvaluator.eval(d.formula(), all);
+                all.put(d.key(), v);
+                SpreadCell cell = new SpreadCell();
+                cell.setPeriodId(savedPeriod.getId());
+                cell.setApplicationId(app.getId());
+                cell.setTaxonomyKey(d.key());
+                cell.setLabel(d.label() == null ? d.key() : d.label());
+                cell.setDerived(true);
+                cell.setExtractedValue(v);
+                cell.setValue(v);
+                cell.setConfidence(1.0);
+                cells.save(cell);
+            }
         }
         app.setSpreadConfirmed(false);
         app.setStatus(ApplicationStatus.SPREADING.name());
         applications.save(app);
 
+        boolean multiCurrency = req.periods().stream()
+                .map(pp -> pp.currency() == null ? "" : pp.currency().toUpperCase())
+                .distinct().count() > 1;
         audit.ai("financial-spreading", "SPREAD_GENERATED", "Application", reference,
-                "Spread %d period(s), %d source lines into the canonical chart".formatted(req.periods().size(), lineCount),
-                Map.of("periods", req.periods().size(), "sourceLines", lineCount));
+                "Spread %d period(s), %d source lines into the canonical chart%s".formatted(
+                        req.periods().size(), lineCount,
+                        multiCurrency ? " (normalised to " + presentationCurrency + ")" : ""),
+                Map.of("periods", req.periods().size(), "sourceLines", lineCount,
+                        "presentationCurrency", presentationCurrency == null ? "" : presentationCurrency,
+                        "multiCurrency", multiCurrency));
         return analysis(reference);
     }
 
@@ -346,35 +465,55 @@ public class OriginationService {
         LoanApplication app = get(reference);
         List<FinancialPeriod> ps = periods.findByApplicationIdOrderByOrdinalAsc(app.getId());
         List<PeriodAnalysis> periodViews = new ArrayList<>();
-        Map<Integer, Map<String, Double>> byOrdinal = new LinkedHashMap<>();
+        // Native values per period feed the (unit-free) ratios; presentation-normalised
+        // values feed cross-period trends so currency switches don't corrupt growth.
+        Map<Integer, Map<String, Double>> normalisedByOrdinal = new LinkedHashMap<>();
+        String presentationCurrency = null;
+
+        var tmpl = financialTemplates.resolve(app.getJurisdiction(), app.getSector(), app.getSegment());
 
         for (FinancialPeriod p : ps) {
             List<SpreadCell> periodCells = cells.findByPeriodId(p.getId());
             Map<String, Double> values = new LinkedHashMap<>();
             List<CellView> views = new ArrayList<>();
-            // Order: input lines then derived, following the canonical chart.
-            for (String key : CanonicalTaxonomy.INPUT_LINES) {
+            // Order: canonical input, canonical derived, then any template extra input/derived lines.
+            List<String> ordered = new ArrayList<>(CanonicalTaxonomy.INPUT_LINES);
+            ordered.addAll(CanonicalTaxonomy.DERIVED_LINES);
+            for (var l : tmpl.extraInputs()) ordered.add(l.key());
+            for (var d : tmpl.extraDerived()) ordered.add(d.key());
+            for (String key : ordered) {
                 periodCells.stream().filter(c -> c.getTaxonomyKey().equals(key)).findFirst()
                         .ifPresent(c -> {
                             values.put(c.getTaxonomyKey(), c.getValue());
                             views.add(toView(c));
                         });
             }
-            for (String key : CanonicalTaxonomy.DERIVED_LINES) {
-                periodCells.stream().filter(c -> c.getTaxonomyKey().equals(key)).findFirst()
-                        .ifPresent(c -> {
-                            values.put(c.getTaxonomyKey(), c.getValue());
-                            views.add(toView(c));
-                        });
+            // Ratios: the standard set (unchanged) MERGED with the template's extra ratios
+            // (formula-driven over this period's values). Standard keys are never overwritten.
+            Map<String, Double> ratios = Ratios.compute(values);
+            for (var r : tmpl.extraRatios()) {
+                if (r.key() == null || r.formula() == null || ratios.containsKey(r.key())) continue;
+                ratios.put(r.key(), com.helix.common.formula.FormulaEvaluator.evalRounded(r.formula(), values));
             }
-            byOrdinal.put(p.getOrdinal(), values);
+            double rate = p.getFxToPresentation() == null ? 1.0 : p.getFxToPresentation();
+            Map<String, Double> presentationValues = normalise(values, rate);
+            normalisedByOrdinal.put(p.getOrdinal(), presentationValues);
+            if (p.getPresentationCurrency() != null) presentationCurrency = p.getPresentationCurrency();
             periodViews.add(new PeriodAnalysis(p.getId(), p.getLabel(), p.getGaap(), p.getCurrency(),
-                    views, Ratios.compute(values)));
+                    views, ratios,
+                    p.getPresentationCurrency(), p.getFxToPresentation(), presentationValues,
+                    p.getPeriodEnd(), p.getFxRateSource()));
         }
 
-        Map<String, Double> trends = trends(byOrdinal);
-        List<String> flags = benchmarkFlags(byOrdinal.get(0));
-        return new SpreadAnalysis(reference, app.isSpreadConfirmed(), periodViews, trends, flags);
+        // Trends on presentation-normalised values (the currency-consistency fix).
+        Map<String, Double> trends = trends(normalisedByOrdinal);
+        // Benchmark flags read ratios (unit-free), so native vs normalised is irrelevant.
+        List<String> flags = benchmarkFlags(normalisedByOrdinal.get(0));
+        boolean currencyConsistent = ps.stream()
+                .map(FinancialPeriod::getCurrency).filter(java.util.Objects::nonNull)
+                .distinct().count() <= 1;
+        return new SpreadAnalysis(reference, app.isSpreadConfirmed(), periodViews, trends, flags,
+                presentationCurrency, currencyConsistent, tmpl.templateKey());
     }
 
     @Transactional(readOnly = true)
@@ -382,22 +521,48 @@ public class OriginationService {
         LoanApplication app = get(reference);
         List<FinancialPeriod> ps = periods.findByApplicationIdOrderByOrdinalAsc(app.getId());
         Map<String, Double> latest = new LinkedHashMap<>();
-        Map<Integer, Map<String, Double>> byOrdinal = new LinkedHashMap<>();
+        // Normalised per period so cross-period trends are currency-consistent.
+        Map<Integer, Map<String, Double>> normalisedByOrdinal = new LinkedHashMap<>();
         for (FinancialPeriod p : ps) {
             Map<String, Double> values = new LinkedHashMap<>();
             for (SpreadCell c : cells.findByPeriodId(p.getId())) {
                 values.put(c.getTaxonomyKey(), c.getValue());
             }
-            byOrdinal.put(p.getOrdinal(), values);
+            double rate = p.getFxToPresentation() == null ? 1.0 : p.getFxToPresentation();
+            normalisedByOrdinal.put(p.getOrdinal(), normalise(values, rate));
             if (p.getOrdinal() == 0) {
-                latest = values;
+                latest = values;   // latest stays in its native currency for the authoritative path
             }
         }
+        // Standard ratios + the resolved template's extra ratios, so downstream consumers
+        // (e.g. the scoring-model engine's RATIO:* parameter source) can reference them too.
+        Map<String, Double> ratios = Ratios.compute(latest);
+        var tmpl = financialTemplates.resolve(app.getJurisdiction(), app.getSector(), app.getSegment());
+        for (var r : tmpl.extraRatios()) {
+            if (r.key() == null || r.formula() == null || ratios.containsKey(r.key())) continue;
+            ratios.put(r.key(), com.helix.common.formula.FormulaEvaluator.evalRounded(r.formula(), latest));
+        }
         return new CreditInputs(app.getReference(), app.getCounterpartyId(), app.getCounterpartyRef(),
-                app.getCounterpartyName(), app.getJurisdiction(), app.getSegment(), app.getFacilityType(),
+                app.getCounterpartyName(), app.getJurisdiction(), app.getSegment(), app.getSector(),
+                app.getFacilityType(),
                 app.getRequestedAmount(), app.getCurrency(), app.getTenorMonths(), app.getCollateralType(),
                 app.getCollateralValue(), app.isSecured(), app.isSpreadConfirmed(),
-                latest, Ratios.compute(latest), trends(byOrdinal));
+                latest, ratios, trends(normalisedByOrdinal));
+    }
+
+    private static java.time.LocalDate parsePeriodEnd(String iso) {
+        if (iso == null || iso.isBlank()) return null;
+        try { return java.time.LocalDate.parse(iso.trim()); } catch (Exception e) { return null; }
+    }
+
+    /** Restate every monetary line into the presentation currency (value * fxToPresentation). */
+    private Map<String, Double> normalise(Map<String, Double> values, double fxToPresentation) {
+        if (fxToPresentation == 1.0) return values;
+        Map<String, Double> out = new LinkedHashMap<>();
+        for (var e : values.entrySet()) {
+            out.put(e.getKey(), Math.round(e.getValue() * fxToPresentation * 100.0) / 100.0);
+        }
+        return out;
     }
 
     private Map<String, Double> trends(Map<Integer, Map<String, Double>> byOrdinal) {
@@ -486,6 +651,75 @@ public class OriginationService {
     public List<FacilityView> facilityViewsFor(String reference) {
         return facilities.findByApplicationIdOrderByOrdinalAsc(get(reference).getId())
                 .stream().map(this::toFacilityView).toList();
+    }
+
+    /**
+     * Applies an APPROVED post-sanction amendment to the facility record. Called by
+     * decision-service once the DoA-routed approval completes — origination never
+     * decides the amendment itself, it just owns the facility of record. Setting
+     * absolute target values makes the call retry-safe (a replay is a no-op).
+     */
+    @Transactional
+    public ProposedFacility applyAmendment(String reference, String facilityRef, Double newAmount,
+                                           Integer newTenorMonths, String amendmentRef, String actor) {
+        ProposedFacility f = facilities.findByApplicationIdOrderByOrdinalAsc(get(reference).getId()).stream()
+                .filter(x -> facilityRef.equals(x.getReference())).findFirst()
+                .orElseThrow(() -> ApiException.notFound("No facility " + facilityRef + " on " + reference));
+        double oldAmount = f.getAmount();
+        int oldTenor = f.getTenorMonths();
+        if (newAmount != null && newAmount > 0) f.setAmount(newAmount);
+        if (newTenorMonths != null && newTenorMonths > 0) f.setTenorMonths(newTenorMonths);
+        ProposedFacility saved = facilities.save(f);
+        audit.human(actor, "FACILITY_AMENDED", "ProposedFacility", String.valueOf(f.getId()),
+                "Amended %s: amount %.2f -> %.2f, tenor %d -> %d (amendment %s)".formatted(
+                        facilityRef, oldAmount, saved.getAmount(), oldTenor, saved.getTenorMonths(),
+                        amendmentRef == null ? "-" : amendmentRef),
+                Map.of("facilityRef", facilityRef, "oldAmount", oldAmount, "newAmount", saved.getAmount(),
+                        "oldTenor", oldTenor, "newTenor", saved.getTenorMonths(),
+                        "amendmentRef", amendmentRef == null ? "" : amendmentRef));
+        return saved;
+    }
+
+    /**
+     * Sets the facility's rate type. FIXED carries no benchmark; FLOATING needs
+     * benchmark code + spread + reset frequency. The actual rate at each reset is
+     * resolved at schedule-time against the BENCHMARK master, so a benchmark move
+     * (EBLR/SOFR update) flows through to the next period automatically.
+     */
+    @Transactional
+    public ProposedFacility setRateType(String reference, String facilityRef, String rateType,
+                                        String benchmarkCode, Double spreadBps,
+                                        Integer resetFrequencyMonths, String actor) {
+        ProposedFacility f = facilities.findByApplicationIdOrderByOrdinalAsc(get(reference).getId()).stream()
+                .filter(x -> facilityRef.equals(x.getReference())).findFirst()
+                .orElseThrow(() -> ApiException.notFound("No facility " + facilityRef + " on " + reference));
+        String rt = rateType == null ? "FIXED" : rateType.toUpperCase();
+        if (!"FIXED".equals(rt) && !"FLOATING".equals(rt)) {
+            throw ApiException.badRequest("rateType must be FIXED or FLOATING");
+        }
+        if ("FLOATING".equals(rt)) {
+            if (benchmarkCode == null || benchmarkCode.isBlank()) {
+                throw ApiException.badRequest("FLOATING requires benchmarkCode");
+            }
+            if (spreadBps == null) {
+                throw ApiException.badRequest("FLOATING requires spreadBps");
+            }
+        }
+        f.setRateType(rt);
+        f.setBenchmarkCode("FLOATING".equals(rt) ? benchmarkCode.toUpperCase() : null);
+        f.setSpreadBps("FLOATING".equals(rt) ? spreadBps : null);
+        f.setResetFrequencyMonths("FLOATING".equals(rt)
+                ? (resetFrequencyMonths == null ? 3 : resetFrequencyMonths) : null);
+        ProposedFacility saved = facilities.save(f);
+        audit.human(actor, "FACILITY_RATE_TYPE_SET", "ProposedFacility", String.valueOf(f.getId()),
+                "Rate type %s on %s%s".formatted(rt, facilityRef,
+                        "FLOATING".equals(rt)
+                                ? " — " + benchmarkCode + " + " + spreadBps + "bps, reset " + saved.getResetFrequencyMonths() + "m"
+                                : ""),
+                Map.of("facilityRef", facilityRef, "rateType", rt,
+                        "benchmarkCode", saved.getBenchmarkCode() == null ? "" : saved.getBenchmarkCode(),
+                        "spreadBps", saved.getSpreadBps() == null ? 0.0 : saved.getSpreadBps()));
+        return saved;
     }
 
     @Transactional
@@ -651,6 +885,8 @@ public class OriginationService {
         double headroom = Math.max(0.0, f.getAmount() - sublimitTotal);
         return new FacilityView(f.getId(), f.getReference(), f.getOrdinal(), f.isPrimary(),
                 f.getFacilityType(), f.getAmount(), f.getCurrency(), f.getTenorMonths(),
-                f.getPurpose(), f.getIndicativeRate(), subViews, groupViews, sublimitTotal, headroom);
+                f.getPurpose(), f.getIndicativeRate(),
+                f.getRateType(), f.getBenchmarkCode(), f.getSpreadBps(), f.getResetFrequencyMonths(),
+                subViews, groupViews, sublimitTotal, headroom);
     }
 }
