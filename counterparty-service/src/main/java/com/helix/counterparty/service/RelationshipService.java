@@ -120,9 +120,14 @@ public class RelationshipService {
         Counterparty cp = cp(counterpartyId);
         cp.setGroupId(groupId);
         Counterparty saved = counterparties.save(cp);
+        // Use a mutable map — Map.of rejects null values, but groupRmId is nullable, and
+        // String.valueOf(null) writes the literal string "null" into the audit detail.
+        java.util.Map<String, Object> taggedDetail = new java.util.LinkedHashMap<>();
+        taggedDetail.put("groupId", groupId);
+        taggedDetail.put("groupRm", g.getGroupRmId());
         audit.human(actor, "GROUP_TAGGED", "Counterparty", cp.getReference(),
                 "Tagged to group %s; group RM %s".formatted(g.getName(), g.getGroupRmId()),
-                Map.of("groupId", groupId, "groupRm", String.valueOf(g.getGroupRmId())));
+                taggedDetail);
         return saved;
     }
 
@@ -132,15 +137,36 @@ public class RelationshipService {
         List<Counterparty> members = counterparties.findByGroupId(groupId);
         long withAdverse = members.stream().filter(Counterparty::isAdverseMedia).count();
         long obligors = members.stream().filter(m -> "OBLIGOR".equals(m.getRecordType())).count();
-        return Map.of(
-                "group", Map.of("reference", g.getReference(), "name", g.getName(),
-                        "groupRm", String.valueOf(g.getGroupRmId()), "multiCountry", g.isMultiCountry()),
-                "memberCount", members.size(),
-                "obligorCount", obligors,
-                "members", members.stream().map(m -> Map.of(
-                        "reference", m.getReference(), "name", m.getLegalName(),
-                        "recordType", m.getRecordType(), "segment", m.getSegment(), "rm", String.valueOf(m.getRmId()))).toList(),
-                "riskFlags", Map.of("adverseMediaMembers", withAdverse));
+        // The nested "group" payload must match the wire shape that downstream services
+        // deserialise into CounterpartyGroupDto(id, reference, name, groupRmId, country,
+        // multiCountry) — see decision-service UpstreamClient. Use a LinkedHashMap so we
+        // can carry null values (Map.of rejects nulls) when an optional field isn't set.
+        java.util.Map<String, Object> groupPayload = new java.util.LinkedHashMap<>();
+        groupPayload.put("id", g.getId());
+        groupPayload.put("reference", g.getReference());
+        groupPayload.put("name", g.getName());
+        groupPayload.put("groupRmId", g.getGroupRmId());
+        groupPayload.put("country", g.getCountry());
+        groupPayload.put("multiCountry", g.isMultiCountry());
+
+        java.util.List<java.util.Map<String, Object>> memberList = members.stream()
+                .map(m -> {
+                    java.util.Map<String, Object> mm = new java.util.LinkedHashMap<>();
+                    mm.put("reference", m.getReference());
+                    mm.put("name", m.getLegalName());
+                    mm.put("recordType", m.getRecordType());
+                    mm.put("segment", m.getSegment());
+                    mm.put("rm", m.getRmId());
+                    return mm;
+                }).toList();
+
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("group", groupPayload);
+        out.put("memberCount", members.size());
+        out.put("obligorCount", obligors);
+        out.put("members", memberList);
+        out.put("riskFlags", Map.of("adverseMediaMembers", withAdverse));
+        return out;
     }
 
     private Counterparty cp(Long id) {

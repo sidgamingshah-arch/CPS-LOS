@@ -42,8 +42,29 @@ public class ExposureRecord {
     private String segment;
     private String sector;
 
+    /** Extra concentration dimensions (instrument / duration / counterparty-group). */
+    private String facilityType;     // instrument dimension
+    private Integer tenorMonths;     // drives the duration-bucket dimension
+    private String groupRef;         // counterparty-group dimension (falls back to the obligor ref)
+
     @Column(nullable = false, length = 5)
     private String finalGrade;
+
+    /**
+     * Grade at the FIRST booking of this exposure — immutable once set (never overwritten on
+     * re-register). Baseline for the SICR-by-notch rule + rating-transition tracking. Nullable
+     * for legacy rows; a null origination disables the notch rule (no-op, current behaviour).
+     */
+    @Column(length = 5)
+    private String originationGrade;
+
+    /**
+     * Collateral snapshot at booking — drives the RBI doubtful-asset secured/unsecured
+     * provisioning split. Nullable for legacy rows; a null/absent value is treated as
+     * unsecured (the conservative 100%-unsecured path).
+     */
+    private Double collateralValue;
+    private Boolean secured;
 
     private double pd;
     private double lgd;

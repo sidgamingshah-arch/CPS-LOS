@@ -13,4 +13,12 @@ public interface RulePackRepository extends JpaRepository<RulePack, Long> {
     Optional<RulePack> findFirstByJurisdictionAndTypeAndActiveTrueOrderByVersionDesc(String jurisdiction, String type);
 
     boolean existsByCodeAndVersion(String code, int version);
+
+    // ---- G6: authoring + effectiveFrom evaluation ----
+
+    /** All ACTIVE versions for a (jurisdiction,type), newest first; the effective-date filter is applied in the service. */
+    List<RulePack> findByJurisdictionAndTypeAndActiveTrueOrderByVersionDesc(String jurisdiction, String type);
+
+    /** Checker queue: inactive drafts (the fully-signed filter is applied in the service). */
+    List<RulePack> findByActiveFalseOrderByJurisdictionAscTypeAscVersionDesc();
 }

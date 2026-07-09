@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { decision, origination, portfolio, risk, tracking as covTracking, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, GradeBadge, statusTone, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, Field, GovFlow, GradeBadge, statusTone, useAsync } from "../ui";
+import { useCodes } from "../code-values";
 import CopilotPanel from "../CopilotPanel";
 
-const REASON_CODES = ["POST_BALANCE_SHEET_EVENT", "MANAGEMENT_QUALITY", "GROUP_SUPPORT", "SECTOR_OUTLOOK", "DATA_QUALITY", "COLLATERAL_STRENGTH", "OTHER"];
+// CODE_VALUE-backed dropdowns now drive every selector below — admin-editable
+// under maker-checker. FALLBACK_REASON kept ONLY for the initial useState seed.
+const FALLBACK_REASON = "OTHER";
 
 function line(v: number) {
   return { value: v, sourceDocument: "audited_financials_FY24.pdf", sourcePage: "P12", coordinates: "tbl1", confidence: 0.97 };
@@ -26,6 +29,13 @@ const SAMPLE_PERIODS = {
 
 export default function DealWorkspace({ reference }: { reference: string }) {
   const { actor, notify, nav } = useApp();
+  // CODE_VALUE dropdowns shared across the nested forms below.
+  const grades = useCodes("GRADE_SCALE");
+  const overrideReasons = useCodes("OVERRIDE_REASON");
+  const overrideRoles = useCodes("OVERRIDE_ROLE");
+  const decisionOutcomes = useCodes("DECISION_OUTCOME");
+  const facilityTypes = useCodes("FACILITY_TYPE");
+  const collateralTypes = useCodes("COLLATERAL_TYPE");
   const app = useAsync(() => origination.get(reference), [reference]);
   const analysis = useAsync(() => origination.analysis(reference), [reference]);
   const docs = useAsync(() => origination.docs(reference), [reference]);
@@ -86,6 +96,9 @@ export default function DealWorkspace({ reference }: { reference: string }) {
         right={<AddCollateralButton reference={reference} facilities={facs.data || []} onAdded={cols.reload} />}>
         <CollateralsTable cols={cols.data || []} onChange={() => { cols.reload(); reload(); }} />
       </Card>
+
+      {/* Collateral intelligence: type-aware extraction + LTV revaluation + charge-Excel */}
+      <CollateralIntelBlock reference={reference} cols={cols.data || []} onChange={cols.reload} />
 
       {/* Documents */}
       <Card title="Documents" sub="AI classification with confidence; low-confidence routed to human review (PRD §3).">
@@ -260,6 +273,9 @@ export default function DealWorkspace({ reference }: { reference: string }) {
         )}
       </Card>
 
+      {/* Covenant intelligence: extract from CP free text + assess compliance certificate */}
+      <CovenantIntelBlock reference={reference} onConfirmed={() => covs.reload()} />
+
       {/* Covenant tracking workflow */}
       <CovenantTrackingBlock reference={reference} />
 
@@ -307,14 +323,14 @@ export default function DealWorkspace({ reference }: { reference: string }) {
 
   function OverrideForm({ reference, onDone }: { reference: string; onDone: () => void }) {
     const [open, setOpen] = useState(false);
-    const [g, setG] = useState("BBB"); const [rc, setRc] = useState(REASON_CODES[0]); const [role, setRole] = useState("CREDIT_OFFICER"); const [note, setNote] = useState("");
+    const [g, setG] = useState("BBB"); const [rc, setRc] = useState(FALLBACK_REASON); const [role, setRole] = useState("CREDIT_OFFICER"); const [note, setNote] = useState("");
     if (!open) return <Button kind="subtle" onClick={() => setOpen(true)}>Override rating…</Button>;
     return (
       <div className="card" style={{ marginTop: 10, background: "#fbfaff" }}>
         <div className="grid cols-2">
-          <Field label="Proposed grade"><select value={g} onChange={(e) => setG(e.target.value)}>{["AAA", "AA", "A", "BBB", "BB", "B", "CCC", "CC", "C", "D"].map((x) => <option key={x}>{x}</option>)}</select></Field>
-          <Field label="Role"><select value={role} onChange={(e) => setRole(e.target.value)}>{["ANALYST", "CREDIT_OFFICER", "CREDIT_COMMITTEE"].map((x) => <option key={x}>{x}</option>)}</select></Field>
-          <Field label="Reason code"><select value={rc} onChange={(e) => setRc(e.target.value)}>{REASON_CODES.map((x) => <option key={x}>{x}</option>)}</select></Field>
+          <Field label="Proposed grade"><select value={g} onChange={(e) => setG(e.target.value)}>{grades.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}</select></Field>
+          <Field label="Role"><select value={role} onChange={(e) => setRole(e.target.value)}>{overrideRoles.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}</select></Field>
+          <Field label="Reason code"><select value={rc} onChange={(e) => setRc(e.target.value)}>{overrideReasons.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}</select></Field>
           <Field label="Note"><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         </div>
         <div className="btnrow">
@@ -389,7 +405,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
       <div className="card" style={{ marginTop: 12, background: "#fbfaff" }}>
         <div className="gate">Named human decision required at {required} authority. AI cannot approve.</div>
         <div className="grid cols-2">
-          <Field label="Outcome"><select value={outcome} onChange={(e) => setOutcome(e.target.value)}>{["APPROVE", "CONDITIONAL_APPROVE", "DECLINE", "REFER"].map((x) => <option key={x}>{x}</option>)}</select></Field>
+          <Field label="Outcome"><select value={outcome} onChange={(e) => setOutcome(e.target.value)}>{decisionOutcomes.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}</select></Field>
           <Field label="Your authority (acting as decider)"><input value={required} disabled /></Field>
         </div>
         <Field label="Conditions (one per line)"><textarea rows={2} value={conds} onChange={(e) => setConds(e.target.value)} /></Field>
@@ -452,7 +468,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
     return (
       <span>
         <select value={f.facilityType} onChange={(e) => setF({ ...f, facilityType: e.target.value })} style={{ width: 170, marginRight: 6 }}>
-          {["TERM_LOAN", "WORKING_CAPITAL", "REVOLVING_CREDIT", "PROJECT_LOAN", "GUARANTEE", "TRADE_LINE"].map((x) => <option key={x}>{x}</option>)}
+          {facilityTypes.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
         </select>
         <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: +e.target.value })} style={{ width: 130, marginRight: 6 }} />
         <input type="number" value={f.tenorMonths} onChange={(e) => setF({ ...f, tenorMonths: +e.target.value })} style={{ width: 70, marginRight: 6 }} />
@@ -588,7 +604,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
     return (
       <span>
         <select value={c.collateralType} onChange={(e) => setC({ ...c, collateralType: e.target.value })} style={{ width: 150, marginRight: 6 }}>
-          {["CASH", "GOVT_SECURITIES", "EQUITY_LISTED", "PROPERTY", "RECEIVABLES"].map((x) => <option key={x}>{x}</option>)}
+          {collateralTypes.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
         </select>
         <input placeholder="description" value={c.description} onChange={(e) => setC({ ...c, description: e.target.value })} style={{ width: 160, marginRight: 6 }} />
         <input type="number" value={c.marketValue} onChange={(e) => setC({ ...c, marketValue: +e.target.value })} style={{ width: 120, marginRight: 6 }} />
@@ -722,4 +738,257 @@ export default function DealWorkspace({ reference }: { reference: string }) {
       </Card>
     );
   }
+}
+
+// ── Covenant intelligence: AI extraction from CP free text + certificate assessment ──
+function CovenantIntelBlock({ reference, onConfirmed }: { reference: string; onConfirmed: () => void }) {
+  const { actor, notify } = useApp();
+  const extractions = useAsync(() => decision.covExtractions(reference).catch(() => [] as any[]), [reference]);
+  const assessments = useAsync(() => decision.certAssessments(reference).catch(() => [] as any[]), [reference]);
+
+  const [clauseText, setClauseText] = useState(
+    "The Borrower shall maintain a DSCR of at least 1.40x tested quarterly.\n" +
+    "Net leverage (Net Debt to EBITDA) shall not exceed 2.5x at all times.\n" +
+    "Interest coverage to be no less than 3.0 times, tested annually.",
+  );
+  const [certText, setCertText] = useState(
+    "Covenant compliance certificate for the quarter:\n" +
+    "1. DSCR for the period stood at 2.00x — Complied.\n" +
+    "2. Debt/EBITDA reported at 2.10x — Complied.",
+  );
+  const [busy, setBusy] = useState(false);
+
+  const go = async (fn: () => Promise<any>, ok: string) => {
+    setBusy(true);
+    try { await fn(); notify(ok); }
+    catch (e: any) { notify(e.message, true); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Card title="Covenant intelligence"
+      sub="AI extracts covenant definitions + thresholds from CP free text, and reads compliance certificates — flagging taxonomy mismatches and disagreements vs the deterministic spread recompute. Advisory; a human confirms each."
+      right={<GovFlow ai="AI EXTRACTS / READS" human="HUMAN CONFIRMS" note="never auto-applied to figures" />}>
+
+      {/* Extraction from CP free text */}
+      <div className="grid cols-2" style={{ alignItems: "start" }}>
+        <div>
+          <Field label="Covenant clauses (free text from the CP)">
+            <textarea rows={5} value={clauseText} onChange={(e) => setClauseText(e.target.value)} />
+          </Field>
+          <Button busy={busy} disabled={!clauseText.trim()}
+            onClick={() => go(async () => { await decision.covExtract(reference, clauseText, actor); extractions.reload(); }, "Covenants extracted — review below")}>
+            Extract covenants
+          </Button>
+        </div>
+        <div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Extracted candidates</div>
+          {(extractions.data || []).length === 0 ? <div className="muted">None yet.</div> : (
+            <table><thead><tr><th>Metric</th><th>Test</th><th className="num">Conf.</th><th>Status</th><th></th></tr></thead>
+              <tbody>{extractions.data!.map((e: any) => (
+                <tr key={e.id}>
+                  <td>{e.metric}<div className="prov" style={{ fontSize: 11 }}>“{e.reportedLabel}”</div></td>
+                  <td className="mono">{e.operator} {e.threshold ?? "—"}</td>
+                  <td className="num">{Math.round((e.confidence || 0) * 100)}%</td>
+                  <td><Badge kind={e.status === "CONFIRMED" ? "ok" : e.status === "REJECTED" ? "bad" : "ai"}>{e.status}</Badge></td>
+                  <td>{e.status === "DRAFT" && (
+                    <div className="btnrow">
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await decision.covConfirmExtraction(e.id, {}, actor); extractions.reload(); onConfirmed(); }, "Covenant created")}>Confirm</button>
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await decision.covRejectExtraction(e.id, { note: "rejected" }, actor); extractions.reload(); }, "Rejected")}>Reject</button>
+                    </div>
+                  )}</td>
+                </tr>))}</tbody></table>
+          )}
+        </div>
+      </div>
+
+      <div className="hr" style={{ margin: "16px 0", borderTop: "1px solid var(--line)" }} />
+
+      {/* Certificate assessment */}
+      <div className="grid cols-2" style={{ alignItems: "start" }}>
+        <div>
+          <Field label="Compliance certificate (borrower-submitted)">
+            <textarea rows={4} value={certText} onChange={(e) => setCertText(e.target.value)} />
+          </Field>
+          <Button busy={busy} disabled={!certText.trim()}
+            onClick={() => go(async () => { await decision.certAssess(reference, certText, actor); assessments.reload(); }, "Certificate assessed — review below")}>
+            Assess certificate
+          </Button>
+        </div>
+        <div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Assessment vs deterministic recompute</div>
+          {(assessments.data || []).length === 0 ? <div className="muted">None yet.</div> : (
+            <table><thead><tr><th>Metric</th><th>Reported</th><th>Recompute</th><th>Verdict</th></tr></thead>
+              <tbody>{assessments.data!.map((a: any) => (
+                <tr key={a.id}>
+                  <td>
+                    {a.systemMetric}
+                    {a.taxonomyMismatch && <div><Badge kind="warn">taxonomy mismatch</Badge></div>}
+                    <div className="prov" style={{ fontSize: 11 }}>“{a.reportedLabel}”</div>
+                  </td>
+                  <td><Badge kind={a.reportedStatus === "COMPLIED" ? "ok" : a.reportedStatus === "NOT_COMPLIED" ? "bad" : "info"}>{a.reportedStatus}</Badge></td>
+                  <td className="mono">{a.recomputedObserved == null ? "—" : `${fmt.num(a.recomputedObserved, 2)} ${a.operator} ${a.threshold}`}<br/>
+                    {a.recomputedPassed == null ? "" : a.recomputedPassed ? <Badge kind="ok">pass</Badge> : <Badge kind="bad">breach</Badge>}</td>
+                  <td>{a.agreement == null ? <span className="muted">—</span>
+                    : a.agreement ? <Badge kind="ok">agrees</Badge> : <Badge kind="bad">DISAGREES</Badge>}</td>
+                </tr>))}</tbody></table>
+          )}
+          {(assessments.data || []).some((a: any) => a.agreement === false) && (
+            <div className="alert err" style={{ marginTop: 8 }}>
+              <AiBadge label="AI · advisory" /> One or more borrower-reported statuses disagree with the deterministic recompute — analyst review required.
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ── Collateral intelligence: type-aware extraction + LTV revaluation + charge-Excel ──
+function CollateralIntelBlock({ reference, cols, onChange }: { reference: string; cols: any[]; onChange: () => void }) {
+  const { actor, notify } = useApp();
+  const extractions = useAsync(() => origination.colExtractions(reference).catch(() => [] as any[]), [reference]);
+  const revaluations = useAsync(() => origination.colRevaluations(reference).catch(() => [] as any[]), [reference]);
+
+  const KINDS = ["VALUATION_REPORT", "TITLE_DEED", "INSURANCE_POLICY", "VEHICLE_RC", "BOND_CERT", "PG_DEED"];
+  const [docKind, setDocKind] = useState("VALUATION_REPORT");
+  const [docText, setDocText] = useState(
+    "VALUATION REPORT\nProperty type: Industrial warehouse\nAddress: Plot 14, Phase 2, Pune\nMarket value: INR 4,80,00,000\nValuation date: 2026-03-15\nValuer: Knight & Co Surveyors\n",
+  );
+
+  const [revalCollateralId, setRevalCollateralId] = useState<number | "">("");
+  const [revalNewMV, setRevalNewMV] = useState<string>("");
+  const [revalDrawn, setRevalDrawn] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+
+  const go = async (fn: () => Promise<any>, ok: string) => {
+    setBusy(true);
+    try { await fn(); notify(ok); }
+    catch (e: any) { notify(e.message, true); }
+    finally { setBusy(false); }
+  };
+
+  const sevTone = (s: string) => s === "BREACH" ? "bad" : s === "WARN" ? "warn" : "info";
+
+  return (
+    <Card title="Collateral intelligence"
+      sub="Type-aware extraction over an uploaded collateral document, LTV-driven revaluation alerts, and the charge-Excel export. Advisory; live collateral values move only on human confirm."
+      right={<GovFlow ai="AI EXTRACTS / FLAGS" human="HUMAN CONFIRMS" note="capital projection untouched" />}>
+
+      {/* Type-aware extraction */}
+      <div className="grid cols-2" style={{ alignItems: "start" }}>
+        <div>
+          <Field label="Document kind">
+            <select value={docKind} onChange={(e) => setDocKind(e.target.value)}>
+              {KINDS.map((k) => <option key={k} value={k}>{k.replace(/_/g, " ")}</option>)}
+            </select>
+          </Field>
+          <Field label="Document text">
+            <textarea rows={6} value={docText} onChange={(e) => setDocText(e.target.value)} />
+          </Field>
+          <Button busy={busy} disabled={!docText.trim()}
+            onClick={() => go(async () => { await origination.colExtract(reference, { documentKind: docKind, text: docText }, actor); extractions.reload(); }, "Collateral extracted — review below")}>
+            Extract collateral
+          </Button>
+        </div>
+        <div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Extracted candidates</div>
+          {(extractions.data || []).length === 0 ? <div className="muted">None yet.</div> : (
+            <table>
+              <thead><tr><th>Type · kind</th><th>Fields</th><th>Missing</th><th>Status</th><th></th></tr></thead>
+              <tbody>{extractions.data!.map((e: any) => (
+                <tr key={e.id}>
+                  <td>{e.collateralType}<div className="prov" style={{ fontSize: 11 }}>{e.documentKind}</div></td>
+                  <td className="num">{Object.keys(e.fields || {}).length}<div className="prov" style={{ fontSize: 11 }}>conf {Math.round((e.overallConfidence || 0) * 100)}%</div></td>
+                  <td>{(e.missingMandatory || []).length === 0
+                    ? <Badge kind="ok">complete</Badge>
+                    : <Badge kind="warn">{(e.missingMandatory || []).length} missing</Badge>}</td>
+                  <td><Badge kind={e.status === "CONFIRMED" ? "ok" : e.status === "REJECTED" ? "bad" : "ai"}>{e.status}</Badge></td>
+                  <td>{e.status === "SUGGESTED" && (
+                    <div className="btnrow">
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await origination.colConfirm(e.id, {}, actor); extractions.reload(); onChange(); }, "Collateral created")}>Confirm</button>
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await origination.colReject(e.id, { note: "rejected" }, actor); extractions.reload(); }, "Rejected")}>Reject</button>
+                    </div>
+                  )}</td>
+                </tr>))}</tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div style={{ margin: "16px 0", borderTop: "1px solid var(--line)" }} />
+
+      {/* LTV revaluation */}
+      <div className="grid cols-2" style={{ alignItems: "start" }}>
+        <div>
+          <Field label="Collateral">
+            <select value={revalCollateralId} onChange={(e) => setRevalCollateralId(e.target.value ? Number(e.target.value) : "")}>
+              <option value="">— select collateral —</option>
+              {(cols || []).map((c: any) => (
+                <option key={c.id} value={c.id}>#{c.id} · {c.collateralType} · {fmt.money(c.marketValue, "")}</option>
+              ))}
+            </select>
+          </Field>
+          <div className="grid cols-2">
+            <Field label="New market value"><input type="number" value={revalNewMV} onChange={(e) => setRevalNewMV(e.target.value)} /></Field>
+            <Field label="Drawn exposure"><input type="number" value={revalDrawn} onChange={(e) => setRevalDrawn(e.target.value)} /></Field>
+          </div>
+          <Button busy={busy} disabled={!revalCollateralId || !revalNewMV || !revalDrawn}
+            onClick={() => go(async () => {
+              await origination.colRevalue(Number(revalCollateralId),
+                { newMarketValue: Number(revalNewMV), drawnExposure: Number(revalDrawn),
+                  trigger: "VALUATION_UPDATE", ltvThreshold: 0.80 }, actor);
+              revaluations.reload();
+            }, "Revaluation captured — review below")}>
+            Capture revaluation
+          </Button>
+          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+            <AiBadge label="AI · advisory" /> Captured values are advisory until a human applies them to the live collateral row.
+          </div>
+        </div>
+        <div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Recent revaluations</div>
+          {(revaluations.data || []).length === 0 ? <div className="muted">None yet.</div> : (
+            <table>
+              <thead><tr><th>When</th><th>Col</th><th>MV</th><th>LTV</th><th>Severity</th><th>Status</th><th></th></tr></thead>
+              <tbody>{revaluations.data!.slice(0, 8).map((r: any) => (
+                <tr key={r.id}>
+                  <td className="mono" style={{ whiteSpace: "nowrap" }}>{new Date(r.createdAt).toLocaleString()}</td>
+                  <td>#{r.collateralId}</td>
+                  <td className="mono">{fmt.money(r.previousMarketValue, "")} → {fmt.money(r.newMarketValue, "")}</td>
+                  <td className="mono">{r.ltvBefore.toFixed(2)} → {r.ltvAfter.toFixed(2)}</td>
+                  <td><Badge kind={sevTone(r.alertSeverity)}>{r.alertSeverity}</Badge></td>
+                  <td><Badge kind={r.confirmStatus === "APPLIED" ? "ok" : r.confirmStatus === "REJECTED" ? "bad" : "warn"}>{r.confirmStatus}</Badge></td>
+                  <td>{r.confirmStatus === "PENDING" && (
+                    <div className="btnrow">
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await origination.colReviewRevaluation(r.id, { apply: true, note: "confirmed" }, actor); revaluations.reload(); onChange(); }, "Applied to live collateral")}>Apply</button>
+                      <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                        onClick={() => go(async () => { await origination.colReviewRevaluation(r.id, { apply: false, note: "rejected" }, actor); revaluations.reload(); }, "Rejected")}>Reject</button>
+                    </div>
+                  )}</td>
+                </tr>))}</tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div style={{ margin: "16px 0", borderTop: "1px solid var(--line)" }} />
+
+      {/* Charge-Excel */}
+      <div className="flexbetween">
+        <div>
+          <b>Charge-Excel</b>
+          <div className="muted" style={{ fontSize: 12 }}>
+            CSV of every collateral with registration / valuation / perfection — the pre-release file for the limit-release checklist.
+          </div>
+        </div>
+        <a className="btn" href={origination.chargeExcelUrl(reference)} target="_blank" rel="noreferrer">Download CSV</a>
+      </div>
+    </Card>
+  );
 }

@@ -51,6 +51,20 @@ public class EclResult {
     private double iracProvisionRate;
     private double iracProvision;
 
+    // ---- RBI supervisory overlay (IN-RBI only; null/false when the pack keys are absent) ----
+    /** SMA sub-class of a standard account: NONE | SMA_0 | SMA_1 | SMA_2 (null when disabled). */
+    @Column(length = 6)
+    private String smaClass;
+    /** Doubtful age band D1/D2/D3 when the age-banded provisioning path applies. */
+    @Column(length = 4)
+    private String doubtfulAgeBand;
+    private double securedPortion;
+    private double unsecuredPortion;
+    private double securedProvision;
+    private double unsecuredProvision;
+    /** True when the restructure classification floor lifted stage/IRAC above the DPD-implied level. */
+    private boolean restructureFloorApplied;
+
     @Column(nullable = false)
     private double reportedProvision;
     private String reportedProvisionPolicy;

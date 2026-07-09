@@ -31,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/applications")
@@ -51,6 +52,11 @@ public class OriginationController {
     @GetMapping
     public List<LoanApplication> list() {
         return origination.list();
+    }
+
+    @GetMapping("/by-counterparty/{counterpartyRef}")
+    public List<LoanApplication> listByCounterparty(@PathVariable String counterpartyRef) {
+        return origination.listByCounterparty(counterpartyRef);
     }
 
     @GetMapping("/{reference}")
@@ -130,6 +136,29 @@ public class OriginationController {
     public void removeFacility(@PathVariable Long id,
                                @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
         origination.removeFacility(id, actor);
+    }
+
+    /** Set the facility's rate type (FIXED / FLOATING with benchmark + spread + reset frequency). */
+    @PostMapping("/{reference}/facilities/{facilityRef}/rate-type")
+    public ProposedFacility setRateType(@PathVariable String reference, @PathVariable String facilityRef,
+                                        @RequestBody Map<String, Object> req,
+                                        @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
+        String rateType = req.get("rateType") == null ? "FIXED" : String.valueOf(req.get("rateType"));
+        String benchmark = req.get("benchmarkCode") == null ? null : String.valueOf(req.get("benchmarkCode"));
+        Double spread = req.get("spreadBps") == null ? null : ((Number) req.get("spreadBps")).doubleValue();
+        Integer reset = req.get("resetFrequencyMonths") == null ? null : ((Number) req.get("resetFrequencyMonths")).intValue();
+        return origination.setRateType(reference, facilityRef, rateType, benchmark, spread, reset, actor);
+    }
+
+    /** Apply an APPROVED post-sanction amendment (called by decision-service; retry-safe). */
+    @PostMapping("/{reference}/facilities/{facilityRef}/amend")
+    public ProposedFacility applyAmendment(@PathVariable String reference, @PathVariable String facilityRef,
+                                           @RequestBody Map<String, Object> req,
+                                           @RequestHeader("X-Actor") String actor) {
+        Double newAmount = req.get("newAmount") == null ? null : ((Number) req.get("newAmount")).doubleValue();
+        Integer newTenor = req.get("newTenorMonths") == null ? null : ((Number) req.get("newTenorMonths")).intValue();
+        String amendmentRef = req.get("amendmentRef") == null ? null : String.valueOf(req.get("amendmentRef"));
+        return origination.applyAmendment(reference, facilityRef, newAmount, newTenor, amendmentRef, actor);
     }
 
     // ---- collaterals (multi) ----

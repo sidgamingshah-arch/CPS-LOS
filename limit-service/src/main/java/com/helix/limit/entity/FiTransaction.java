@@ -65,6 +65,7 @@ public class FiTransaction {
     @Column(nullable = false, length = 20)
     private String status;              // PENDING_APPROVAL | APPROVED | REJECTED | EXCEPTION_APPROVED
 
+    private String submittedBy;         // maker: actor who raised the tx (SoD source vs approver)
     private String approvedBy;
     private String rejectedReason;
     private Double approvedRate;

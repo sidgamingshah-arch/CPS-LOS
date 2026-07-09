@@ -3,9 +3,13 @@ package com.helix.risk.api;
 import com.helix.risk.dto.AdvisoryDtos.MacroScenarioRequest;
 import com.helix.risk.dto.OptimiserDtos.OptimisationResult;
 import com.helix.risk.dto.OptimiserDtos.OptimiseRequest;
+import com.helix.risk.dto.OptimiserDtos.PricingExceptionDecision;
+import com.helix.risk.dto.OptimiserDtos.PricingExceptionRequest;
 import com.helix.risk.entity.MacroImpactAssessment;
+import com.helix.risk.entity.PricingException;
 import com.helix.risk.entity.RagAssessment;
 import com.helix.risk.service.AdvisoryRiskService;
+import com.helix.risk.service.PricingExceptionService;
 import com.helix.risk.service.PricingOptimiser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,10 +31,13 @@ public class AdvisoryController {
 
     private final AdvisoryRiskService advisory;
     private final PricingOptimiser optimiser;
+    private final PricingExceptionService exceptions;
 
-    public AdvisoryController(AdvisoryRiskService advisory, PricingOptimiser optimiser) {
+    public AdvisoryController(AdvisoryRiskService advisory, PricingOptimiser optimiser,
+                             PricingExceptionService exceptions) {
         this.advisory = advisory;
         this.optimiser = optimiser;
+        this.exceptions = exceptions;
     }
 
     @PostMapping("/{reference}/rag")
@@ -60,5 +67,27 @@ public class AdvisoryController {
     public OptimisationResult optimise(@PathVariable String reference, @RequestBody OptimiseRequest req,
                                        @RequestHeader(value = "X-Actor", defaultValue = "pricing.analyst") String actor) {
         return optimiser.optimise(reference, req, actor);
+    }
+
+    @PostMapping("/{reference}/pricing/exception")
+    public PricingException proposeException(@PathVariable String reference, @RequestBody PricingExceptionRequest req,
+                                             @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
+        return exceptions.propose(reference, req.proposedRate() == null ? 0 : req.proposedRate(), req.reason(), actor);
+    }
+
+    @GetMapping("/{reference}/pricing/exception")
+    public List<PricingException> listExceptions(@PathVariable String reference) {
+        return exceptions.list(reference);
+    }
+
+    @GetMapping("/pricing/exception/pending")
+    public List<PricingException> pendingExceptions() {
+        return exceptions.pending();
+    }
+
+    @PostMapping("/pricing/exception/{id}/decision")
+    public PricingException decideException(@PathVariable Long id, @RequestBody PricingExceptionDecision req,
+                                            @RequestHeader(value = "X-Actor", defaultValue = "credit.officer") String actor) {
+        return exceptions.decide(id, req.approve(), req.comment(), actor);
     }
 }

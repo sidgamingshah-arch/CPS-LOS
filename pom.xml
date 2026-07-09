@@ -31,6 +31,7 @@
         <module>portfolio-service</module>
         <module>copilot-service</module>
         <module>limit-service</module>
+        <module>workflow-service</module>
         <module>gateway-service</module>
     </modules>
 

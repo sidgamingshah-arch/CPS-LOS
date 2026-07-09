@@ -1,0 +1,1344 @@
+{
+  "run_started": "2026-07-08T16:53:27+00:00",
+  "total_duration_sec": 101.29097747802734,
+  "java_version": "Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/root/.ccr/java-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=46671 -Dhttp.nonProxyHosts=localhost|127.0.0.1|::1|127.*|0.*|::|169.254.*|anthropic.com|*.anthropic.com|*.anthropic.com|registry.npmjs.org|jsr.io|npm.jsr.io|pypi.org|files.pythonhosted.org|index.crates.io|proxy.golang.org|host.docker.internal|10.*|172.16.*|172.17.*|172.18.*|172.19.*|172.20.*|172.21.*|172.22.*|172.23.*|172.24.*|172.25.*|172.26.*|172.27.*|172.28.*|172.29.*|172.30.*|172.31.*|192.168.*|100.64.0.0/10|*.svc.cluster.local|*.svc.cluster.local -Djdk.http.auth.tunneling.disabledSchemes= -Djdk.http.auth.proxying.disabledSchemes=",
+  "git_sha": "0478fbeac3af",
+  "git_branch": "claude/amazing-mayer-kaCZy",
+  "reference_data": {
+    "jurisdictions": [
+      {
+        "code": "IN-RBI",
+        "name": "India \u2014 Reserve Bank of India (SA Directions 2026 / IRAC)",
+        "effectiveFrom": "2027-04-01",
+        "capitalApproach": "SA",
+        "capitalRuleset": "rbi_sa_directions_2026",
+        "ecraMapping": "rbi_ecra_2026",
+        "odrAdjustment": "rbi_odr_band",
+        "dueDiligenceRequired": true,
+        "saccrEnabled": true,
+        "cvaApproach": "BA-CVA",
+        "provisioningFrameworks": [
+          "ind_as_109",
+          "irac"
+        ],
+        "reportedProvisionPolicy": "max(ecl,irac)",
+        "sicrRules": "ind_as_109_sicr_v2",
+        "exposureLimits": "rbi_large_exposure_framework",
+        "kycCddRules": "rbi_kyc_md_tiers",
+        "reportingPack": "rbi_returns_2027",
+        "dataResidency": "in-region-only",
+        "active": true
+      },
+      {
+        "code": "AE-CBUAE",
+        "name": "UAE \u2014 Central Bank of the UAE (Basel III)",
+        "effectiveFrom": "2024-01-01",
+        "capitalApproach": "SA",
+        "capitalRuleset": "cbuae_sa_basel3",
+        "ecraMapping": "cbuae_ecra",
+        "odrAdjustment": null,
+        "dueDiligenceRequired": false,
+        "saccrEnabled": true,
+        "cvaApproach": "SA-CVA",
+        "provisioningFrameworks": [
+          "ifrs_9"
+        ],
+        "reportedProvisionPolicy": "ecl",
+        "sicrRules": "ifrs_9_sicr_v1",
+        "exposureLimits": "cbuae_large_exposure",
+        "kycCddRules": "cbuae_aml_tiers",
+        "reportingPack": "cbuae_returns",
+        "dataResidency": "in-region-only",
+        "active": true
+      }
+    ],
+    "rule_packs_IN": [
+      {
+        "id": 1,
+        "code": "rbi_sa_directions_2026",
+        "type": "CAPITAL_SA",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "unrated_risk_weights": {
+            "SOVEREIGN": 0.0,
+            "BANK": 0.4,
+            "CORPORATE": 1.0,
+            "SME_CORPORATE": 0.85,
+            "SPECIALISED_LENDING": 1.0,
+            "EQUITY": 2.5,
+            "OTHER": 1.0
+          },
+          "below_investment_grade_corporate_rw": 1.5,
+          "slotting_risk_weights": {
+            "STRONG": 0.7,
+            "GOOD": 0.9,
+            "SATISFACTORY": 1.15,
+            "WEAK": 2.5,
+            "DEFAULT": 0.0
+          },
+          "ccf_undrawn_commitment": 0.4,
+          "ccf_trade_contingent": 0.2,
+          "ccf_direct_credit_substitute": 1.0,
+          "crm_collateral_haircuts": {
+            "CASH": 0.0,
+            "GOVT_SECURITIES": 0.02,
+            "EQUITY_LISTED": 0.25,
+            "PROPERTY": 0.4,
+            "RECEIVABLES": 0.5
+          },
+          "due_diligence_uplift": 0.25,
+          "capital_ratio_min": 0.09
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.315Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.315Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.317Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 2,
+        "code": "rbi_ecra_2026",
+        "type": "ECRA_MAPPING",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "corporate": {
+            "AAA_AA": 0.2,
+            "A": 0.5,
+            "BBB": 1.0,
+            "BB": 1.0,
+            "B_AND_BELOW": 1.5,
+            "UNRATED": 1.0
+          },
+          "bank": {
+            "AAA_AA": 0.2,
+            "A": 0.3,
+            "BBB": 0.5,
+            "BB": 1.0,
+            "B_AND_BELOW": 1.5,
+            "UNRATED": 0.4
+          },
+          "internal_grade_to_bucket": {
+            "AAA": "AAA_AA",
+            "AA": "AAA_AA",
+            "A": "A",
+            "BBB": "BBB",
+            "BB": "BB",
+            "B": "B_AND_BELOW",
+            "CCC": "B_AND_BELOW",
+            "CC": "B_AND_BELOW",
+            "C": "B_AND_BELOW",
+            "D": "B_AND_BELOW"
+          }
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.325Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.325Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.325Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 3,
+        "code": "rbi_rating_pd_v3",
+        "type": "RATING_PD_MAP",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "AAA": 0.0003,
+          "AA": 0.0005,
+          "A": 0.001,
+          "BBB": 0.003,
+          "BB": 0.01,
+          "B": 0.035,
+          "CCC": 0.12,
+          "CC": 0.25,
+          "C": 0.4,
+          "D": 1.0
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.334Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.334Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.335Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 4,
+        "code": "rbi_lgd_foundation",
+        "type": "LGD_MAP",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "SENIOR_UNSECURED": 0.45,
+          "SENIOR_SECURED": 0.25,
+          "SUBORDINATED": 0.75,
+          "FULLY_COLLATERALISED": 0.15
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.341Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.341Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.342Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 5,
+        "code": "ind_as_109_sicr_v2",
+        "type": "PROVISIONING",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "sicr_dpd_stage2": 30,
+          "sicr_dpd_stage3": 90,
+          "sicr_notch_downgrade_stage2": 3,
+          "ecl_macro_overlay": 1.1,
+          "irac_provision_rates": {
+            "STANDARD": 0.004,
+            "SUB_STANDARD": 0.15,
+            "DOUBTFUL": 0.4,
+            "LOSS": 1.0
+          },
+          "irac_dpd_substandard": 90,
+          "irac_dpd_doubtful": 365,
+          "reported_provision_policy": "max(ecl,irac)"
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.345Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.345Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.346Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 6,
+        "code": "rbi_doa_matrix",
+        "type": "DOA_MATRIX",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "levels": [
+            {
+              "max_amount": 50000000.0,
+              "min_grade": "BBB",
+              "authority": "RM_HEAD"
+            },
+            {
+              "max_amount": 250000000.0,
+              "min_grade": "BB",
+              "authority": "CREDIT_OFFICER"
+            },
+            {
+              "max_amount": 1000000000.0,
+              "min_grade": "B",
+              "authority": "CREDIT_COMMITTEE"
+            },
+            {
+              "max_amount": 1.7976931348623157e+308,
+              "min_grade": "D",
+              "authority": "BOARD_COMMITTEE"
+            }
+          ],
+          "deviation_escalates_one_level": true,
+          "below_hurdle_requires_escalation": true
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.350Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.350Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.352Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 9,
+        "code": "rbi_concentration_limits",
+        "type": "CONCENTRATION_LIMITS",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "capital_base": 50000000000.0,
+          "watch_pct": 0.8,
+          "warning_pct": 0.9,
+          "capital_buffer_pct": 0.1,
+          "dimensions": {
+            "SINGLE_NAME": {
+              "basis": "CAPITAL",
+              "limitPct": 0.15
+            },
+            "GROUP": {
+              "basis": "CAPITAL",
+              "limitPct": 0.25
+            },
+            "SECTOR": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.2
+            },
+            "GEOGRAPHY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.4
+            },
+            "INSTRUMENT": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.5
+            },
+            "DURATION_BUCKET": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.45
+            },
+            "RATING": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.35
+            },
+            "CURRENCY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.6
+            },
+            "SECTOR_x_GEOGRAPHY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.15
+            },
+            "RATING_x_SECTOR": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.12
+            }
+          },
+          "correlations": {
+            "INFRASTRUCTURE": {
+              "CONSTRUCTION": 0.8,
+              "STEEL": 0.7,
+              "POWER": 0.65,
+              "REAL_ESTATE": 0.55,
+              "MANUFACTURING": 0.45,
+              "LOGISTICS": 0.4,
+              "RETAIL": 0.2,
+              "TRADE": 0.2
+            },
+            "REAL_ESTATE": {
+              "CONSTRUCTION": 0.85,
+              "STEEL": 0.6,
+              "INFRASTRUCTURE": 0.55,
+              "MANUFACTURING": 0.35,
+              "RETAIL": 0.3,
+              "POWER": 0.3,
+              "LOGISTICS": 0.25,
+              "TRADE": 0.2
+            },
+            "MANUFACTURING": {
+              "STEEL": 0.65,
+              "LOGISTICS": 0.55,
+              "TRADE": 0.5,
+              "INFRASTRUCTURE": 0.45,
+              "CONSTRUCTION": 0.4,
+              "RETAIL": 0.4,
+              "POWER": 0.35,
+              "REAL_ESTATE": 0.35
+            },
+            "RETAIL": {
+              "TRADE": 0.75,
+              "LOGISTICS": 0.6,
+              "MANUFACTURING": 0.4,
+              "REAL_ESTATE": 0.3,
+              "INFRASTRUCTURE": 0.2
+            },
+            "TRADE": {
+              "RETAIL": 0.75,
+              "LOGISTICS": 0.65,
+              "MANUFACTURING": 0.5,
+              "INFRASTRUCTURE": 0.2
+            },
+            "LOGISTICS": {
+              "TRADE": 0.65,
+              "RETAIL": 0.6,
+              "MANUFACTURING": 0.55,
+              "INFRASTRUCTURE": 0.4
+            },
+            "STEEL": {
+              "INFRASTRUCTURE": 0.7,
+              "MANUFACTURING": 0.65,
+              "CONSTRUCTION": 0.65,
+              "REAL_ESTATE": 0.6,
+              "POWER": 0.45
+            },
+            "CONSTRUCTION": {
+              "REAL_ESTATE": 0.85,
+              "INFRASTRUCTURE": 0.8,
+              "STEEL": 0.65,
+              "MANUFACTURING": 0.4,
+              "POWER": 0.4
+            },
+            "POWER": {
+              "INFRASTRUCTURE": 0.65,
+              "STEEL": 0.45,
+              "CONSTRUCTION": 0.4,
+              "MANUFACTURING": 0.35,
+              "REAL_ESTATE": 0.3
+            }
+          }
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.374Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.374Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.378Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 10,
+        "code": "rbi_pricing_v1",
+        "type": "PRICING",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "hurdle_raroc": 0.15,
+          "cost_of_funds": 0.075,
+          "opex_rate": 0.01,
+          "target_capital_ratio": 0.12,
+          "min_spread": 0.005,
+          "exception_single_level_bps": 100,
+          "exception_two_level_bps": 200
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.388Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.388Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.389Z",
+        "fullySignedOff": true
+      }
+    ],
+    "rule_packs_AE": [
+      {
+        "id": 13,
+        "code": "cbuae_sa_basel3",
+        "type": "CAPITAL_SA",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "unrated_risk_weights": {
+            "SOVEREIGN": 0.0,
+            "BANK": 0.4,
+            "CORPORATE": 1.0,
+            "SME_CORPORATE": 0.85,
+            "SPECIALISED_LENDING": 1.0,
+            "EQUITY": 2.5,
+            "OTHER": 1.0
+          },
+          "below_investment_grade_corporate_rw": 1.5,
+          "slotting_risk_weights": {
+            "STRONG": 0.7,
+            "GOOD": 0.9,
+            "SATISFACTORY": 1.15,
+            "WEAK": 2.5,
+            "DEFAULT": 0.0
+          },
+          "ccf_undrawn_commitment": 0.4,
+          "ccf_trade_contingent": 0.2,
+          "ccf_direct_credit_substitute": 1.0,
+          "crm_collateral_haircuts": {
+            "CASH": 0.0,
+            "GOVT_SECURITIES": 0.02,
+            "EQUITY_LISTED": 0.25,
+            "PROPERTY": 0.4,
+            "RECEIVABLES": 0.5
+          },
+          "due_diligence_uplift": 0.25,
+          "capital_ratio_min": 0.09
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.424Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.424Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.425Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 14,
+        "code": "cbuae_ecra",
+        "type": "ECRA_MAPPING",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "corporate": {
+            "AAA_AA": 0.2,
+            "A": 0.5,
+            "BBB": 1.0,
+            "BB": 1.0,
+            "B_AND_BELOW": 1.5,
+            "UNRATED": 1.0
+          },
+          "bank": {
+            "AAA_AA": 0.2,
+            "A": 0.3,
+            "BBB": 0.5,
+            "BB": 1.0,
+            "B_AND_BELOW": 1.5,
+            "UNRATED": 0.4
+          },
+          "internal_grade_to_bucket": {
+            "AAA": "AAA_AA",
+            "AA": "AAA_AA",
+            "A": "A",
+            "BBB": "BBB",
+            "BB": "BB",
+            "B": "B_AND_BELOW",
+            "CCC": "B_AND_BELOW",
+            "CC": "B_AND_BELOW",
+            "C": "B_AND_BELOW",
+            "D": "B_AND_BELOW"
+          }
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.432Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.432Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.433Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 15,
+        "code": "cbuae_rating_pd",
+        "type": "RATING_PD_MAP",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "AAA": 0.0003,
+          "AA": 0.0005,
+          "A": 0.001,
+          "BBB": 0.003,
+          "BB": 0.01,
+          "B": 0.035,
+          "CCC": 0.12,
+          "CC": 0.25,
+          "C": 0.4,
+          "D": 1.0
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.439Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.439Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.440Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 16,
+        "code": "cbuae_lgd",
+        "type": "LGD_MAP",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "SENIOR_UNSECURED": 0.45,
+          "SENIOR_SECURED": 0.25,
+          "SUBORDINATED": 0.75,
+          "FULLY_COLLATERALISED": 0.15
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.446Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.446Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.447Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 17,
+        "code": "ifrs_9_sicr_v1",
+        "type": "PROVISIONING",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "sicr_dpd_stage2": 30,
+          "sicr_dpd_stage3": 90,
+          "sicr_notch_downgrade_stage2": 3,
+          "ecl_macro_overlay": 1.05,
+          "irac_provision_rates": {},
+          "reported_provision_policy": "ecl"
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.452Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.452Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.454Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 18,
+        "code": "cbuae_doa_matrix",
+        "type": "DOA_MATRIX",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "levels": [
+            {
+              "max_amount": 20000000.0,
+              "min_grade": "BBB",
+              "authority": "RM_HEAD"
+            },
+            {
+              "max_amount": 100000000.0,
+              "min_grade": "BB",
+              "authority": "CREDIT_OFFICER"
+            },
+            {
+              "max_amount": 500000000.0,
+              "min_grade": "B",
+              "authority": "CREDIT_COMMITTEE"
+            },
+            {
+              "max_amount": 1.7976931348623157e+308,
+              "min_grade": "D",
+              "authority": "BOARD_COMMITTEE"
+            }
+          ],
+          "deviation_escalates_one_level": true,
+          "below_hurdle_requires_escalation": true
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.459Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.459Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.459Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 21,
+        "code": "cbuae_concentration_limits",
+        "type": "CONCENTRATION_LIMITS",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "capital_base": 50000000000.0,
+          "watch_pct": 0.8,
+          "warning_pct": 0.9,
+          "capital_buffer_pct": 0.1,
+          "dimensions": {
+            "SINGLE_NAME": {
+              "basis": "CAPITAL",
+              "limitPct": 0.25
+            },
+            "GROUP": {
+              "basis": "CAPITAL",
+              "limitPct": 0.25
+            },
+            "SECTOR": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.2
+            },
+            "GEOGRAPHY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.4
+            },
+            "INSTRUMENT": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.5
+            },
+            "DURATION_BUCKET": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.45
+            },
+            "RATING": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.35
+            },
+            "CURRENCY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.6
+            },
+            "SECTOR_x_GEOGRAPHY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.18
+            },
+            "RATING_x_SECTOR": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.12
+            }
+          },
+          "correlations": {
+            "INFRASTRUCTURE": {
+              "CONSTRUCTION": 0.8,
+              "STEEL": 0.7,
+              "POWER": 0.65,
+              "REAL_ESTATE": 0.55,
+              "MANUFACTURING": 0.45,
+              "LOGISTICS": 0.4,
+              "RETAIL": 0.2,
+              "TRADE": 0.2
+            },
+            "REAL_ESTATE": {
+              "CONSTRUCTION": 0.85,
+              "STEEL": 0.6,
+              "INFRASTRUCTURE": 0.55,
+              "MANUFACTURING": 0.35,
+              "RETAIL": 0.3,
+              "POWER": 0.3,
+              "LOGISTICS": 0.25,
+              "TRADE": 0.2
+            },
+            "MANUFACTURING": {
+              "STEEL": 0.65,
+              "LOGISTICS": 0.55,
+              "TRADE": 0.5,
+              "INFRASTRUCTURE": 0.45,
+              "CONSTRUCTION": 0.4,
+              "RETAIL": 0.4,
+              "POWER": 0.35,
+              "REAL_ESTATE": 0.35
+            },
+            "RETAIL": {
+              "TRADE": 0.75,
+              "LOGISTICS": 0.6,
+              "MANUFACTURING": 0.4,
+              "REAL_ESTATE": 0.3,
+              "INFRASTRUCTURE": 0.2
+            },
+            "TRADE": {
+              "RETAIL": 0.75,
+              "LOGISTICS": 0.65,
+              "MANUFACTURING": 0.5,
+              "INFRASTRUCTURE": 0.2
+            },
+            "LOGISTICS": {
+              "TRADE": 0.65,
+              "RETAIL": 0.6,
+              "MANUFACTURING": 0.55,
+              "INFRASTRUCTURE": 0.4
+            },
+            "STEEL": {
+              "INFRASTRUCTURE": 0.7,
+              "MANUFACTURING": 0.65,
+              "CONSTRUCTION": 0.65,
+              "REAL_ESTATE": 0.6,
+              "POWER": 0.45
+            },
+            "CONSTRUCTION": {
+              "REAL_ESTATE": 0.85,
+              "INFRASTRUCTURE": 0.8,
+              "STEEL": 0.65,
+              "MANUFACTURING": 0.4,
+              "POWER": 0.4
+            },
+            "POWER": {
+              "INFRASTRUCTURE": 0.65,
+              "STEEL": 0.45,
+              "CONSTRUCTION": 0.4,
+              "MANUFACTURING": 0.35,
+              "REAL_ESTATE": 0.3
+            }
+          }
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.476Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.476Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.477Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 22,
+        "code": "cbuae_pricing",
+        "type": "PRICING",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "hurdle_raroc": 0.135,
+          "cost_of_funds": 0.045,
+          "opex_rate": 0.011,
+          "target_capital_ratio": 0.12,
+          "min_spread": 0.005,
+          "exception_single_level_bps": 100,
+          "exception_two_level_bps": 200
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-08T16:53:21.481Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-08T16:53:21.481Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-08T16:53:21.482Z",
+        "fullySignedOff": true
+      }
+    ],
+    "masters_active_counts": {
+      "ACTOR_ROLE": 27,
+      "AI_GOVERNANCE": 12,
+      "FACILITY_MASTER": 5,
+      "COLLATERAL_MASTER": 5,
+      "COVENANT_LIBRARY": 6,
+      "CP_MASTER": 10,
+      "CHECKLIST_MASTER": 1,
+      "EWS_TRIGGER": 3,
+      "FTP_CURVE": 3,
+      "RAROC_PD_TERM_STRUCTURE": 1,
+      "RAROC_BENCHMARK": 2,
+      "DEDUP_RULES": 1,
+      "NEGATIVE_LIST": 4,
+      "MODEL_DEFINITION": 3,
+      "FINANCIAL_TEMPLATE": 3,
+      "PROJECTION_TEMPLATE": 1,
+      "ESG_BAND": 3,
+      "CODE_VALUE": 14,
+      "EXTERNAL_RATING_AGENCY": 2,
+      "VALUATION_AGENCY": 1,
+      "CHARGE_AGENCY": 2,
+      "EMAIL_TEMPLATE": 4
+    }
+  },
+  "suites": [
+    {
+      "suite": "e2e_smoke",
+      "exit_code": 0,
+      "duration_sec": 18.68,
+      "passed": 421,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  CSV injection defanged \u2014 formula-trigger cell prefixed with apostrophe\n  PASS  newMarketValue <= 0 rejected (400) \u2014 wipeout routes through write-off path\n  PASS  invalid effectiveDate rejected (400, not 500)\n  PASS  AUTHORITATIVE rating UNCHANGED by collateral extraction + revaluation\n== 46. Client Planning Template (CPT): auto-generation \u00b7 wallet sizing \u00b7 nudges (advisory) ==\n  PASS  CPT generated (v1, DRAFT, advisory)\n  PASS  CPT pulls live application count (Meridian has \u22651 application)\n  PASS  CPT carries the real group reference (not a synthetic GROUP_ID placeholder)\n  PASS  CPT carries exposure-weighted figures (PD + RAROC + latestGrade)\n  PASS  CPT figures match the authoritative risk-service snapshot (quoted verbatim)\n  PASS  current facility types non-empty\n  PASS  cross-sell whitespace excludes already-held products\n  PASS  wallet sizing produces 3 scenarios (BEST / MOST_LIKELY / WORST)\n  PASS  each scenario has a 3-year revenue path or null when base unknown\n  PASS  BEST_CASE delta > MOST_LIKELY delta > WORST_CASE delta\n  PASS  wallet sizing produces non-null projected revenue paths from spread financials\n  PASS  indicative wallet is derived (heuristic, not null) when base revenue is known\n  PASS  industry insights carry sector + headwinds + tailwinds\n  PASS  completeness nudges surface RM action items\n  PASS  call-report nudge present (no CALL_REPORT event in audit history)\n  PASS  CPT markdown contains all major sections\n  PASS  CPT cites the upstream services (grounding)\n  PASS  CPT generation stamped as AI event (decision-service audit)\n  PASS  CPT regeneration -> v2 with overridden trend\n  PASS  CPT version history exposed\n  PASS  CPT confirmed -> CONFIRMED\n  PASS  re-review rejected (already CONFIRMED, 409)\n  PASS  CPT v1 rejected -> REJECTED\n  PASS  AUTHORITATIVE rating + pricing UNCHANGED by CPT\n  PASS  CPT for unknown counterparty returns 404 (not 502 'upstream unavailable')\n  PASS  Group insights for unknown group returns 404 (not 502)\n== 13. Audit trail ==\n  PASS  risk-service audit trail present\n== G1. Rating-override authority resolved from ACTOR_ROLE, not the request body ==\n  PASS  override: self-attested CRO ignored \u2014 analyst notch-capped (403)\n  PASS  override: genuine CREDIT_COMMITTEE succeeds despite a modest body role\n== E. \u00a75 config-over-code: seeded masters/packs now DRIVE their engines ==\n  PASS  E6: DAYS_PAST_DUE fires at 45 DPD (master watch cut 30)\n  PASS  E6: EWS DPD threshold edit pending\n  PASS  E6: checker approves EWS edit -> ACTIVE\n  PASS  E6: raising the master cut to 60 stops the 45-DPD deal firing DAYS_PAST_DUE (master-driven)\n  PASS  E1: PROVISIONING pack carries irac_dpd_substandard\n  PASS  E1: at the pack cutpoint -> SUB_STANDARD and the engine trace echoes the pack value\n  PASS  E1: one day below the pack cutpoint -> STANDARD\n  PASS  E4: suggestions sourced from the COVENANT_LIBRARY master (DSCR + NET_LEVERAGE present)\n  PASS  E4: library covenant edit pending\n  PASS  E4: a new library covenant appears in suggestions with its master threshold\n  PASS  E5: dedup echoes the configured identifierFields from DEDUP_RULES\n\nRESULT: 421 passed, 0 failed",
+      "ok": true
+    },
+    {
+      "suite": "e2e_masters",
+      "exit_code": 0,
+      "duration_sec": 0.39,
+      "passed": 21,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Default (null-jurisdiction) record: submit \u2192 approve ==\n  PASS  default submitted PENDING v1\n  PASS  default ACTIVE\n== 2. Jurisdiction override for the SAME key: submit \u2192 approve ==\n  PASS  override submitted PENDING v1 (own version line)\n  PASS  override ACTIVE\n== 3. The default must STILL be ACTIVE (no collision) ==\n  PASS  default + override BOTH active\n== 4. Jurisdiction-aware resolution ==\n  PASS  AE resolves to OVERRIDE\n  PASS  unrelated jur falls back to DEFAULT\n  PASS  no-jurisdiction resolves to DEFAULT\n== 5. Versioning the default supersedes only the default (override untouched) ==\n  PASS  default v2 submitted\n  PASS  only one active default after versioning\n  PASS  override STILL active v1 (not superseded by default versioning)\n== 6. Versioning the override supersedes only the override (default untouched) ==\n  PASS  override v2 submitted (own line)\n  PASS  AE resolves to override v2\n  PASS  default still v2 (untouched by override versioning)\n== 7. Maker-checker SoD still enforced ==\n  PASS  self-approval blocked (403)\n  PASS  different checker approves (200)\n== 8. Blank jurisdiction normalises to the DEFAULT line (no duplicate ACTIVE) ==\n  PASS  blank jurisdiction stored as null (default line)\n  PASS  blank re-submit versions the SAME default line (v2, not v1)\n  PASS  exactly one ACTIVE default after blank-jurisdiction versioning\n== 9. resolve() does NOT cross-jurisdiction fallback (no default \u2192 404) ==\n  PASS  unrelated jurisdiction with no default returns 404 (no cross-jurisdiction leak)\n  PASS  the AE-CBUAE override itself still resolves\n\n== masters jurisdiction e2e: 21 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_auth",
+      "exit_code": 0,
+      "duration_sec": 2.71,
+      "passed": 13,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== Auth e2e (stack mode: PERMISSIVE) ==\n\n== 1. Login mints a token; bad credentials rejected ==\n  PASS  bad password rejected (401)\n  PASS  unknown user rejected (401)\n  PASS  login returns a token\n  PASS  login echoes the actor\n  PASS  login resolves roles from ACTOR_ROLE\n\n== 2. /me echoes verified claims ==\n  PASS  me returns the verified actor\n  PASS  me resolves roles\n  PASS  me without a token rejected (401)\n\n== 3. SPOOF: token subject overrides a conflicting client X-Actor ==\n  PASS  gateway injected the TOKEN subject, not the client X-Actor\n\n== 4. Tampered / expired tokens are rejected ==\n  PASS  tampered token rejected (401)\n  PASS  expired token rejected (401)\n\n== 5. Mode-specific enforcement ==\n  PASS  PERMISSIVE: token-less call passes with client X-Actor\n  PASS  PERMISSIVE: token-less write still allowed\n\n== Auth e2e: 13 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_rbac",
+      "exit_code": 0,
+      "duration_sec": 1.0,
+      "passed": 20,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Setup: deal to sanction + limit tree ==\n\n== 1. CP clear / waive are role-gated ==\n  PASS  waive by CAD_OPS blocked \u2014 waivers need CREDIT_COMMITTEE\n  PASS  403 names the missing role\n  PASS  waive by CREDIT_COMMITTEE succeeds\n  PASS  clear by LIE blocked \u2014 clearing needs CAD_OPS/CREDIT_OPS\n  PASS  gate open after role-correct clears\n\n== 2. Unknown actor: the directory denies what it does not know ==\n  PASS  unknown actor cannot request a drawdown (403)\n  PASS  403 points at the ACTOR_ROLE master\n\n== 3. Known actor, wrong role ==\n  PASS  ANALYST cannot authorise (403 role)\n  PASS  CREDIT_OFFICER authorises\n  PASS  CREDIT_OPS cannot release \u2014 money movement needs TREASURY_OPS\n  PASS  TREASURY_OPS releases\n\n== 4. Repayment lanes are role-gated ==\n  PASS  ANALYST cannot record a repayment (403)\n  PASS  TREASURY_OPS cannot confirm a repayment \u2014 needs LOAN_OPS\n  PASS  LOAN_OPS checker confirms\n\n== 5. SoD still applies ON TOP of roles ==\n  PASS  all-roles actor still blocked from self-authorising (SoD)\n  PASS  cleanup cancel by requester ok\n\n== 6. Role grant flows maker -> checker through the ACTOR_ROLE master ==\n  PASS  role grant approved by a different actor\n  PASS  rbac cache invalidated on decision-service\n  PASS  granted role takes effect \u2014 intern.user can now request\n  PASS  granted CREDIT_OPS still cannot reverse (needs TREASURY_OPS)\n\n== RBAC e2e: 20 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_ai_governance",
+      "exit_code": 0,
+      "duration_sec": 1.28,
+      "passed": 14,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Capability catalogue + default state ==\n  PASS  catalogue exposes capabilities\n  PASS  default DOC_INTEL enabled\n\n== 2. Seed a minimal deal we can run AI against ==\n\n== 3. AI capability enabled -> endpoint succeeds ==\n  PASS  collateral-intel works when enabled\n\n== 4. Disable COLLATERAL_INTEL globally -> 403; deterministic path still works ==\n  PASS  collateral-intel blocked with 403 when disabled\n  PASS  403 message names the capability\n  PASS  deterministic rating works while AI off\n\n== 5. Re-enable -> endpoint succeeds again ==\n  PASS  collateral-intel works after re-enable\n\n== 6. Jurisdiction override: block only for AE-CBUAE, leave RBI on ==\n  PASS  IN-RBI deal unaffected by AE-CBUAE override\n  PASS  AE-CBUAE deal blocked by jurisdiction override\n\n== 7. Newly-wired gates: every remaining AI capability is enforced ==\n  PASS  pricing-exception blocked when disabled\n  PASS  covenant-intel blocked when disabled\n  PASS  cpt blocked when disabled\n  PASS  group-suggest blocked when disabled\n  PASS  copilot blocked when disabled\n\n== AI governance e2e: 14 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_ai_off",
+      "exit_code": 0,
+      "duration_sec": 1.08,
+      "passed": 22,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "\n-- 2. Application (manual) --\n  PASS  application created\n\n-- 3. Financial spreading (analyst keys the figures by hand \u2014 no doc-intel) --\n  PASS  spread generated from keyed figures\n  PASS  ratios computed deterministically\n  PASS  spread confirmed (human gate)\n\n-- 4. Rating (deterministic scorecard) --\n  PASS  rating produced\n  PASS  model grade present\n  PASS  rating confirmed (human)\n\n-- 5. Capital (deterministic Standardised-Approach RWA) --\n  PASS  capital computed\n\n-- 6. Pricing (deterministic RAROC recommendation \u2014 NOT the optimiser) --\n  PASS  pricing recommendation produced\n\n-- 7. Covenants (analyst writes them by hand \u2014 no covenant-intel) --\n  PASS  covenant created manually\n\n-- 8. Credit proposal (generated WITHOUT AI commentary) --\n  PASS  credit proposal generated\n\n-- 9. DoA routing + human decision --\n  PASS  routed to an authority tier\n  PASS  named human decision recorded\n\n-- 10. Limit tree built from the approved deal --\n  PASS  limit tree built\n\n-- 11. CAD documentation + limit release --\n  PASS  CAD case opened with checklist\n  PASS  CAD case completed\n\n-- 12. Exposure booked to the portfolio --\n  PASS  exposure registered (booked)\n  PASS  ECL computed deterministically\n\n-- 13. Audit: the figure path is attributed to SYSTEM, never AI --\n  PASS  figure-path events present (rating/pricing/capital)\n  PASS  NO figure-path event attributed to AI\n  INFO  AI-actor events on this manual deal: ['CREDIT_PROPOSAL_GENERATED']\n\n== AI-OFF proof: 22 passed, 0 failed ==\nThe full LOS lifecycle (intake -> spread -> rate -> capital -> price ->\ncovenants -> proposal -> decision -> limits -> CAD -> booking) completed\nwith every AI endpoint hard-blocked by the harness.",
+      "ok": true
+    },
+    {
+      "suite": "e2e_ftp",
+      "exit_code": 0,
+      "duration_sec": 0.95,
+      "passed": 11,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Long-tenor TERM_LOAN (84m, amortising \u2192 WAL \u2248 0.6 \u00d7 84 = ~50m) ==\n  PASS  pricing breakdown carries FTP block\n  PASS  TERM_LOAN FTP sourced from curve\n  PASS  TERM_LOAN behaviour is AMORTISING\n  PASS  TERM_LOAN behavioural life < contractual\n    TL: contractual 84m \u2192 behavioural 50.4m, base 0.0748 + LP 0.0008 = FTP 0.0756\n\n== 2. Short revolving WORKING_CAPITAL (12m contractual, behavioural 12m) ==\n  PASS  WC FTP sourced from curve\n  PASS  WC behaviour is REVOLVING\n    WC: contractual 12m \u2192 behavioural 12.0m, base 0.0690 + LP 0.0002 = FTP 0.0692\n\n== 3. The term structure produces different funding for different maturities ==\n  PASS  TL (longer behavioural life) funds higher than WC (short revolving)\n  PASS  the two FTPs differ materially (>10 bps)\n\n== 4. cost_of_funds in the breakdown equals the derived FTP (not the flat 0.075) ==\n  PASS  breakdown costOfFunds == FTP\n  PASS  derived FTP differs from the old flat 0.075\n\n== 5. Negative: overdraft behavioural maturity is the shortest ==\n  PASS  OD behavioural maturity (6m) < WC behavioural (12m)\n\n== FTP e2e: 11 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_codevalue",
+      "exit_code": 0,
+      "duration_sec": 0.17,
+      "passed": 12,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. All expected domains seeded as CODE_VALUE records ==\n  PASS  every expected domain seeded (14 total)\n== 2. Resolver returns the right shape + preserved order ==\n  PASS  GRADE_SCALE canonical ladder present in correct order (AAA -> D)\n  PASS  each value carries code + label\n  PASS  OVERRIDE_ROLE.ANALYST carries score=1 (notch limit) \u2014 proves score field round-trips\n  PASS  OVERRIDE_ROLE.CRO score >= 99 (unlimited)\n== 3. Multi-domain endpoint returns every CODE_VALUE in one call ==\n  PASS  every expected domain returned by the bulk endpoint\n== 4. Unknown domain -> 404 ==\n  PASS  unknown domain -> 404\n== 5. CODE_VALUE is governed (maker-checker / SoD); adding a new value works ==\n  PASS  extension submitted PENDING_APPROVAL\n  PASS  self-approval blocked (SoD) -> 403\n  PASS  different checker approves -> ACTIVE\n  PASS  the new value (NR) shows up at the resolver immediately\n== 6. New brand-new domain can be added without code change ==\n  PASS  brand-new domain resolves with declared order\n\n== code-value master e2e: 12 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_modelconfig",
+      "exit_code": 0,
+      "duration_sec": 1.55,
+      "passed": 34,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Definition seeds + resolution by sector/segment (config) ==\n  PASS  model definitions seeded (corporate + mfg + sme)\n  PASS  MID_CORPORATE (no sector) -> default corporate model\n  PASS  sector=MANUFACTURING -> sector-specific model wins (most specific)\n  PASS  segment=SME -> SME model wins\n== 2. Render auto-resolves the model for a deal (sections present) ==\n  PASS  non-sector deal resolves the default corporate model\n  PASS  model has QUALITATIVE + QUANTITATIVE sections\n  PASS  advisory + grade carried (unchanged)\n  PASS  MANUFACTURING borrower auto-resolves the sector model through origination\n== 3. Question types present (dropdown / number / iterative / master-driven) ==\n  PASS  DROPDOWN question present\n  PASS  NUMBER question present\n  PASS  ITERATIVE question present\n  PASS  conditional question present (succession, visibleWhen)\n== 4. Visibility / conditional rule ==\n  PASS  succession hidden when management is Weak\n  PASS  succession visible when management is not Weak\n  PASS  mgmt_quality dropdown scored (Strong -> 90)\n== 5. Master-driven options (ESG_BAND) on the manufacturing model ==\n  PASS  mfg model has the master-driven esg_band question\n  PASS  esg_band options resolved from the ESG_BAND master\n== 6. Iterative (repeating group) capture ==\n  PASS  iterative group captured 2 items\n== 7. Parameter sources: module-sourced vs standalone (model-scored) ==\n  PASS  leverage is MODULE-sourced from the spreading ratio\n  PASS  mgmt_quality is STANDALONE (not fed by another module)\n== 7b. Auto-score: pull module params + score standalone params ==\n  PASS  auto-score produced a composite + band\n  PASS  module param (leverage) auto-pulled from the spreading ratio + scored\n  PASS  standalone param (mgmt_quality) model-scored with an AI rationale\n  PASS  standalone rationale is grounded (cites grade/ratios)\n== 8. Constraints: mandatory + min-answered gate confirmation ==\n  PASS  confirm blocked when mandatory questions unanswered\n  PASS  confirm succeeds once constraints satisfied\n  PASS  confirmed by a named human\n== 9. Governance off-switch on the AI suggest capability ==\n  PASS  suggest blocked when model-scoring disabled (403)\n  PASS  suggest works again once re-enabled\n== 10. The advisory invariant: authoritative grade unchanged ==\n  PASS  authoritative final grade byte-identical after all model activity\n== 11. MODEL_DEFINITION is governed (maker-checker / SoD) ==\n  PASS  new model submitted PENDING_APPROVAL\n  PASS  self-approval blocked (SoD) -> 403\n  PASS  different checker approves -> ACTIVE\n  PASS  the newly-approved model now resolves for its segment\n\n== model config engine e2e: 34 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_ratingmodel",
+      "exit_code": 0,
+      "duration_sec": 0.82,
+      "passed": 19,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Publish two single-dropdown models: one model-of-record, one advisory ==\n  PASS  PF/INFRASTRUCTURE resolves the model-of-record definition\n  PASS  its payload carries ratingModelOfRecord=true\n  PASS  PF/RENEWABLES resolves the advisory (non-of-record) definition\n\n== 2. Model-of-record deal: NO confirmed instance -> scorecard fallback ==\n  PASS  no confirmed model instance -> gradeSource=SCORECARD (feature inert)\n  PASS  scorecard produced a healthy grade (not the model's CCC)\n\n== 3. Confirm the model instance (composite 40) -> flips grade to MODEL_OF_RECORD ==\n  PASS  deal resolves its model-of-record definition\n  PASS  single dropdown answer -> advisory composite 40\n  PASS  model instance CONFIRMED by a named human\n  PASS  confirmed model-of-record -> gradeSource=MODEL_OF_RECORD\n  PASS  authoritative grade now the composite ladder result (40 -> CCC)\n  PASS  modelScore carries the composite (40.0)\n  PASS  breakdown records the model provenance\n  PASS  provenance names the confirming human + model key\n  PASS  latest authoritative rating reads CCC (model of record)\n\n== 4. CONTROL: identical model NOT flagged of-record stays advisory ==\n  PASS  control deal rated by scorecard\n  PASS  control model instance CONFIRMED (composite 40, advisory)\n  PASS  confirmed advisory instance does NOT move the grade (still SCORECARD)\n  PASS  control authoritative grade byte-identical after confirm\n  PASS  control grade is NOT the model composite CCC (flag alone is the gate)\n\n== rating model of record e2e: 19 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_fintemplate",
+      "exit_code": 0,
+      "duration_sec": 0.49,
+      "passed": 22,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Templates seeded + resolution by sector/segment ==\n  PASS  default + SME + manufacturing templates seeded\n  PASS  MID_CORPORATE resolves the default chart\n  PASS  SME segment resolves the SME chart\n  PASS  MANUFACTURING sector resolves the manufacturing chart (most specific)\n== 2. Default template leaves the standard chart untouched (zero regression) ==\n  PASS  default chart in force\n  PASS  standard ratios present (NET_LEVERAGE, DSCR, CURRENT_RATIO)\n  PASS  no template-specific ratio leaks into the default chart\n  PASS  standard NET_LEVERAGE computed exactly as before\n== 3. SME template adds an input line + formula-computed ratios (through the spread) ==\n  PASS  SME chart in force\n  PASS  extra ratio ASSET_TURNOVER computed by formula\n  PASS  extra ratio PROMOTER_COVERAGE uses the extra input line via formula\n  PASS  standard ratios still present alongside the extras\n  PASS  extra input line PROMOTER_NET_WORTH appears in the spread grid\n== 4. Manufacturing template: extra input + derived line via formula ==\n  PASS  manufacturing template declares an INVENTORY_DAYS derived line\n  PASS  its formula references INVENTORY and COGS\n== 4b. MANUFACTURING borrower auto-resolves fin-mfg THROUGH origination (sector wired) ==\n  PASS  manufacturing borrower's spread auto-uses fin-mfg (sector from counterparty)\n  PASS  manufacturing extra ratio ASSET_TURNOVER present\n  PASS  INVENTORY_DAYS derived line computed by formula (0.8/3.2*365 = 91.25)\n== 5. FINANCIAL_TEMPLATE is governed (maker-checker / SoD) ==\n  PASS  new template submitted PENDING_APPROVAL\n  PASS  self-approval blocked (SoD) -> 403\n  PASS  different checker approves -> ACTIVE\n  PASS  newly-approved template resolves for its segment\n\n== financial templates e2e: 22 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_projection",
+      "exit_code": 0,
+      "duration_sec": 0.6,
+      "passed": 21,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Template resolves + proforma computes N years ==\n  PASS  resolved proj-corp-v1 template\n  PASS  5-year horizon with 5 projected years\n  PASS  drivers present (revenue_growth etc.)\n  PASS  base year seeded from the spread (REVENUE = 5e9)\n== 2. Revenue compounds at the growth driver (10% default) ==\n  PASS  Y1 revenue = base * 1.10\n  PASS  Y2 revenue = Y1 * 1.10\n  PASS  projected DSCR present each year\n  PASS  debt amortises (Y2 debt < Y1 debt)\n== 3. Driver override changes the grid ==\n  PASS  revenue_growth override applied (0.20)\n  PASS  Y1 revenue now base * 1.20\n  PASS  unknown driver key ignored (no crash)\n== 4. Sensitivity: flex a driver, see the final-year DSCR move ==\n  PASS  sensitivity returns base + flexed grids\n  PASS  lower EBITDA margin lowers the final-year projected DSCR\n  PASS  unknown sensitivity driver -> 400\n== 5. Human confirm (advisory gate) ==\n  PASS  projection CONFIRMED by a named human\n== 6. Advisory invariant: authoritative grade unchanged ==\n  PASS  rating present + unchanged by projection activity\n  PASS  projection view advertises advisory + gradeUnchanged\n== 7. PROJECTION_TEMPLATE is governed (maker-checker / SoD) ==\n  PASS  new template submitted PENDING_APPROVAL\n  PASS  self-approval blocked (SoD) -> 403\n  PASS  different checker approves -> ACTIVE\n  PASS  newly-approved template resolves for its segment\n\n== financial projections e2e: 21 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_concentration",
+      "exit_code": 0,
+      "duration_sec": 1.99,
+      "passed": 43,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  Titan breaches single-name limit (9bn > 7.5bn)\n  PASS  total breaches >= 1\n  PASS  breach narrative mentions SINGLE_NAME\n\n== 4. Instrument + duration + rating dimensions populated ==\n  PASS  INSTRUMENT has >= 3 facility types\n  PASS  INSTRUMENT includes TERM_LOAN\n  PASS  DURATION_BUCKET has multiple buckets\n  PASS  DURATION includes a 0-12m bucket\n  PASS  DURATION includes a 120m+ bucket (PF 144m)\n\n== 5. Intersection dimension (sector x geography) present ==\n  PASS  SECTOR_x_GEOGRAPHY has composite keys\n  PASS  intersection limitPct tighter than sector (0.15 vs 0.20)\n\n== 6. Legacy 3-dimension view still works (back-compat) ==\n  PASS  legacy view still returns singleName/sector/segment\n\n== 7. Jurisdiction scoping: the local view never leaks another regime's book ==\n    1 AE-CBUAE exposure booked\n  PASS  IN-RBI view does NOT contain the AE counterparty\n  PASS  AE-CBUAE view contains its own counterparty\n  PASS  AE-CBUAE view does NOT contain IN-RBI names\n  PASS  global=true (group-CRO) view spans both books\n  PASS  global view GEOGRAPHY has both jurisdictions\n\n== 8. Early-warning bands (NORMAL / WATCH / WARNING / BREACH) ==\n  PASS  every line carries a band\n  PASS  Titan single-name is in the BREACH band (9bn > 7.5bn cap)\n  PASS  dimension reports a bands tally\n  PASS  SINGLE_NAME breach band count == breachCount\n  PASS  every bucket lands in exactly one band\n  PASS  SECTOR bands all match their utilisation bucket\n\n== 9. Correlation-stressed concentration ==\n  PASS  shocked sector echoed\n  PASS  stressed EL strictly exceeds base EL\n  PASS  incremental loss = stressed - base\n  PASS  shocked sector has correlation 1.0\n  PASS  shocked sector PD lifts ~4x\n  PASS  a correlated sector (MANUFACTURING) takes a partial PD hit, not the full shock\n  PASS  MANUFACTURING correlation to INFRASTRUCTURE is in (0,1)\n  PASS  sectors sorted by incremental loss desc\n  PASS  stressed loss reported as % of capital\n  PASS  RETAIL shock yields a different (lower) incremental loss than the INFRASTRUCTURE complex\n  PASS  severe shock breaches the capital buffer\n  PASS  capital breach raises an alert\n  PASS  stress without a shocked sector rejected (400)\n\n== Multi-dim concentration e2e: 43 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_amendment",
+      "exit_code": 0,
+      "duration_sec": 1.25,
+      "passed": 23,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Setup: rated deal, limit tree, 300M drawn ==\n    deal HLX-2026-DW2QR4, facility FAC-XGMPEKQ, 600M sanctioned / 300M drawn\n\n== 1. Propose an increase 600M -> 900M \u2014 routed by the DoA matrix ==\n  PASS  unknown actor cannot propose (403 role)\n  PASS  amendment PROPOSED with type INCREASE\n  PASS  routed exposure = post-amendment total (900M)\n  PASS  900M routes to CREDIT_COMMITTEE (250M < x <= 1B band)\n\n== 2. Only one PROPOSED amendment per facility ==\n  PASS  second concurrent proposal blocked (409)\n\n== 3. Approval needs authority RANK + a different human ==\n  PASS  proposer cannot self-approve (403 SoD)\n  PASS  CREDIT_OFFICER (rank below committee) blocked (403)\n  PASS  CREDIT_COMMITTEE approves\n  PASS  appliedAt stamped\n\n== 4. The amendment is APPLIED: facility of record + limit tree + headroom ==\n  PASS  origination facility amount now 900M\n  PASS  limit node sanctioned now 900M\n  PASS  obligor root rolled up to 900M\n  PASS  new headroom immediately drawable (300+550 <= 900)\n\n== 5. Decrease below committed drawdowns is blocked ==\n  PASS  decrease below committed blocked (400)\n\n== 6. Tenor extension flows the same lane ==\n  PASS  type TENOR_EXTENSION, amount unchanged\n  PASS  CRO (committee+board rank) approves the extension\n  PASS  facility tenor now 84\n  PASS  limit node tenor now 84\n\n== 7. Reject lane + history ==\n  PASS  actor with no DoA-ladder authority cannot reject (403)\n  PASS  rejected by an authority holder\n  PASS  rejected amendment did NOT touch the facility\n  PASS  history lists all three amendments\n  PASS  FACILITY_AMENDMENT_APPROVED stamped HUMAN\n\n== Amendment e2e: 23 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_syndication",
+      "exit_code": 0,
+      "duration_sec": 1.03,
+      "passed": 55,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  lead funded-to-date = 500m\n  PASS  lead undrawn = 4.5bn\n  PASS  total funded = 3bn after two draws\n\n== 4b. Allocation reversal: rows kept for audit, funded-to-date drops ==\n  PASS  funded back to 1bn after DRAW-2 reversed\n  PASS  DRAW-2 rows retained and marked REVERSED\n  PASS  re-reversal is idempotent (reused=true)\n  PASS  reversing an unknown drawdown is a 404\n\n== 5. Participant feed (canonical downstream statement) ==\n  PASS  feed destination = SYNDICATION\n  PASS  feed has 3 participant lines\n  PASS  feed line carries funded + fees\n  PASS  feed call persisted as an ExportBatch\n  PASS  ExportBatch idempotency key follows SYND-<ref>-<asOf>\n  PASS  ExportBatch record count matches envelope\n  PASS  ExportBatch destination = SYNDICATION\n  PASS  re-fetching the feed on the same day reuses the ExportBatch\n\n== 6. Negative: non-syndication deal rejected ==\n  PASS  book on non-syndication deal returns 4xx\n\n== 7. Invitations: SENT -> ACCEPT / DECLINE / WITHDRAW (with SoD) ==\n  PASS  invitation persisted SENT\n  PASS  self-accept blocked (403 SoD)\n  PASS  invitation flips to ACCEPTED\n  PASS  participantId stamped on accepted invitation\n  PASS  accepted invitee joined the syndicate book\n  PASS  re-accept of ACCEPTED invitation rejected (409)\n  PASS  declined invitation captured\n  PASS  withdraw by non-inviter blocked (403)\n  PASS  withdraw by inviter succeeds\n  PASS  invitation history returns 3 rows\n\n== 8. Secondary transfer: novate unfunded commitment with SoD + agent settlement ==\n  PASS  lead participant identified\n  PASS  transfer above unfunded commitment blocked (400)\n  PASS  transfer PROPOSED\n  PASS  self-settle blocked (403 SoD)\n  PASS  transfer SETTLED\n  PASS  toParticipantId stamped\n  PASS  lead commitment dropped by the transferred amount\n  PASS  transferee appears in the book with the transfer\n  PASS  funded historical allocations on DRAW-1 untouched by transfer\n  PASS  agent rejection succeeds\n  PASS  SYNDICATION_INVITATION_ACCEPTED stamped HUMAN\n  PASS  SYNDICATION_TRANSFER_SETTLED stamped HUMAN\n\n== Syndication e2e: 55 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_pf",
+      "exit_code": 0,
+      "duration_sec": 1.64,
+      "passed": 47,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  tranche releases with distinct third actor\n\n== 5. Milestone 1 is now DRAWN and cannot be re-drawn ==\n  PASS  milestone 1 marked DRAWN\n  PASS  re-drawing a DRAWN milestone is blocked\n  PASS  403 cites already drawn\n\n== 6. Second tranche needs milestone 2 certified independently ==\n  PASS  tranche 2 blocked until milestone 2 certified\n  PASS  tranche 2 authorises after milestone 2 certified\n\n== 7. Reserve withdrawal SoD: withdrawer must differ from the last funder ==\n  PASS  withdraw by last funder blocked (403 SoD)\n  PASS  withdraw by different actor succeeds\n  PASS  withdrawal drops DSRA back to SHORTFALL\n\n== 8. Reversal reinstates the milestone \u2014 the tranche becomes re-drawable ==\n  PASS  reversal by the releaser blocked (403 SoD)\n  PASS  reversal succeeds with a distinct actor\n  PASS  milestone 1 reinstated to LIE_CERTIFIED\n  PASS  milestone 1 re-draw authorises after reversal (was ALREADY_DRAWN)\n\n== 9. Waterfall + forward DSCR projection (computed view, never persisted) ==\n  PASS  projection has rows for every schedule period (180)\n  PASS  first row carries O&M + debtService + DSCR\n  PASS  frequency inherited from the schedule\n  PASS  O&M = 30% of CFADS each period\n  PASS  min DSCR > covenant in the healthy case\n  PASS  zero breaches in the healthy case\n  PASS  cushion to covenant reported (>0)\n  PASS  LLCR > 1 in the healthy case (NPV cash > outstanding)\n  PASS  no DSRA top-up when the reserve is already at requirement\n  PASS  distributions flow every period (surplus after debt service)\n  PASS  DSRA shortfall pulled top-ups from period-1 surplus\n  PASS  top-ups stop after DSRA is refilled\n\n== 10. Stress: low CFADS triggers covenant + cash breaches ==\n  PASS  min DSCR collapses well below covenant under stress\n  PASS  totalBreachPeriods > 0\n  PASS  firstBreachPeriod identified\n  PASS  cushion to covenant negative under stress\n  PASS  breached rows flagged covenantBreach\n  PASS  cash shortfall flagged where CFADS net of O&M < debt service\n  PASS  no distributions in any breached period\n\n== 11. Covenant override + audit ==\n  PASS  lower covenant -> fewer covenant breaches than 1.20\n  PASS  PF_WATERFALL_PROJECTED stamped on the audit trail\n\n== PF mechanics e2e: 47 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_predisbursement",
+      "exit_code": 0,
+      "duration_sec": 1.63,
+      "passed": 80,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  cancel of AUTHORIZED by third party blocked (403 SoD)\n  PASS  cancel of AUTHORIZED by authoriser succeeds\n  PASS  cancelledBy/Reason captured\n  PASS  CANCELLED can't be re-authorised\n  PASS  cancel of DRAFT by non-requester blocked (403 SoD)\n  PASS  cancel of DRAFT by requester succeeds\n  PASS  cancelled drawdown freed facility headroom\n\n== 11. Cross-currency: USD drawdown on an INR facility (FX converted) ==\n  PASS  status DRAFT\n  PASS  requestedCurrency = USD\n  PASS  requestedAmount = 1,000,000\n  PASS  facility currency stays INR\n  PASS  amount > requestedAmount (USD \u2192 INR at ~83)\n  PASS  fxRate stamped on the row\n    1,000,000 USD @ 87.3679 = 87,367,875.00 INR\n  PASS  request-time rate includes the bank spread (> raw mid ~83)\n\n== 11b. Release-time FX re-quote: the rate moves between request and release ==\n  PASS  released status RELEASED\n  PASS  booked amount re-quoted at the higher release-time rate\n  PASS  re-quoted rate reflects the new USD (~90 + spread)\n  PASS  booked INR ~= 1,000,000 USD x re-quoted rate\n  PASS  DISBURSEMENT_FX_REQUOTED stamped on release\n\n== 12. Per-jurisdiction CP_MASTER override: IN-RBI uses Indian-specific CPs ==\n  PASS  IN-RBI override picked (CERSAI present)\n  PASS  IN-RBI override picked (ROC charge filing)\n  PASS  IN-RBI override picked (revenue stamping)\n  PASS  default-only codes not present (CP-VAL still here, CP-BR still here)\n  PASS  AE-CBUAE override picked (Mortgage with Land Dept)\n  PASS  AE-CBUAE override picked (Emirates ID)\n  PASS  AE-CBUAE override picked (Al Etihad bureau)\n  PASS  AE-CBUAE override picked (Economic Substance)\n  PASS  AE-CBUAE does NOT carry India-specific CPs\n\n== 13. Actor hygiene: anonymous writes are blocked, never defaulted ==\n  PASS  request without X-Actor header rejected (400)\n  PASS  request with blank X-Actor rejected (400/403)\n\n== 14. Idempotent UTILISE \u2014 a repeat transactionRef is a no-op on the limit ledger ==\n  PASS  replay returns 200\n  PASS  replay marked Idempotent in the result message\n  PASS  limit-service outstanding UNCHANGED after replay\n\n== 15. Reject is the checker's lane \u2014 the requester withdraws via cancel ==\n  PASS  reject by own requester blocked (403 SoD)\n  PASS  reject by a different actor succeeds\n\n== Pre-disbursement e2e: 80 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_postdisbursement",
+      "exit_code": 0,
+      "duration_sec": 1.71,
+      "passed": 41,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  principal column sums to the principal\n  PASS  EMI payment constant across periods (\u00b11)\n  PASS  closing balance reaches zero\n  PASS  EQUAL_PRINCIPAL has constant principal (\u00b11)\n  PASS  BULLET: principal only in final period\n  PASS  BULLET quarterly periods = 20\n\n== 2. Manual repayment: record (maker) -> confirm (checker) books limit RELEASE ==\n  PASS  repayment RECORDED with split captured\n  PASS  no ledger movement before confirmation\n  PASS  self-confirm blocked (403 SoD)\n  PASS  confirm by checker succeeds\n  PASS  releaseRef stamped\n  PASS  outstanding dropped by the principal (45M), not the full amount\n  PASS  decision-ledger outstanding = 255M\n  PASS  re-confirm rejected (409 \u2014 already CONFIRMED)\n  PASS  over-repayment blocked (400)\n  PASS  self-reject blocked (403 SoD)\n  PASS  reject by checker succeeds\n\n== 3. Core-banking connector: idempotent envelope ingest, RELEASE as SYSTEM ==\n  PASS  event accepted (not duplicate)\n  PASS  outstanding dropped by ingested principal (28M)\n  PASS  replay recognised as duplicate\n  PASS  replay did NOT move the ledger\n  PASS  connector repayment CONFIRMED by SYSTEM\n\n== 4. Reversal of a RELEASED drawdown \u2014 blocked while repayments exist ==\n  PASS  reversal blocked while facility has confirmed repayments (409)\n  PASS  reversal without a reason rejected (400)\n  PASS  reversal by the releaser blocked (403 SoD)\n\n== 5. Reversal succeeds: ledger restored, headroom freed, terminal state ==\n  PASS  reversal by a different actor succeeds\n  PASS  reversalRef = REV-<utilisationRef>\n  PASS  limit outstanding restored by the reversed amount (100M)\n  PASS  reversed drawdown freed facility headroom\n  PASS  REVERSED is terminal \u2014 second reversal rejected (409)\n  PASS  DISBURSEMENT_REVERSED stamped HUMAN\n  PASS  REPAYMENT_INGESTED stamped as engine/system event\n\n== 6. Floating-rate schedule (EBLR + 200bps, reset quarterly) ==\n  PASS  facility now FLOATING with EBLR + 200bps\n  PASS  rateSource references the benchmark\n  PASS  annualRate = EBLR (8.7%) + 200bps = 10.7%\n  PASS  rows carry periodRate\n  PASS  schedule reflects the new EBLR (9.2 + 2.0 = 11.2%)\n  PASS  payment rose with the higher rate\n\n== Post-disbursement e2e: 41 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_monitoring",
+      "exit_code": 0,
+      "duration_sec": 1.42,
+      "passed": 17,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Book a distressed (95 dpd) and a healthy (0 dpd) exposure ==\n    distressed HLX-2026-ZZMWWE, healthy HLX-2026-RVQPLW\n\n== 1. Sweep the distressed deal: EWS signal -> auto-opened collections case ==\n  PASS  sweep raised at least one signal\n  PASS  sweep escalated to collections\n  PASS  escalation cites the DPD signal\n  PASS  a collections case id was returned\n  PASS  case opened by SYSTEM monitoring\n  PASS  case staged STAGE_3 from 95 dpd\n  PASS  trigger reason records the EWS escalation\n  PASS  case is OPEN (workable)\n\n== 2. Re-sweep is idempotent \u2014 refresh, not duplicate ==\n  PASS  re-sweep returns the SAME case id\n  PASS  exactly one collections case for the distressed deal\n\n== 3. The auto-opened case flows through the normal workflow ==\n  PASS  auto-opened case can be escalated to legal by an authorised actor\n\n== 4. Healthy deal: swept, no escalation, no case ==\n  PASS  healthy deal not escalated\n  PASS  healthy deal opened no case\n  PASS  no collections case on the healthy deal\n\n== 5. Sweep-all + audit trail ==\n  PASS  sweep-all covers both deals\n  PASS  MONITORING_SWEEP stamped on the audit trail\n  PASS  COLLECTIONS_CASE_AUTO_OPENED stamped (engine/SYSTEM)\n\n== Monitoring loop e2e: 17 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_collections",
+      "exit_code": 0,
+      "duration_sec": 1.49,
+      "passed": 26,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Setup: rated deal + limit tree + 200M released and 50M repaid ==\n    deal HLX-2026-ZVAHPX, facility FAC-PWBR5L4, 150M outstanding\n\n== 1. Open a collections case ==\n  PASS  opener without COLLECTIONS_OPS denied\n  PASS  case OPEN at STAGE_1 (5 dpd)\n  PASS  outstandingAtOpen captured (150M)\n  PASS  only one active case per facility (409)\n\n== 2. DPD updates restage the case (30/60/90 cuts) ==\n  PASS  35 dpd moves to STAGE_2\n  PASS  95 dpd moves to STAGE_3 (NPA)\n\n== 3. Legal lane needs COLLECTIONS_HEAD / LEGAL ==\n  PASS  collections.ops cannot initiate legal (403)\n  PASS  legal needs a reference (400)\n\n== 4. Restructure chains the FacilityAmendment lane (same DoA matrix) ==\n  PASS  restructure created an amendment in the FacilityAmendment lane\n  PASS  amendment routed via DoA (committee/board)\n  PASS  restructure approval needs the routed authority (403)\n  PASS  CRO approves the restructure amendment\n  PASS  case flips to RESTRUCTURED\n\n== 5. Write-off: DoA-routed on the write-off amount, limit ledger releases ==\n  PASS  write-off above outstanding rejected (400)\n  PASS  write-off propose needs a COLLECTIONS / CREDIT_OPS role\n  PASS  write-off routed to a DoA authority\n  PASS  write-off proposer cannot also approve (403 SoD)\n  PASS  CREDIT_OFFICER may approve at-rank write-off\n  PASS  case ends WRITTEN_OFF\n  PASS  writeOffAmount captured\n  PASS  limit ledger dropped by the written-off amount\n\n== 6. Cure: only when DPD = 0 and overdue = 0 ==\n  PASS  cure while overdue stands rejected (409)\n  PASS  cure once cleared succeeds\n\n== 7. List + audit ==\n  PASS  list returns 3 cases for the deal\n  PASS  COLLECTIONS_WRITTEN_OFF stamped HUMAN\n  PASS  COLLECTIONS_RESTRUCTURED stamped HUMAN\n\n== Collections e2e: 26 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_sicr_notch",
+      "exit_code": 0,
+      "duration_sec": 0.55,
+      "passed": 17,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Build + rate a mid-corporate deal ==\n  PASS  deal rated (scorecard model grade recorded)\n\n== 2. Set origination grade AAA (governed), book at dpd 0 -> STAGE_1 ==\n  PASS  rating overridden to AAA + confirmed\n  PASS  origination grade snapshotted = AAA\n  PASS  current grade at booking = AAA\n  PASS  origination exposure is STAGE_1 (AAA, dpd 0)\n  PASS  no notch downgrade at origination\n  PASS  trace echoes origination + current grade\n\n== 3. Downgrade 5 notches (AAA -> B) at dpd 0 -> STAGE_2 by notch rule ==\n  PASS  rating overridden to B + confirmed\n  PASS  origination grade IMMUTABLE across re-register (still AAA)\n  PASS  current grade updated to B on re-register\n  PASS  downgraded exposure is now STAGE_2\n  PASS  stage-2 trigger is the notch rule (sicrByNotch=true)\n  PASS  notch downgrade computed = 5 (AAA -> B)\n  PASS  notch threshold read from pack (default 3)\n  PASS  trace shows origination AAA -> current B\n  PASS  dpd 0 is below the stage-2 dpd gate (notch rule not dpd-driven)\n  PASS  current grade B is NOT a weak/SICR grade (notch rule not grade-driven)\n\n== SICR-by-notch e2e: 17 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_100_obligors",
+      "exit_code": 0,
+      "duration_sec": 53.62,
+      "passed": 10,
+      "failed": 0,
+      "tally_source": "pass_fail_lines",
+      "stdout_tail": " declined               : 19\n booked                 : 109\n ECL computed           : 109\n RAROC snapshots        : 109\n\n distribution by segment :\n   MID_CORPORATE             26\n   SME                       34\n   LARGE_CORPORATE           29\n   PROJECT_FINANCE            8\n   TRADE_FINANCE             15\n   FINANCIAL_INSTITUTION     17\n distribution by jurisdiction :\n   IN-RBI                    85\n   AE-CBUAE                  15\n distribution by final grade :\n     AAA   2\n      AA  30\n       A  37\n     BBB  37\n      BB   3\n     CCC   1\n      CC  15\n       C   4\n book :\n   total EAD             211,261,000,000\n   total RWA              33,166,348,157\n   total provision         2,162,157,207\n   by stage             {'STAGE_1': 110, 'STAGE_2': 6, 'STAGE_3': 4}\n concentration breaches:\n   - Single-name limit breached: Titan Mega Corp at 9000000000 vs limit 7500000000\n   - Single-name limit breached: Mumbai Auto 001 Pvt Ltd at 8191000000 vs limit 7500000000\n   - Single-name limit breached: Mumbai Foods 058 Pvt Ltd at 9147000000 vs limit 7500000000\n   - Single-name limit breached: Dubai Steel 072 LLC at 7556000000 vs limit 7500000000\n   - Single-name limit breached: Mumbai Highway SPV 096 Ltd at 14253000000 vs limit 7500000000\n RAROC variance: tracked=53, material misses=35, avg variance=-0.3134\n\n distribution assertions:\n PASS 100 counterparties onboarded  100\n PASS at least 5 of every segment present  {\"SME\": 34, \"LARGE_CORPORATE\": 29, \"MID_CORPORATE\": 26, \"FINANCIAL_INSTITUTION\": 17, \"TRADE_FINANCE\": 15, \"PROJECT_FINANCE\": 8}\n PASS both jurisdictions used\n PASS approval rate plausible (>30%)  109/129\n PASS declines/refers present (population spans the policy)\n PASS at least 20 booked exposures\n PASS RAROC snapshots match booked deals\n PASS existing borrowers had a prior deal\n PASS MIS dashboard populated\n PASS no internal errors during the run  []\n\nALL ASSERTIONS PASSED \u2713",
+      "ok": true
+    },
+    {
+      "suite": "e2e_workflow",
+      "exit_code": 0,
+      "duration_sec": 1.1,
+      "passed": 23,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Materialise: pull the WORKFLOW_DEFINITION pack and create stages ==\n  PASS  materialised an active instance from the seeded pack\n  PASS  definition version pinned on the instance\n  PASS  materialise is idempotent (same instance id)\n  PASS  stage list is non-empty\n  PASS  at least one stage is human-gated\n  PASS  INTAKE is first and IN_PROGRESS\n== 2. Guard contract: advance rejected on blank/AI/wrong actor ==\n  PASS  blank X-Actor on advance -> 403\n  PASS  AI actor on humanGate stage -> 403\n  PASS  cannot skip a humanGate stage that is still PENDING\n== 3. Proper advance: HUMAN actor completes INTAKE, next stage opens ==\n  PASS  advance moves currentStage off INTAKE\n  PASS  INTAKE is COMPLETE with HUMAN actorType + named actor\n== 4. Sweep human-gated stages with rotating named humans ==\n  PASS  every materialised stage now COMPLETE or SKIPPED\n  PASS  instance status -> COMPLETED\n  PASS  at least 4 stages closed by a HUMAN actor\n== 5. The authoritative invariant: risk grade/pricing unchanged ==\n  PASS  rating final grade unchanged\n  PASS  rating PD byte-identical\n  PASS  recommended pricing rate byte-identical\n== 6. Block / unblock a stage ==\n  PASS  block sets status=BLOCKED with reason\n  PASS  unblock clears BLOCKED status\n== 7. SLA breach surfaces in /sla-breaches after sweep ==\n  PASS  sla-sweep endpoint responds\n  PASS  sla-breaches list is present\n== 8. Unknown stage / unknown reference are rejected ==\n  PASS  unknown stage on advance -> 400/404\n  PASS  view of unknown instance -> 404\n\n== workflow engine e2e: 23 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_reporting",
+      "exit_code": 0,
+      "duration_sec": 1.17,
+      "passed": 38,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Dataset registry is the whitelist boundary ==\n  PASS  EXPOSURE_BOOK dataset registered\n  PASS  RAROC_TRACKING dataset registered\n  PASS  EWS_SIGNALS dataset registered\n  PASS  ead exposed as a measure field\n  PASS  segment exposed as a dimension\n  PASS  typed numeric op catalogue published\n  PASS  aggregations catalogue published\n== 2. RBAC and SoD guards ==\n  PASS  blank X-Actor on /run -> 403\n  PASS  actor without REPORT_RUN role -> 403\n  PASS  allowed actor runs an inline report\n== 3. Whitelist rejects unknown fields, datasets, ops ==\n  PASS  unknown dimension -> 400\n  PASS  AVG on a STRING field -> 400\n  PASS  unknown dataset -> 400\n  PASS  unsupported operator -> 400\n== 4. Need a book to compare against \u2014 drive a couple of bookings ==\n== 5. The headline cross-check: ad-hoc SUM(ead) by segment == MIS view ==\n  PASS  ad-hoc and MIS produced segments for the same set of keys\n  PASS    segment FINANCIAL_INSTITUTION totals match  (MIS=36,813,000,000 \u00b7 ad-hoc=36,813,000,000)\n  PASS    segment INFRASTRUCTURE totals match  (MIS=2,000,000,000 \u00b7 ad-hoc=2,000,000,000)\n  PASS    segment LARGE_CORPORATE totals match  (MIS=88,866,000,000 \u00b7 ad-hoc=88,866,000,000)\n  PASS    segment LOGISTICS totals match  (MIS=1,200,000,000 \u00b7 ad-hoc=1,200,000,000)\n  PASS    segment MANUFACTURING totals match  (MIS=10,500,000,000 \u00b7 ad-hoc=10,500,000,000)\n  PASS    segment MID_CORPORATE totals match  (MIS=15,778,000,000 \u00b7 ad-hoc=15,778,000,000)\n  PASS    segment PROJECT_FINANCE totals match  (MIS=48,584,000,000 \u00b7 ad-hoc=48,584,000,000)\n  PASS    segment RETAIL totals match  (MIS=800,000,000 \u00b7 ad-hoc=800,000,000)\n  PASS    segment SME totals match  (MIS=2,640,000,000 \u00b7 ad-hoc=2,640,000,000)\n  PASS    segment TRADE totals match  (MIS=900,000,000 \u00b7 ad-hoc=900,000,000)\n  PASS    segment TRADE_FINANCE totals match  (MIS=3,630,000,000 \u00b7 ad-hoc=3,630,000,000)\n== 6. Filter + sort + limit ==\n  PASS  filter narrowed scannedRows\n  PASS  sort+limit honoured\n  PASS  rows sorted DESC by ead\n== 7. Numeric IN / BETWEEN / GT operators ==\n  PASS  GT filter executes\n  PASS  BETWEEN filter executes\n== 8. Saved REPORT_DEFINITION via master engine + SoD ==\n  PASS  master created in PENDING_APPROVAL\n  PASS  self-approval blocked -> 403 (SoD)\n  PASS  different checker approves -> ACTIVE\n  PASS  saved report executes\n  PASS  saved report carries the title's intent (column shape)\n== 9. Engine stamps a deterministic audit event ==\n  PASS  REPORT_EXECUTED audit stamped by SYSTEM\n== 10. The advisory invariant: reports never mutate authoritative figures ==\n  PASS  MIS totalEad unchanged after several ad-hoc runs\n\n== ad-hoc reporting e2e: 38 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_currency",
+      "exit_code": 0,
+      "duration_sec": 0.84,
+      "passed": 40,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  presentation currency resolves to INR\n  PASS  spread is flagged single-currency\n  PASS  baseline trends present (REVENUE_GROWTH)\n  PASS  baseline NET_LEVERAGE computed\n== 2. Cross-currency: prior year in USD, restated to INR ==\n  PASS  mixed spread normalised to INR\n  PASS  mixed spread flagged NOT single-currency\n  PASS  USD period keeps native currency USD\n  PASS  USD period carries fxToPresentation == USD rate\n  PASS  USD period presentationValues restated to INR magnitude\n  PASS  trend REVENUE_GROWTH matches the all-INR baseline after USD restatement  (INR=0.111 \u00b7 mixed=0.111)\n  PASS  trend EBITDA_GROWTH matches the all-INR baseline after USD restatement  (INR=0.286 \u00b7 mixed=0.286)\n  PASS  trend DEBT_GROWTH matches the all-INR baseline after USD restatement  (INR=-0.056 \u00b7 mixed=-0.056)\n== 3. Per-period ratios are currency-agnostic (unit-free) ==\n  PASS  NET_LEVERAGE identical across currencies (unit-free)\n  PASS  INTEREST_COVERAGE identical across currencies\n== 4. Currency-consistency guard: mixed currency, no rate -> 400 ==\n  PASS  mixed-currency spread with no resolvable FX rate -> 400\n  PASS  error explains the currency-consistency refusal\n== 5. Analyst-supplied per-period rate overrides the fetched rate ==\n  PASS  supplied fxToPresentation is honoured verbatim\n== 6. Presentation currency defaults to the latest period's currency ==\n  PASS  presentation currency defaults to latest period (AED)\n== 7. Borrower-level presentation currency on the counterparty ==\n  PASS  IN-RBI borrower defaults presentationCurrency to INR\n  PASS  explicit presentationCurrency is honoured (USD)\n== 8. Level 2 \u2014 system currency: limit ledger reconciles to base ==\n  PASS  FX refresh accepted (idempotent re-post of the same rate)\n  PASS  AED rate readable after refresh (system-currency table live)\n  PASS  base currency is fixed at INR and rate 1.0\n== 9. Dated FX_RATE master is the historical authority ==\n  PASS  FX_RATE master seeded with dated points\n  PASS  USD@2024-03-31 dated point present\n  PASS  USD@2023-03-31 dated point present\n  PASS  dated 2023 rate differs from current spot (so period-dating is observable)\n== 10. Period-end date drives the DATED rate, not today's spot ==\n  PASS  FX source is the DATED master (not spot)\n  PASS  dated rate used == the 2023-03-31 FX_RATE point\n  PASS  period-end date carried through\n  PASS  USD revenue restated to INR at the dated rate\n== 11. No period-end -> falls back to current spot (distinct source) ==\n  PASS  FX source falls back to CURRENT_SPOT when no period-end given\n  PASS  spot rate used == limit-service current USD rate\n== 12. FX_RATE master is governed (maker-checker / SoD) ==\n  PASS  new dated point submitted PENDING_APPROVAL\n  PASS  self-approval blocked (SoD) -> 403\n  PASS  different checker approves -> ACTIVE\n  PASS  newly-approved dated point is used for matching period-end\n\n== currency (two-level) e2e: 40 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_decisioning",
+      "exit_code": 0,
+      "duration_sec": 0.99,
+      "passed": 28,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  committee DOA_MATRIX active (CREDIT_COMMITTEE flagged, quorum 2)\n\n== 3. Committee / quorum decision mode ==\n  PASS  deal routed to CREDIT_COMMITTEE in committee mode\n  PASS  quorum required = 2, status PENDING_APPROVAL, router recorded\n  PASS  the member who routed the deal cannot vote (SoD) -> 403\n  PASS  insufficient-authority actor cannot vote -> 403\n  PASS  first approving vote leaves the decision PENDING_APPROVAL (quorum not met)\n  PASS  a member cannot vote twice (SoD) -> 403\n  PASS  second approving vote meets quorum -> DECIDED\n  PASS  finalised as a COMMITTEE decision\n  PASS  no vote accepted after the decision is DECIDED -> 409\n  PASS  exactly the two qualifying votes recorded (no rejected attempts persisted)\n\n== 1. CONDITIONAL_APPROVE conditions -> CP register ==\n  PASS  CONDITIONAL_APPROVE with neither free-text nor structured conditions -> 400\n  PASS  deal DECIDED (single-approver, non-committee tier)\n  PASS  conditions materialised into the CP register as source=SANCTION\n  PASS  blank-facilityRef condition fanned out to BOTH facilities\n  PASS  pinned condition attached only to its facility\n  PASS  materialised CPs are mandatory + OPEN\n  PASS  the pre-disbursement gate now blocks on the sanction conditions\n  PASS  clearing the sanction CPs opens the gate\n\n== 2. Sanction letter on the approved deal ==\n  PASS  sanction letter generated DRAFT + advisory\n  PASS  letter carries the sanction clauses (facilities + conditions)\n  PASS  letter body quotes borrower, a facility, and a condition of sanction\n  PASS  advisory invariant: authoritative grade unchanged by letter generation\n  PASS  advisory invariant: decision outcome unchanged by letter generation\n  PASS  generator cannot confirm own sanction letter (maker != checker) -> 403\n  PASS  a different named human confirms the letter -> CONFIRMED\n  PASS  sanction letter refused on an un-decided deal -> 409\n  PASS  DOA_MATRIX restored to seeded single-approver semantics\n\n== decisioning loop closure e2e: 28 passed, 0 failed ==",
+      "ok": true
+    }
+  ],
+  "audit_samples": {
+    "config": {
+      "total_events": 101,
+      "actor_types": {
+        "SYSTEM": 5,
+        "HUMAN": 96
+      },
+      "top_events": [
+        [
+          "MASTER_SUBMITTED",
+          40
+        ],
+        [
+          "MASTER_APPROVED",
+          39
+        ],
+        [
+          "RULEPACK_SIGNOFF",
+          12
+        ],
+        [
+          "RULEPACK_ACTIVATED",
+          5
+        ],
+        [
+          "RULEPACK_DRAFTED",
+          5
+        ]
+      ]
+    },
+    "counterparty": {
+      "total_events": 200,
+      "actor_types": {
+        "HUMAN": 155,
+        "AI": 45
+      },
+      "top_events": [
+        [
+          "COUNTERPARTY_CREATED",
+          62
+        ],
+        [
+          "SCREENING_DISPOSITIONED",
+          50
+        ],
+        [
+          "SCREENING_RUN",
+          45
+        ],
+        [
+          "KYC_VERIFIED",
+          43
+        ]
+      ]
+    },
+    "origination": {
+      "total_events": 200,
+      "actor_types": {
+        "HUMAN": 107,
+        "AI": 93
+      },
+      "top_events": [
+        [
+          "APPLICATION_CREATED",
+          55
+        ],
+        [
+          "SPREAD_GENERATED",
+          54
+        ],
+        [
+          "SPREAD_CONFIRMED",
+          48
+        ],
+        [
+          "DOCUMENT_CLASSIFIED",
+          39
+        ],
+        [
+          "APPLICATION_STATUS_CHANGED",
+          3
+        ],
+        [
+          "FACILITY_ADDED",
+          1
+        ]
+      ]
+    },
+    "risk": {
+      "total_events": 200,
+      "actor_types": {
+        "HUMAN": 51,
+        "SYSTEM": 149
+      },
+      "top_events": [
+        [
+          "RATING_CONFIRMED",
+          51
+        ],
+        [
+          "RATING_PROPOSED",
+          51
+        ],
+        [
+          "PRICING_RECOMMENDED",
+          49
+        ],
+        [
+          "CAPITAL_COMPUTED",
+          49
+        ]
+      ]
+    },
+    "decision": {
+      "total_events": 200,
+      "actor_types": {
+        "SYSTEM": 53,
+        "HUMAN": 146,
+        "AI": 1
+      },
+      "top_events": [
+        [
+          "COVENANT_ADDED",
+          92
+        ],
+        [
+          "APPROVAL_ROUTED",
+          52
+        ],
+        [
+          "DECISION_RECORDED",
+          48
+        ],
+        [
+          "CP_CLEARED",
+          2
+        ],
+        [
+          "COMMITTEE_VOTE_CAST",
+          2
+        ],
+        [
+          "DOCUMENT_CONFIRMED",
+          1
+        ],
+        [
+          "DOCUMENT_GENERATED",
+          1
+        ],
+        [
+          "SANCTION_CP_MATERIALIZED",
+          1
+        ]
+      ]
+    },
+    "portfolio": {
+      "total_events": 200,
+      "actor_types": {
+        "SYSTEM": 144,
+        "HUMAN": 56
+      },
+      "top_events": [
+        [
+          "RAROC_SNAPSHOT_ORIGINATION",
+          56
+        ],
+        [
+          "EXPOSURE_BOOKED",
+          56
+        ],
+        [
+          "ECL_COMPUTED",
+          54
+        ],
+        [
+          "RAROC_ACTUAL_COMPUTED",
+          28
+        ],
+        [
+          "REPORT_EXECUTED",
+          6
+        ]
+      ]
+    },
+    "limit": {
+      "total_events": 83,
+      "actor_types": {
+        "HUMAN": 42,
+        "SYSTEM": 41
+      },
+      "top_events": [
+        [
+          "LIMIT_UTILISE",
+          21
+        ],
+        [
+          "LIMIT_TREE_BUILT",
+          10
+        ],
+        [
+          "LIMIT_CHILD_ADDED",
+          10
+        ],
+        [
+          "LIMIT_ROOT_CREATED",
+          7
+        ],
+        [
+          "LIMIT_EOD_RUN",
+          6
+        ],
+        [
+          "LIMIT_RELEASE",
+          5
+        ],
+        [
+          "FX_RATE_REFRESHED",
+          4
+        ],
+        [
+          "LIMIT_RESYNCED",
+          3
+        ]
+      ]
+    },
+    "workflow": {
+      "total_events": 199,
+      "actor_types": {
+        "SYSTEM": 188,
+        "HUMAN": 11
+      },
+      "top_events": [
+        [
+          "WORKFLOW_MATERIALISED",
+          183
+        ],
+        [
+          "WORKFLOW_STAGE_ADVANCED",
+          14
+        ],
+        [
+          "WORKFLOW_STAGE_UNBLOCKED",
+          1
+        ],
+        [
+          "WORKFLOW_STAGE_BLOCKED",
+          1
+        ]
+      ]
+    }
+  }
+}

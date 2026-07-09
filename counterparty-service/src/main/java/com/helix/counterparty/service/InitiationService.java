@@ -26,6 +26,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -40,6 +41,14 @@ public class InitiationService {
     private static final Set<String> NAME_STOPWORDS = Set.of(
             "ltd", "limited", "pvt", "private", "llc", "llp", "inc", "co", "company", "corp",
             "plc", "the", "and", "spv", "holdings", "holding", "group");
+
+    /**
+     * Identifier accessors keyed by the field names DEDUP_RULES.identifierFields may list. The
+     * Counterparty entity carries only registrationNo today; adding pan/passport/gstin is a
+     * one-line accessor per new column. A configured field with no accessor is ignored (not an error).
+     */
+    private static final Map<String, Function<Counterparty, String>> ID_ACCESSORS = Map.of(
+            "registrationNo", Counterparty::getRegistrationNo);
 
     private final CounterpartyRepository repository;
     private final ExternalCheckRepository checks;
@@ -95,6 +104,9 @@ public class InitiationService {
         Map<String, Object> rules = config.dedupRules();
         double threshold = ((Number) rules.getOrDefault("nameMatchThreshold", 0.82)).doubleValue();
         String strategy = String.valueOf(rules.getOrDefault("strategy", "NAME_AND_IDENTIFIER"));
+        List<String> idFields = ((List<?>) rules.getOrDefault("identifierFields", List.of("registrationNo")))
+                .stream().map(String::valueOf).toList();
+        boolean andCombine = "AND".equalsIgnoreCase(String.valueOf(rules.getOrDefault("combineWith", "OR")));
         Set<String> subjectTokens = nameTokens(subject.getLegalName());
 
         List<DedupMatch> matches = new ArrayList<>();
@@ -102,7 +114,7 @@ public class InitiationService {
             if (c.getId().equals(prospectId) || "DISCARDED".equals(c.getLifecycleStatus())) {
                 continue;
             }
-            boolean idMatch = identifierMatch(subject, c);
+            boolean idMatch = identifierMatch(subject, c, idFields, andCombine);
             double nameScore = jaccard(subjectTokens, nameTokens(c.getLegalName()));
             boolean nameMatch = nameScore >= threshold;
             if (!idMatch && !nameMatch) {
@@ -116,11 +128,32 @@ public class InitiationService {
                     c.getUpdatedAt() == null ? null : c.getUpdatedAt().toString()));
         }
         matches.sort((a, b) -> Double.compare(b.score(), a.score()));
-        return new DedupResult(prospectId, strategy, matches.size(), matches);
+        return new DedupResult(prospectId, strategy, idFields, matches.size(), matches);
     }
 
-    private boolean identifierMatch(Counterparty a, Counterparty b) {
-        return notBlank(a.getRegistrationNo()) && a.getRegistrationNo().equalsIgnoreCase(b.getRegistrationNo());
+    /**
+     * Match on the identifiers DEDUP_RULES configures (identifierFields + combineWith). Today the
+     * Counterparty entity carries only registrationNo, so ID_ACCESSORS registers that one. The blank
+     * guard is load-bearing: two prospects that both lack an identifier must never match on it.
+     */
+    private boolean identifierMatch(Counterparty a, Counterparty b, List<String> fields, boolean andCombine) {
+        boolean any = false, all = true, sawField = false;
+        for (String f : fields) {
+            Function<Counterparty, String> acc = ID_ACCESSORS.get(f);
+            if (acc == null) {
+                continue;   // configured identifier the entity does not (yet) carry — ignore
+            }
+            String av = acc.apply(a);
+            if (!notBlank(av)) {
+                all = false;
+                continue;   // blank on the subject side cannot match
+            }
+            sawField = true;
+            boolean eq = av.equalsIgnoreCase(acc.apply(b));
+            any |= eq;
+            all &= eq;
+        }
+        return sawField && (andCombine ? all : any);
     }
 
     private Set<String> nameTokens(String name) {

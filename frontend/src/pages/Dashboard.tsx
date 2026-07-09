@@ -17,6 +17,17 @@ export default function Dashboard() {
     catch (e: any) { notify(e.message, true); }
   };
 
+  const monitorSweep = async () => {
+    try {
+      const r = await portfolio.monitorSweepAll(actor);
+      const escalated = r.filter((x: any) => x.escalated);
+      notify(escalated.length
+        ? `Monitoring sweep escalated ${escalated.length} deal(s) to collections`
+        : `Monitoring sweep: ${r.length} deal(s) scanned, none escalated`);
+      reloadAll();
+    } catch (e: any) { notify(e.message, true); }
+  };
+
   const s = summary.data;
   return (
     <div className="grid">
@@ -29,6 +40,7 @@ export default function Dashboard() {
 
       <div className="btnrow">
         <Button onClick={scanAll}>Run EWS scan across book</Button>
+        <Button kind="primary" onClick={monitorSweep}>Run monitoring sweep</Button>
         <Button kind="subtle" onClick={reloadAll}>Refresh</Button>
         <span className="muted">Acting as {actor}</span>
       </div>

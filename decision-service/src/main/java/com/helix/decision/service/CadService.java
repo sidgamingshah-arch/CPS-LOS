@@ -2,6 +2,7 @@ package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
 import com.helix.common.web.ApiException;
+import com.helix.decision.client.LimitClient;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.MasterRecordDto;
 import com.helix.decision.dto.CadDtos.CadCaseView;
@@ -35,14 +36,16 @@ public class CadService {
     private final ChecklistItemRepository items;
     private final DeviationRepository deviations;
     private final UpstreamClient upstream;
+    private final LimitClient limits;
     private final AuditService audit;
 
     public CadService(CadCaseRepository cases, ChecklistItemRepository items, DeviationRepository deviations,
-                      UpstreamClient upstream, AuditService audit) {
+                      UpstreamClient upstream, LimitClient limits, AuditService audit) {
         this.cases = cases;
         this.items = items;
         this.deviations = deviations;
         this.upstream = upstream;
+        this.limits = limits;
         this.audit = audit;
     }
 
@@ -199,10 +202,24 @@ public class CadService {
         cases.save(c);
         audit.human(actor, "CAD_LIMIT_RELEASE", "Application", c.getApplicationRef(),
                 "Limit-release checklist complete", Map.of("lienMarked", req.lienMarked()));
-        // Feed to limit management (interface): the trigger to make limits available.
-        audit.engine("LIMIT_RELEASE_TRIGGER", "Application", c.getApplicationRef(),
-                "CAD released limits for %s -> limit-service".formatted(c.getApplicationRef()),
-                Map.of("applicationRef", c.getApplicationRef()));
+        // REAL feed to limit-service: release (activate) the application's limit nodes so
+        // disbursement can proceed. Governance SIDE-EFFECT of the already-committed CAD
+        // release — a limit-service outage or a not-yet-built tree must never roll it back.
+        LimitClient.AppStatusResultDto released =
+                limits.releaseApplication(c.getApplicationRef(), "CAD limit release", actor);
+        if (released.affectedCount() < 0) {
+            audit.engine("LIMIT_RELEASE_SKIPPED", "Application", c.getApplicationRef(),
+                    "limit-service unavailable; limits NOT released for %s (CAD stands, retry release)"
+                            .formatted(c.getApplicationRef()),
+                    Map.of("applicationRef", c.getApplicationRef(), "outcome", "SKIPPED"));
+        } else {
+            audit.engine("LIMIT_RELEASE_TRIGGER", "Application", c.getApplicationRef(),
+                    "CAD released %d/%d limit node(s) for %s -> limit-service".formatted(
+                            released.affectedCount(), released.totalNodes(), c.getApplicationRef()),
+                    Map.of("applicationRef", c.getApplicationRef(),
+                            "releasedCount", released.affectedCount(),
+                            "totalNodes", released.totalNodes()));
+        }
         return view(caseId);
     }
 

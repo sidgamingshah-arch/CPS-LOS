@@ -1,15 +1,22 @@
-// Thin client over the Helix API gateway. Each call sets X-Actor so the audit
-// trail attributes actions to a named user (PRD §9/§11 human accountability).
+// Thin client over the Helix API gateway. A login mints a bearer token; the gateway
+// verifies it and injects the verified X-Actor (PRD §9/§11 human accountability), so
+// the actor can no longer be spoofed. We still send X-Actor as a hint, but a present
+// token always wins server-side.
 
 const GATEWAY: string =
   (import.meta as any).env?.VITE_GATEWAY_URL || "http://localhost:8080";
 
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+let authToken: string | null = null;
+export function setAuthToken(token: string | null) { authToken = token; }
+
 async function call<T>(path: string, method: Method, body?: unknown, actor = "demo.user"): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json", "X-Actor": actor };
+  if (authToken) headers["Authorization"] = "Bearer " + authToken;
   const res = await fetch(GATEWAY + path, {
     method,
-    headers: { "Content-Type": "application/json", "X-Actor": actor },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
@@ -21,11 +28,61 @@ async function call<T>(path: string, method: Method, body?: unknown, actor = "de
   return data as T;
 }
 
+// ---- authentication ----
+export type LoginResult = {
+  token: string; actor: string; displayName: string;
+  expiresInSeconds: number; roles: string[];
+};
+export const auth = {
+  login: (username: string, password: string) =>
+    call<LoginResult>("/config/api/auth/login", "POST", { username, password }),
+  me: () => call<{ actor: string; roles: string[]; expiresAtMillis: number }>(
+    "/config/api/auth/me", "GET"),
+  mode: () => call<{ mode: string; enforced: boolean }>("/auth/mode", "GET"),
+};
+
 // ---- config / abstraction layer ----
 export const config = {
   jurisdictions: () => call<any[]>("/config/api/jurisdictions", "GET"),
   pack: (jurisdiction: string, type: string) =>
     call<any>(`/config/api/rulepacks?jurisdiction=${jurisdiction}&type=${type}`, "GET"),
+  // ---- G6 rule-pack authoring (draft -> dual sign-off -> activate) ----
+  drafts: () => call<any[]>("/config/api/rulepacks/drafts", "GET"),
+  createRulePack: (
+    body: { code: string; type: string; jurisdiction: string; effectiveFrom: string; payload: any },
+    actor: string,
+  ) => call<any>("/config/api/rulepacks", "POST", body, actor),
+  signoff: (id: number, control: "policy" | "model-risk", actor: string) =>
+    call<any>(`/config/api/rulepacks/${id}/signoff?control=${control}`, "POST", undefined, actor),
+};
+
+// ---- AI governance (capability on/off switch with per-jurisdiction override) ----
+export type AiGovernanceMap = {
+  jurisdiction: string | null;
+  capabilities: Record<string, { enabled: boolean; description: string; source: string }>;
+};
+export const governance = {
+  capabilities: () => call<{ key: string; description: string }[]>(
+    "/config/api/governance/ai/capabilities", "GET"),
+  resolved: (jurisdiction?: string) => call<AiGovernanceMap>(
+    "/config/api/governance/ai/resolved" + (jurisdiction ? `?jurisdiction=${jurisdiction}` : ""),
+    "GET"),
+  setEnabled: (key: string, enabled: boolean, jurisdiction: string | null, actor: string) =>
+    call<any>("/config/api/masters/AI_GOVERNANCE", "POST",
+      { recordKey: key, jurisdiction, payload: { enabled } }, actor),
+  approve: (recordId: number, actor: string) =>
+    call<any>(`/config/api/masters/records/${recordId}/approve`, "POST", undefined, actor),
+  // Drop the AiGovernanceClient snapshot on every AI service so an approved toggle
+  // takes effect immediately (instead of waiting out the cache TTL).
+  invalidateCaches: () =>
+    Promise.allSettled(
+      ["counterparty", "origination", "risk", "decision", "portfolio", "copilot", "limits"]
+        .map((s) => call<any>(`/${s}/api/governance/ai/cache/invalidate`, "POST"))),
+  // G7 — effective RBAC governance posture on a service (query a downstream service, not
+  // config-service, which has no ActorDirectory bean).
+  posture: (svc = "decision") =>
+    call<{ service: string; failClosed: boolean; source: string; simulateOutage: boolean }>(
+      `/${svc}/api/governance/rbac/posture`, "GET"),
 };
 
 // ---- counterparty ----
@@ -45,6 +102,11 @@ export const counterparty = {
   ubo: (id: number) => call<any[]>(`/counterparty/api/counterparties/${id}/ubo`, "GET"),
   ingestScreening: (id: number, envelope: any, actor: string) =>
     call<any>(`/counterparty/api/counterparties/${id}/ingest/screening`, "POST", envelope, actor),
+  // lifecycle (D9): governed CLOSED transition + deterministic re-KYC sweep
+  close: (id: number, body: any, actor: string) =>
+    call<any>(`/counterparty/api/counterparties/${id}/close`, "POST", body, actor),
+  reKycSweep: (asOf: string | undefined, actor: string) =>
+    call<any>(`/counterparty/api/counterparties/rekyc/sweep` + (asOf ? `?asOf=${asOf}` : ""), "POST", undefined, actor),
 };
 
 // ---- origination ----
@@ -81,6 +143,23 @@ export const origination = {
     call<any>(`/origination/api/applications/${ref}/collaterals`, "POST", body, actor),
   perfectCollateral: (id: number, actor: string) =>
     call<any>(`/origination/api/applications/collaterals/${id}/perfect`, "POST", undefined, actor),
+  // collateral intelligence: extraction + LTV revaluation + charge-Excel
+  colExtract: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/collateral-intel/${ref}/extract`, "POST", body, actor),
+  colExtractions: (ref: string) =>
+    call<any[]>(`/origination/api/collateral-intel/${ref}/extractions`, "GET"),
+  colConfirm: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/collateral-intel/extractions/${id}/confirm`, "POST", body, actor),
+  colReject: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/collateral-intel/extractions/${id}/reject`, "POST", body, actor),
+  colRevalue: (collateralId: number, body: any, actor: string) =>
+    call<any>(`/origination/api/collateral-intel/collaterals/${collateralId}/revalue`, "POST", body, actor),
+  colReviewRevaluation: (revaluationId: number, body: any, actor: string) =>
+    call<any>(`/origination/api/collateral-intel/revaluations/${revaluationId}/review`, "POST", body, actor),
+  colRevaluations: (ref: string) =>
+    call<any[]>(`/origination/api/collateral-intel/${ref}/revaluations`, "GET"),
+  chargeExcelUrl: (ref: string) =>
+    `/origination/api/collateral-intel/${ref}/charge-excel`,
 };
 
 // ---- risk ----
@@ -100,6 +179,28 @@ export const risk = {
   ragHistory: (ref: string) => call<any[]>(`/risk/api/risk/${ref}/rag`, "GET"),
   macroImpact: (ref: string, body: any, actor: string) => call<any>(`/risk/api/risk/${ref}/macro-impact`, "POST", body, actor),
   macroHistory: (ref: string) => call<any[]>(`/risk/api/risk/${ref}/macro-impact`, "GET"),
+};
+
+// ---- configurable scoring-model engine (sections of typed questions; advisory composite) ----
+export const models = {
+  render: (ref: string) => call<any>(`/risk/api/risk/${ref}/model`, "GET"),
+  resolve: (ref: string, actor: string, sector?: string) =>
+    call<any>(`/risk/api/risk/${ref}/model/resolve${sector ? `?sector=${encodeURIComponent(sector)}` : ""}`,
+              "POST", undefined, actor),
+  answer: (ref: string, answers: any[], actor: string) =>
+    call<any>(`/risk/api/risk/${ref}/model/answer`, "POST", { answers }, actor),
+  suggest: (ref: string, actor: string) =>
+    call<any>(`/risk/api/risk/${ref}/model/suggest`, "POST", undefined, actor),
+  confirm: (ref: string, actor: string) =>
+    call<any>(`/risk/api/risk/${ref}/model/confirm`, "POST", undefined, actor),
+  // resolve a definition by selector (config-service), for the builder's preview/test
+  resolveDefinition: (jurisdiction?: string, sector?: string, segment?: string) => {
+    const q = new URLSearchParams();
+    if (jurisdiction) q.set("jurisdiction", jurisdiction);
+    if (sector) q.set("sector", sector);
+    if (segment) q.set("segment", segment);
+    return call<any>(`/config/api/models/resolve?${q.toString()}`, "GET");
+  },
 };
 
 // ---- specialised deal structures (CP variants) ----
@@ -146,10 +247,27 @@ export const commentary = {
     call<any>(`/decision/api/commentary/${id}/edit`, "POST", body, actor),
 };
 
-// ---- pricing optimiser (goal-seek) ----
+// ---- pricing optimiser (goal-seek) + concession-exception approval ----
 export const optimiser = {
   optimise: (ref: string, body: any, actor: string) =>
     call<any>(`/risk/api/risk/${ref}/pricing/optimise`, "POST", body, actor),
+  proposeException: (ref: string, body: any, actor: string) =>
+    call<any>(`/risk/api/risk/${ref}/pricing/exception`, "POST", body, actor),
+  listExceptions: (ref: string) => call<any[]>(`/risk/api/risk/${ref}/pricing/exception`, "GET"),
+  pendingExceptions: () => call<any[]>("/risk/api/risk/pricing/exception/pending", "GET"),
+  decideException: (id: number, body: any, actor: string) =>
+    call<any>(`/risk/api/risk/pricing/exception/${id}/decision`, "POST", body, actor),
+};
+
+// ---- downstream export feeds (ERM · Finance/GL · CPR) ----
+export const exports = {
+  erm: (actor: string) => call<any>("/portfolio/api/exports/erm", "POST", undefined, actor),
+  financeGl: (actor: string) => call<any>("/portfolio/api/exports/finance-gl", "POST", undefined, actor),
+  cpr: (actor: string) => call<any>("/portfolio/api/exports/cpr", "POST", undefined, actor),
+  crilc: (actor: string) => call<any>("/portfolio/api/exports/crilc", "POST", undefined, actor),
+  batches: (destination?: string) =>
+    call<any[]>("/portfolio/api/exports/batches" + (destination ? `?destination=${destination}` : ""), "GET"),
+  batch: (id: number) => call<any>(`/portfolio/api/exports/batches/${id}`, "GET"),
 };
 
 // ---- GenAI document intelligence ----
@@ -177,10 +295,30 @@ export const decision = {
   testCovenants: (ref: string, actor: string) =>
     call<any[]>(`/decision/api/decisions/${ref}/covenants/test`, "POST", undefined, actor),
   covenantTests: (ref: string) => call<any[]>(`/decision/api/decisions/${ref}/covenants/tests`, "GET"),
+  // covenant intelligence (advisory extraction + certificate assessment)
+  covExtract: (ref: string, text: string, actor: string) =>
+    call<any[]>(`/decision/api/covenants/intel/${ref}/extract`, "POST", { text }, actor),
+  covExtractions: (ref: string) => call<any[]>(`/decision/api/covenants/intel/${ref}/extractions`, "GET"),
+  covConfirmExtraction: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/intel/extractions/${id}/confirm`, "POST", body, actor),
+  covRejectExtraction: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/intel/extractions/${id}/reject`, "POST", body, actor),
+  certAssess: (ref: string, text: string, actor: string) =>
+    call<any[]>(`/decision/api/covenants/intel/${ref}/certificate/assess`, "POST", { text }, actor),
+  certAssessments: (ref: string) =>
+    call<any[]>(`/decision/api/covenants/intel/${ref}/certificate/assessments`, "GET"),
+  certConfirm: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/intel/certificate/assessments/${id}/confirm`, "POST", body, actor),
+  certReject: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/covenants/intel/certificate/assessments/${id}/reject`, "POST", body, actor),
   generateProposal: (ref: string, actor: string) =>
     call<any>(`/decision/api/decisions/${ref}/credit-proposal/generate`, "POST", undefined, actor),
   latestProposal: (ref: string) => call<any>(`/decision/api/decisions/${ref}/credit-proposal`, "GET"),
   proposalVersions: (ref: string) => call<any[]>(`/decision/api/decisions/${ref}/credit-proposal/versions`, "GET"),
+  // committee / quorum voting (D9/committee mode) + sanction letter (P1 decisioning loop)
+  votes: (ref: string) => call<any[]>(`/decision/api/decisions/${ref}/votes`, "GET"),
+  sanctionLetter: (ref: string, actor: string) =>
+    call<any>(`/decision/api/decisions/${ref}/sanction-letter`, "POST", undefined, actor),
 };
 
 // ---- portfolio ----
@@ -192,11 +330,16 @@ export const portfolio = {
     call<any>(`/portfolio/api/portfolio/exposures/${ref}/ecl`, "POST", undefined, actor),
   summary: () => call<any>("/portfolio/api/portfolio/summary", "GET"),
   concentration: (j: string) => call<any>(`/portfolio/api/portfolio/concentration?jurisdiction=${j}`, "GET"),
+  concentrationMulti: (j: string) => call<any>(`/portfolio/api/portfolio/concentration/multi?jurisdiction=${j}`, "GET"),
+  concentrationStress: (j: string, body: any, actor: string) =>
+    call<any>(`/portfolio/api/portfolio/concentration/stress?jurisdiction=${j}`, "POST", body, actor),
   stress: () => call<any>("/portfolio/api/portfolio/stress", "GET"),
   scan: (ref: string, actor: string) =>
     call<any[]>(`/portfolio/api/portfolio/exposures/${ref}/ews/scan`, "POST", undefined, actor),
   scanAll: (actor: string) => call<any[]>("/portfolio/api/portfolio/ews/scan-all", "POST", undefined, actor),
   watchlist: () => call<any[]>("/portfolio/api/portfolio/ews/watchlist", "GET"),
+  monitorSweepAll: (actor: string) =>
+    call<any[]>("/portfolio/api/portfolio/monitoring/sweep", "POST", undefined, actor),
   disposition: (id: number, status: string, actor: string) =>
     call<any>(`/portfolio/api/portfolio/ews/${id}/disposition`, "POST", { status }, actor),
   ingestCoreBanking: (ref: string, envelope: any, actor: string) =>
@@ -208,6 +351,11 @@ export const portfolio = {
       "POST", undefined, actor),
   rarocHistory: (ref: string) => call<any[]>(`/portfolio/api/portfolio/exposures/${ref}/raroc`, "GET"),
   rarocVariance: () => call<any>("/portfolio/api/portfolio/raroc/variance", "GET"),
+  // working-capital drawing-power monitoring (D-RBI; advisory, deterministic)
+  drawingPower: (ref: string, body: any, actor: string) =>
+    call<any>(`/portfolio/api/portfolio/exposures/${ref}/drawing-power`, "POST", body, actor),
+  drawingPowerHistory: (ref: string, facilityRef?: string) =>
+    call<any[]>(`/portfolio/api/portfolio/exposures/${ref}/drawing-power` + (facilityRef ? `?facilityRef=${facilityRef}` : ""), "GET"),
 };
 
 // ---- mis / reports / 360 dashboards ----
@@ -326,6 +474,159 @@ export const initiation = {
   fetchCheck: (id: number, body: any, actor: string) => call<any>(`/counterparty/api/initiation/prospects/${id}/checks/fetch`, "POST", body, actor),
   refreshCheck: (checkId: number, actor: string) => call<any>(`/counterparty/api/initiation/checks/${checkId}/refresh`, "POST", undefined, actor),
   checks: (id: number) => call<any[]>(`/counterparty/api/initiation/prospects/${id}/checks`, "GET"),
+  suggestGroup: (id: number, actor: string) =>
+    call<any>(`/counterparty/api/initiation/counterparties/${id}/group/suggest`, "POST", undefined, actor),
+  createGroup: (body: any, actor: string) =>
+    call<any>("/counterparty/api/initiation/groups", "POST", body, actor),
+  tagToGroup: (counterpartyId: number, groupId: number, actor: string) =>
+    call<any>(`/counterparty/api/initiation/counterparties/${counterpartyId}/group/${groupId}`,
+              "POST", undefined, actor),
+  listGroups: () => call<any[]>("/counterparty/api/initiation/groups", "GET").catch(() => []),
+};
+
+// ---- syndication agency: book · fee waterfall · agency reconciliation · feed ----
+// (invitations + secondary transfers extend this object further down — kept
+// as a single export so the lifecycle surface is one import in the UI.)
+
+// ---- pre-disbursement: Condition Precedent register + Disbursement workflow ----
+export const cps = {
+  seed: (ref: string, actor: string) =>
+    call<any[]>(`/decision/api/cps/${ref}/seed`, "POST", undefined, actor),
+  register: (ref: string, facilityRef?: string) =>
+    call<any[]>(`/decision/api/cps/${ref}${facilityRef ? `?facilityRef=${facilityRef}` : ""}`, "GET"),
+  gate: (ref: string, facilityRef: string) =>
+    call<any>(`/decision/api/cps/gate/${ref}/${facilityRef}`, "GET"),
+  add: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/cps/${ref}`, "POST", body, actor),
+  clear: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/cps/${id}/clear`, "POST", body, actor),
+  waive: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/cps/${id}/waive`, "POST", body, actor),
+  reject: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/cps/${id}/reject`, "POST", body, actor),
+};
+
+// ---- project-finance post-drawdown mechanics: milestones + reserves ----
+export const pf = {
+  milestones: (ref: string, facilityRef?: string) =>
+    call<any[]>(`/decision/api/pf/${ref}/milestones${facilityRef ? `?facilityRef=${facilityRef}` : ""}`, "GET"),
+  defineMilestone: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/${ref}/milestones`, "POST", body, actor),
+  certify: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/milestones/${id}/certify`, "POST", body, actor),
+  reserves: (ref: string) => call<any[]>(`/decision/api/pf/${ref}/reserves`, "GET"),
+  defineReserve: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/${ref}/reserves`, "POST", body, actor),
+  fund: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/reserves/${id}/fund`, "POST", body, actor),
+  withdraw: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/reserves/${id}/withdraw`, "POST", body, actor),
+  gate: (ref: string, facilityRef: string, seq?: number) =>
+    call<any>(`/decision/api/pf/gate/${ref}/${facilityRef}${seq != null ? `?milestoneSequence=${seq}` : ""}`, "GET"),
+  waterfall: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/pf/${ref}/waterfall`, "POST", body, actor),
+};
+
+export const disbursement = {
+  request: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${ref}/request`, "POST", body, actor),
+  authorize: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/authorize`, "POST", body, actor),
+  release: (id: number, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/release`, "POST", undefined, actor),
+  reject: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/reject`, "POST", body, actor),
+  amend: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/amend`, "POST", body, actor),
+  cancel: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/cancel`, "POST", body, actor),
+  reverse: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/disbursement/${id}/reverse`, "POST", body, actor),
+  history: (ref: string, facilityRef?: string) =>
+    call<any[]>(`/decision/api/disbursement/${ref}${facilityRef ? `?facilityRef=${facilityRef}` : ""}`, "GET"),
+};
+
+// ---- repayments (inbound money leg: schedule + maker-checker + connector) ----
+export const repayments = {
+  schedule: (ref: string, facilityRef: string, method = "EMI", frequency = "MONTHLY") =>
+    call<any>(`/decision/api/repayments/${ref}/schedule?facilityRef=${facilityRef}&method=${method}&frequency=${frequency}`, "GET"),
+  history: (ref: string, facilityRef?: string) =>
+    call<any[]>(`/decision/api/repayments/${ref}${facilityRef ? `?facilityRef=${facilityRef}` : ""}`, "GET"),
+  outstanding: (ref: string, facilityRef: string) =>
+    call<any>(`/decision/api/repayments/${ref}/outstanding?facilityRef=${facilityRef}`, "GET"),
+  record: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/repayments/${ref}/record`, "POST", body, actor),
+  confirm: (id: number, actor: string) =>
+    call<any>(`/decision/api/repayments/${id}/confirm`, "POST", undefined, actor),
+  reject: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/repayments/${id}/reject`, "POST", body, actor),
+};
+
+export const syndication = {
+  // agency: book / fee waterfall / agency reconciliation / feed
+  book: (ref: string) => call<any>(`/origination/api/syndication/${ref}/book`, "GET"),
+  allocate: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/${ref}/allocate`, "POST", body, actor),
+  allocations: (ref: string) => call<any[]>(`/origination/api/syndication/${ref}/allocations`, "GET"),
+  feed: (ref: string) => call<any>(`/origination/api/syndication/${ref}/feed`, "GET"),
+  // invitations
+  invite: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/${ref}/invitations`, "POST", body, actor),
+  acceptInvitation: (id: number, actor: string) =>
+    call<any>(`/origination/api/syndication/invitations/${id}/accept`, "POST", undefined, actor),
+  declineInvitation: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/invitations/${id}/decline`, "POST", body, actor),
+  withdrawInvitation: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/invitations/${id}/withdraw`, "POST", body, actor),
+  invitations: (ref: string) =>
+    call<any[]>(`/origination/api/syndication/${ref}/invitations`, "GET"),
+  // secondary transfers
+  proposeTransfer: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/${ref}/transfers`, "POST", body, actor),
+  settleTransfer: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/transfers/${id}/settle`, "POST", body, actor),
+  rejectTransfer: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/syndication/transfers/${id}/reject`, "POST", body, actor),
+  transfers: (ref: string) =>
+    call<any[]>(`/origination/api/syndication/${ref}/transfers`, "GET"),
+};
+
+// ---- post-sanction facility amendments (DoA-routed) ----
+export const amendments = {
+  propose: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/amendments/${ref}/propose`, "POST", body, actor),
+  approve: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/amendments/${id}/approve`, "POST", body, actor),
+  reject: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/amendments/${id}/reject`, "POST", body, actor),
+  history: (ref: string) => call<any[]>(`/decision/api/amendments/${ref}`, "GET"),
+};
+
+// ---- client planning template (CPT) ----
+export const cpt = {
+  generate: (ref: string, body: any, actor: string) =>
+    call<any>(`/decision/api/cpt/${ref}/generate`, "POST", body, actor),
+  latest: (ref: string) => call<any>(`/decision/api/cpt/${ref}`, "GET").catch(() => null),
+  versions: (ref: string) => call<any[]>(`/decision/api/cpt/${ref}/versions`, "GET").catch(() => [] as any[]),
+  review: (id: number, body: any, actor: string) =>
+    call<any>(`/decision/api/cpt/templates/${id}/review`, "POST", body, actor),
+};
+
+// ---- groups · decisioning (advisory rollup + combined CP) ----
+export const groups = {
+  byReference: (ref: string) =>
+    call<any>(`/counterparty/api/initiation/groups/by-reference/${ref}`, "GET"),
+  exposureByReference: (ref: string) =>
+    call<any>(`/counterparty/api/initiation/groups/by-reference/${ref}/exposure`, "GET"),
+  insights: (ref: string, actor: string) =>
+    call<any>(`/decision/api/decisions/groups/${ref}/insights`, "GET", undefined, actor),
+  generateCombinedProposal: (ref: string, actor: string) =>
+    call<any>(`/decision/api/decisions/groups/${ref}/combined-proposal/generate`,
+              "POST", undefined, actor),
+  combinedProposal: (ref: string) =>
+    call<any>(`/decision/api/decisions/groups/${ref}/combined-proposal`, "GET"),
+  combinedVersions: (ref: string) =>
+    call<any[]>(`/decision/api/decisions/groups/${ref}/combined-proposal/versions`, "GET"),
 };
 
 // ---- master data (generic, maker-checker) ----
@@ -343,11 +644,100 @@ export const copilot = {
   scope: (persona: string) => call<any>(`/copilot/api/copilot/scope?persona=${persona}`, "GET"),
 };
 
+// ---- workflow engine (lifecycle stage tracker + SLA) ----
+export type WorkflowStage = {
+  id: number; instanceId: number; ordinal: number; stageKey: string; label: string;
+  autonomy: string; aiAllowed: boolean; humanGate: boolean; slaHours: number;
+  status: string; enteredAt?: string; completedAt?: string;
+  completedBy?: string; completedByType?: string; note?: string;
+  slaDueAt?: string; slaBreached: boolean; blockedReason?: string;
+};
+export type WorkflowInstance = {
+  id: number; applicationReference: string; definitionCode?: string; definitionVersion?: number;
+  jurisdiction?: string; segment?: string; currentStageKey?: string; status: string;
+  startedAt?: string; completedAt?: string; slaBreached: boolean;
+};
+export type WorkflowView = {
+  instance: WorkflowInstance; stages: WorkflowStage[]; transitions: any[];
+};
+export const workflow = {
+  materialise: (applicationReference: string, jurisdiction: string, segment: string, actor: string) =>
+    call<WorkflowInstance>("/workflow/api/workflow/instances", "POST",
+                            { applicationReference, jurisdiction, segment }, actor),
+  view: (ref: string) => call<WorkflowView>(`/workflow/api/workflow/instances/${ref}`, "GET"),
+  active: () => call<WorkflowInstance[]>("/workflow/api/workflow/instances", "GET"),
+  advance: (ref: string, stageKey: string, actorType: string, note: string, actor: string) =>
+    call<WorkflowInstance>(`/workflow/api/workflow/instances/${ref}/advance`, "POST",
+                            { stageKey, actorType, note }, actor),
+  record: (ref: string, stageKey: string, actorType: string, note: string, actor: string) =>
+    call<WorkflowInstance>(`/workflow/api/workflow/instances/${ref}/stages/${stageKey}/record`,
+                            "POST", { actorType, note }, actor),
+  block: (ref: string, stageKey: string, reason: string, actor: string) =>
+    call<WorkflowStage>(`/workflow/api/workflow/instances/${ref}/stages/${stageKey}/block`,
+                        "POST", { reason }, actor),
+  unblock: (ref: string, stageKey: string, actor: string) =>
+    call<WorkflowStage>(`/workflow/api/workflow/instances/${ref}/stages/${stageKey}/unblock`,
+                        "POST", undefined, actor),
+  slaBreaches: () => call<any[]>("/workflow/api/workflow/sla-breaches", "GET"),
+};
+
+// ---- self-service reporting (ad-hoc query builder over the book) ----
+export type ReportColumn = { key: string; label: string; type: string; role: string };
+export type ReportResult = {
+  datasetKey: string; columns: ReportColumn[]; rows: any[][];
+  totals: Record<string, any>; scannedRows: number; returnedRows: number;
+};
+export type ReportDefinition = {
+  title?: string; dataset: string; dimensions?: string[];
+  measures?: { field: string; agg: string; as: string }[];
+  filters?: { field: string; op: string; value: any }[];
+  sort?: { by: string; dir: string }[]; limit?: number;
+};
+export const reports = {
+  datasets: () => call<any[]>("/portfolio/api/reports/datasets", "GET"),
+  run: (def: ReportDefinition, actor: string) =>
+    call<ReportResult>("/portfolio/api/reports/run", "POST", def, actor),
+  runSaved: (key: string, actor: string) =>
+    call<ReportResult>(`/portfolio/api/reports/${key}/run`, "GET", undefined, actor),
+};
+
+// ---- financial projections (multi-year proforma; deterministic, advisory) ----
+export const projections = {
+  view: (ref: string) => call<any>(`/risk/api/risk/${ref}/projection`, "GET"),
+  setDrivers: (ref: string, drivers: Record<string, number>, actor: string) =>
+    call<any>(`/risk/api/risk/${ref}/projection/drivers`, "POST", { drivers }, actor),
+  sensitivity: (ref: string, driver: string, delta: number, actor: string) =>
+    call<any>(`/risk/api/risk/${ref}/projection/sensitivity`, "POST", { driver, delta }, actor),
+  confirm: (ref: string, actor: string) =>
+    call<any>(`/risk/api/risk/${ref}/projection/confirm`, "POST", undefined, actor),
+};
+
+// ---- code values (the generic dropdown source of truth) ----
+export type CodeValue = { code: string; label: string; score?: number; sortOrder?: number };
+export type CodeValueSet = { domain: string; label: string; values: CodeValue[] };
+export const codeValues = {
+  get: (domain: string) => call<CodeValueSet>(`/config/api/code-values/${domain}`, "GET"),
+  all: () => call<CodeValueSet[]>("/config/api/code-values", "GET"),
+};
+
 // ---- audit (any service exposes /api/audit) ----
 export const audit = {
   recent: (svc: string) => call<any[]>(`/${svc}/api/audit`, "GET"),
   subject: (svc: string, type: string, id: string) =>
     call<any[]>(`/${svc}/api/audit/subject?type=${type}&id=${id}`, "GET"),
+};
+
+// ---- notifications outbox (G5-notify; any service exposes /api/notifications) ----
+export const notifications = {
+  list: (svc: string, q?: { status?: string; eventType?: string; subjectRef?: string }) => {
+    const p = new URLSearchParams();
+    if (q?.status) p.set("status", q.status);
+    if (q?.eventType) p.set("eventType", q.eventType);
+    if (q?.subjectRef) p.set("subjectRef", q.subjectRef);
+    const qs = p.toString();
+    return call<any[]>(`/${svc}/api/notifications` + (qs ? `?${qs}` : ""), "GET");
+  },
+  get: (svc: string, id: number) => call<any>(`/${svc}/api/notifications/${id}`, "GET"),
 };
 
 export const fmt = {

@@ -35,12 +35,25 @@ public final class Dtos {
     }
 
     /** Raw financials for spreading. Each line carries its source provenance. */
-    public record SpreadRequest(@NotNull List<PeriodInput> periods) {
+    public record SpreadRequest(
+            @NotNull List<PeriodInput> periods,
+            /** Optional Level-1 presentation currency to normalise every period into.
+             *  Defaults to the latest period's native currency when omitted. */
+            String presentationCurrency) {
 
         public record PeriodInput(
                 @NotBlank String label,
                 @NotBlank String gaap,
                 @NotBlank String currency,
+                /** Optional analyst-supplied period-end rate (native -> presentation).
+                 *  When omitted and the period currency differs from the presentation
+                 *  currency, the rate is resolved from the dated FX_RATE master as at
+                 *  {@link #periodEnd}, then the current spot table. */
+                Double fxToPresentation,
+                /** Optional ISO period-end date (e.g. 2024-03-31). When present, the
+                 *  native->presentation rate is taken AS AT this date from the dated
+                 *  FX_RATE master rather than today's spot. */
+                String periodEnd,
                 @NotNull Map<String, LineInput> lines) {
         }
 
@@ -93,17 +106,32 @@ public final class Dtos {
     }
 
     public record PeriodAnalysis(Long periodId, String label, String gaap, String currency,
-                                 List<CellView> lines, Map<String, Double> ratios) {
+                                 List<CellView> lines, Map<String, Double> ratios,
+                                 /** Level-1: currency the period is normalised into, the FX rate used,
+                                  *  and the monetary lines restated into that currency. Ratios are
+                                  *  unit-free so they are identical in either currency. */
+                                 String presentationCurrency, Double fxToPresentation,
+                                 Map<String, Double> presentationValues,
+                                 /** Period-end date and where the FX rate came from
+                                  *  (SUPPLIED | DATED_MASTER | CURRENT_SPOT | SAME_CURRENCY). */
+                                 String periodEnd, String fxRateSource) {
     }
 
     public record SpreadAnalysis(String applicationReference, boolean spreadConfirmed,
                                  List<PeriodAnalysis> periods, Map<String, Double> trends,
-                                 List<String> benchmarkFlags) {
+                                 List<String> benchmarkFlags,
+                                 /** The presentation currency every period is normalised into and
+                                  *  whether all periods share a single native currency. Trends are
+                                  *  computed on the normalised (presentation-currency) values. */
+                                 String presentationCurrency, boolean currencyConsistent,
+                                 /** The resolved FINANCIAL_TEMPLATE (chart-of-accounts augmentation) key. */
+                                 String financialTemplate) {
     }
 
     /** Snapshot consumed by risk-service to rate, capitalise and price the deal. */
     public record CreditInputs(String applicationReference, Long counterpartyId, String counterpartyRef,
-                               String counterpartyName, String jurisdiction, String segment, String facilityType,
+                               String counterpartyName, String jurisdiction, String segment, String sector,
+                               String facilityType,
                                double requestedAmount, String currency, int tenorMonths, String collateralType,
                                double collateralValue, boolean secured, boolean spreadConfirmed,
                                Map<String, Double> latestFinancials, Map<String, Double> ratios,
@@ -121,6 +149,8 @@ public final class Dtos {
     public record FacilityView(Long id, String reference, int ordinal, boolean primary,
                                String facilityType, double amount, String currency,
                                int tenorMonths, String purpose, Double indicativeRate,
+                               String rateType, String benchmarkCode, Double spreadBps,
+                               Integer resetFrequencyMonths,
                                List<SublimitView> sublimits, List<InterchangeabilityGroupView> interchangeabilityGroups,
                                double sublimitTotal, double sublimitHeadroom) {
     }

@@ -51,6 +51,15 @@ public class Counterparty {
     private String sector;
     private String country;
 
+    /**
+     * Borrower-level Level-1 presentation currency — the currency the borrower's
+     * financials are analysed/normalised into across periods. Defaults from the
+     * country/jurisdiction when not supplied; surfaced to spreading so a
+     * multi-currency borrower has one consistent analysis currency.
+     */
+    @Column(length = 5)
+    private String presentationCurrency;
+
     @Column(length = 20)
     private String cddTier;            // SIMPLIFIED | STANDARD | ENHANCED
 

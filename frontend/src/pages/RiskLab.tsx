@@ -4,12 +4,12 @@
  * rating produced by the risk engine.
  */
 import { useState } from "react";
-import { origination, risk, fmt } from "../api";
+import { origination, risk, models, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, GradeBadge, Stat, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, EmptyState, Field, GradeBadge, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
+import { useCodes } from "../code-values";
 
-const SECTOR_OUTLOOKS = ["IMPROVING", "STABLE", "DETERIORATING"] as const;
-type SectorOutlook = (typeof SECTOR_OUTLOOKS)[number];
+type SectorOutlook = string;
 
 interface MacroForm {
   scenarioName: string;
@@ -44,6 +44,7 @@ function directionKind(dir: string): string {
 export default function RiskLab() {
   const { actor, notify } = useApp();
   const apps = useAsync(() => origination.list(), []);
+  const sectorOutlooks = useCodes("SECTOR_OUTLOOK");
   const [ref, setRef] = useState<string>("");
 
   // Authoritative rating summary
@@ -64,6 +65,13 @@ export default function RiskLab() {
     [ref],
   );
 
+  // Scoring model — shared so the manual-override card can echo the advisory
+  // composite as read-only context (stays in sync as answers are captured/confirmed).
+  const modelAsync = useAsync(
+    () => (ref ? models.render(ref).catch(() => null) : Promise.resolve(null)),
+    [ref],
+  );
+
   // RAG busy state
   const [ragBusy, setRagBusy] = useState(false);
 
@@ -75,6 +83,7 @@ export default function RiskLab() {
     ratingAsync.reload();
     ragAsync.reload();
     macroAsync.reload();
+    modelAsync.reload();
   };
 
   const handleAssessRag = async () => {
@@ -130,17 +139,20 @@ export default function RiskLab() {
 
   return (
     <div className="grid">
-      {/* Banner */}
-      <Card
-        title="Risk Lab"
-        sub="Statistical overlays for qualitative sense-checking. All outputs are ADVISORY and NON-BINDING — they never alter the authoritative deterministic rating produced by the risk engine."
-        right={<Badge kind="ai">AI · advisory</Badge>}
-      >
-        <div className="muted" style={{ fontSize: 13 }}>
-          Select a deal to run RAG scoring and macro stress overlays. These are
-          directional signals only; credit decisions remain with named humans.
+      {/* Governance banner */}
+      <div className="gov-banner">
+        <h3>AI recommends. Humans decide. The rating of record never moves.</h3>
+        <div className="gb-sub">
+          Risk Lab runs statistical RAG scoring and macro stress overlays as <b>advisory, non-binding</b> signals.
+          They read the same ratios the deterministic scorecard reads — but they never rewrite the authoritative rating.
         </div>
-      </Card>
+        <div className="gb-chips">
+          <span className="gb-chip"><b>AI</b> · advisory overlays</span>
+          <span className="gb-chip"><b>Human</b> · credit decision</span>
+          <span className="gb-chip"><b>Deterministic</b> · PD / LGD / EAD</span>
+          <span className="gb-chip">Every output <b>audited</b> as an AI event</span>
+        </div>
+      </div>
 
       {/* Deal selector */}
       <Card title="Deal selector">
@@ -179,6 +191,42 @@ export default function RiskLab() {
         )}
       </Card>
 
+      {/* Signature governance frame: AI advisory ↔ authoritative rating UNCHANGED */}
+      {ref && rating && (
+        <Card title="Governance view" sub="One glance: the AI overlay on the left, the figure of record on the right — untouched.">
+          <GovSplit
+            advisoryLabel="Statistical RAG (advisory)"
+            advisory={
+              latestRag ? (
+                <div className="inline" style={{ gap: 14 }}>
+                  <Badge kind={ragBandKind(latestRag.band)}>{latestRag.band}</Badge>
+                  <span style={{ fontSize: 22, fontWeight: 750 }}>{latestRag.score}<span className="muted" style={{ fontSize: 13, fontWeight: 500 }}> / 100</span></span>
+                </div>
+              ) : <span className="muted">Run “Assess RAG” to generate the advisory band.</span>
+            }
+            authLabel="Authoritative rating"
+            auth={
+              <div className="inline" style={{ gap: 12 }}>
+                <GradeBadge grade={rating.finalGrade} />
+                <span className="muted" style={{ fontSize: 13 }}>PD {fmt.pct(rating.pd, 2)}</span>
+              </div>
+            }
+          />
+        </Card>
+      )}
+
+      {!ref && (
+        <Card>
+          <EmptyState
+            glyph="◎"
+            title="Select a deal to run advisory overlays"
+            sub="Pick an application above. Risk Lab then offers a statistical RAG band and macro stress overlays — both advisory, neither ever rewrites the authoritative rating."
+          />
+        </Card>
+      )}
+
+      {ref && (
+      <>
       {/* RAG card */}
       <Card
         title="RAG Assessment"
@@ -186,7 +234,7 @@ export default function RiskLab() {
         right={<Badge kind="ai">AI · advisory</Badge>}
       >
         <div className="btnrow">
-          <Button onClick={handleAssessRag} disabled={!ref} busy={ragBusy}>
+          <Button onClick={handleAssessRag} disabled={!ref || ragBusy} busy={ragBusy}>
             Assess RAG
           </Button>
           <span className="muted">Acting as {actor}</span>
@@ -306,8 +354,8 @@ export default function RiskLab() {
                 setMacroForm((f) => ({ ...f, sectorOutlook: e.target.value as SectorOutlook }))
               }
             >
-              {SECTOR_OUTLOOKS.map((o) => (
-                <option key={o}>{o}</option>
+              {sectorOutlooks.map((o) => (
+                <option key={o.code} value={o.code}>{o.label}</option>
               ))}
             </select>
           </Field>
@@ -342,7 +390,7 @@ export default function RiskLab() {
         </div>
 
         <div className="btnrow" style={{ marginTop: 8 }}>
-          <Button onClick={handleMacroSubmit} disabled={!ref} busy={macroBusy}>
+          <Button onClick={handleMacroSubmit} disabled={!ref || macroBusy} busy={macroBusy}>
             Run macro impact
           </Button>
         </div>
@@ -425,6 +473,316 @@ export default function RiskLab() {
           <div className="muted" style={{ marginTop: 8 }}>No macro assessments yet — configure a scenario and run.</div>
         )}
       </Card>
+
+      {ref && (
+        <ModelCard
+          refValue={ref}
+          grade={ratingAsync.data?.rating?.finalGrade}
+          model={modelAsync}
+        />
+      )}
+
+      {ref && rating && (
+        <ManualOverrideCard
+          refValue={ref}
+          rating={rating}
+          model={modelAsync.data}
+          onChanged={reloadAll}
+        />
+      )}
+      </>
+      )}
     </div>
+  );
+}
+
+/**
+ * Manual rating override — a named human changes the authoritative grade. This is
+ * deliberately 100% manual: nothing here is AI-derived, no notch is suggested, and
+ * the qualitative composite is shown only as READ-ONLY CONTEXT the human may weigh.
+ * The backend enforces the per-role notch limit, reason code, and segregation of
+ * duties; the implied-notch hint below is plain arithmetic on the human's selection.
+ */
+function ManualOverrideCard({ refValue, rating, model, onChanged }: {
+  refValue: string; rating: any; model: any; onChanged: () => void;
+}) {
+  const { actor, notify } = useApp();
+  const grades = useCodes("GRADE_SCALE");
+  const reasons = useCodes("OVERRIDE_REASON");
+  const roles = useCodes("OVERRIDE_ROLE");
+  const gradeCodes = grades.map((g) => g.code);
+  const roleLimits: Record<string, number> = Object.fromEntries(
+    roles.map((r) => [r.code, r.score ?? 1]),
+  );
+  const [proposedGrade, setProposedGrade] = useState("");
+  const [reasonCode, setReasonCode] = useState("");
+  const [role, setRole] = useState<string>("ANALYST");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const modelGrade: string | undefined = rating?.modelGrade;
+  const finalGrade: string | undefined = rating?.finalGrade;
+  // + = upgrade (toward AAA), matching MasterScale.notches on the server.
+  const notch = proposedGrade && modelGrade
+    ? gradeCodes.indexOf(modelGrade) - gradeCodes.indexOf(proposedGrade)
+    : 0;
+  const roleLimit = roleLimits[role] ?? 1;
+  const exceedsLimit = Math.abs(notch) > roleLimit;
+
+  async function submit() {
+    if (!proposedGrade) { notify("Pick the grade you are overriding to", true); return; }
+    if (!reasonCode) { notify("Select a reason code", true); return; }
+    setBusy(true);
+    try {
+      await risk.overrideRating(refValue, { proposedGrade, reasonCode, note, role }, actor);
+      notify(`Rating overridden to ${proposedGrade} (${role})`);
+      setProposedGrade(""); setReasonCode(""); setNote("");
+      onChanged();
+    } catch (e: any) { notify(e.message, true); } finally { setBusy(false); }
+  }
+
+  const bandKind = (b: string) => (b === "STRONG" ? "ok" : b === "WEAK" ? "bad" : "warn");
+  const notchLabel = notch === 0
+    ? "no change"
+    : `${Math.abs(notch)}-notch ${notch > 0 ? "upgrade" : "downgrade"}`;
+
+  return (
+    <Card title="Manual rating override"
+      sub="A named human changes the authoritative grade — notch-limited by role, reason-coded, and segregation-of-duties checked. 100% manual: no AI recommendation pre-fills or drives this."
+      right={<HumanBadge label="HUMAN · MANUAL" />}>
+
+      {/* Authoritative figures of record (what an override would change). */}
+      <div className="grid cols-3" style={{ marginBottom: 12 }}>
+        <Stat label="Model grade" value={<GradeBadge grade={modelGrade} />} />
+        <Stat label="Current final grade" value={<GradeBadge grade={finalGrade} />} />
+        <Stat label="PD" value={fmt.pct(rating?.pd, 2)} />
+      </div>
+
+      {/* Read-only model composite — informs the human, never pre-fills the grade. */}
+      <div className="prov" style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <AiBadge label="ADVISORY CONTEXT" />
+        {model && model.answeredCount > 0 ? (
+          <>
+            <span>Model composite</span>
+            <b>{model.compositeScore.toFixed(1)}/100</b>
+            <Badge kind={bandKind(model.compositeBand)}>{model.compositeBand}</Badge>
+            {model.status !== "CONFIRMED" && <span className="muted">(not yet confirmed)</span>}
+            <span className="muted">— read-only reference; it suggests no grade and does not drive this override.</span>
+          </>
+        ) : (
+          <span className="muted">No model assessment yet — score the model above for advisory context. It is optional and never pre-fills the override.</span>
+        )}
+      </div>
+
+      <div className="grid cols-3" style={{ alignItems: "end" }}>
+        <Field label="Override to grade">
+          <select value={proposedGrade} onChange={(e) => setProposedGrade(e.target.value)}>
+            <option value="">— select grade —</option>
+            {grades.map((g) => <option key={g.code} value={g.code}>{g.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Reason code">
+          <select value={reasonCode} onChange={(e) => setReasonCode(e.target.value)}>
+            <option value="">— select reason —</option>
+            {reasons.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Acting as role">
+          <select value={role} onChange={(e) => setRole(e.target.value)}>
+            {roles.map((r) => {
+              const limit = r.score ?? 1;
+              return (
+                <option key={r.code} value={r.code}>
+                  {r.label}{limit < 99 ? ` (≤${limit} notch)` : " (unlimited)"}
+                </option>
+              );
+            })}
+          </select>
+        </Field>
+      </div>
+
+      <Field label="Justification note">
+        <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)}
+          placeholder="Why is the model grade being overridden? (audited)" />
+      </Field>
+
+      {proposedGrade && (
+        <div className="prov" style={{ marginBottom: 10 }}>
+          Implied move from model grade <b>{modelGrade}</b> → <b>{proposedGrade}</b>: <b>{notchLabel}</b>.
+          {exceedsLimit && (
+            <span style={{ color: "var(--bad, #c0392b)", marginLeft: 6 }}>
+              Exceeds the {role.replace(/_/g, " ")} limit of {roleLimit} notch(es) — will be rejected and must be escalated.
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="btnrow">
+        <Button kind="primary" busy={busy} onClick={submit} disabled={!proposedGrade || !reasonCode || exceedsLimit || busy}>
+          Apply manual override
+        </Button>
+        <span className="muted">Acting as {actor}</span>
+        <Unchanged label="DETERMINISTIC PD/CAPITAL RE-DERIVED" />
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Scoring-model runtime — renders the MODEL_DEFINITION resolved for this deal
+ * (sections of typed questions, visibility rules, master-driven options, iterative
+ * groups), captures answers, computes a deterministic weighted composite, and
+ * human-confirms. Advisory overlay: the composite never moves the authoritative grade.
+ */
+function bandKindOf(b: string) { return b === "STRONG" ? "ok" : b === "WEAK" ? "bad" : b === "N/A" ? "" : "warn"; }
+
+function ModelCard({ refValue, grade, model }: {
+  refValue: string; grade?: string; model: { data: any; reload: () => void };
+}) {
+  const { actor, notify } = useApp();
+  const [busy, setBusy] = useState(false);
+  const v = model.data;
+
+  async function run(fn: () => Promise<any>, ok: string) {
+    setBusy(true);
+    try { await fn(); notify(ok); model.reload(); }
+    catch (e: any) { notify(e.message, true); } finally { setBusy(false); }
+  }
+  const submit = (answers: any[]) =>
+    run(() => models.answer(refValue, answers, actor), "Answer captured");
+
+  if (!v) {
+    return (
+      <Card title="Scoring model" right={<AiBadge label="ADVISORY · CONFIGURABLE" />}>
+        <EmptyState glyph="◷" title="No scoring model resolved yet"
+          sub="Rate the deal first; the engine resolves the MODEL_DEFINITION for this jurisdiction/segment, then score it here." />
+        <Button kind="subtle" busy={busy} onClick={() => run(() => models.resolve(refValue, actor), "Model resolved")}>
+          Resolve model
+        </Button>
+      </Card>
+    );
+  }
+
+  return (
+    <Card title={`Scoring model · ${v.displayName}`}
+      sub={`Model ${v.modelKey} v${v.modelVersion} · weighted composite of qualitative + quantitative sections. Advisory & human-confirmed — the authoritative grade is never changed.`}
+      right={<AiBadge label="ADVISORY · CONFIGURABLE" />}>
+      <div className="btnrow" style={{ marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+        <Button kind="primary" busy={busy} disabled={busy}
+          onClick={() => run(() => models.suggest(refValue, actor), "Auto-scored — module params pulled, standalone params model-scored; review & confirm")}>
+          Auto-score
+        </Button>
+        <Stat label="Composite" value={`${(v.compositeScore ?? 0).toFixed(1)}/100`} />
+        <Badge kind={bandKindOf(v.compositeBand)}>{v.compositeBand}</Badge>
+        <Badge kind={v.status === "CONFIRMED" ? "ok" : "warn"}>{v.status}</Badge>
+        <Badge kind="ok">grade {grade ?? v.authoritativeGrade ?? "—"} · UNCHANGED</Badge>
+        <Button kind="subtle" busy={busy} disabled={busy || !v.valid}
+          onClick={() => run(() => models.confirm(refValue, actor), "Model confirmed")}>
+          Confirm model
+        </Button>
+      </div>
+
+      {!v.valid && (v.errors || []).length > 0 && (
+        <div className="alert err" style={{ marginBottom: 10 }}>
+          Unmet constraints: {v.errors.join(" · ")}
+        </div>
+      )}
+
+      {(v.sections || []).map((s: any) => (
+        <div key={s.key} style={{ marginBottom: 16 }}>
+          <div className="flexbetween" style={{ marginBottom: 6 }}>
+            <b>{s.label} <span className="muted">· {(s.weight * 100).toFixed(0)}% · {s.kind}</span></b>
+            <span>
+              <Badge kind={bandKindOf(s.sectionBand)}>{s.sectionBand}</Badge>
+              {s.sectionScore != null && <span className="mono" style={{ marginLeft: 6 }}>{s.sectionScore.toFixed(1)}/100</span>}
+            </span>
+          </div>
+          <table>
+            <thead><tr><th>Question</th><th>Source</th><th>Answer</th><th className="num">Weight</th><th className="num">Score</th></tr></thead>
+            <tbody>
+              {(s.questions || []).filter((q: any) => q.visible).map((q: any) => {
+                const isModule = q.source && q.source !== "STANDALONE";
+                return (
+                <tr key={q.key}>
+                  <td>{q.label}{q.required && <span style={{ color: "var(--bad,#c0392b)" }}> *</span>}
+                    {q.visibleWhen && <div className="muted" style={{ fontSize: 11 }}>shown when {q.visibleWhen}</div>}
+                    {q.rationale && <div className="muted" style={{ fontSize: 11 }} title={q.rationale}>ⓘ {q.rationale.length > 90 ? q.rationale.slice(0, 90) + "…" : q.rationale}</div>}</td>
+                  <td title={isModule ? `Sourced from ${q.source}` : "Scored by the model — not fed by another module"}>
+                    {isModule
+                    ? <Badge kind="info">{q.source}</Badge>
+                    : <Badge>model-scored</Badge>}
+                    {q.answerSource && <span className="muted" style={{ fontSize: 11, marginLeft: 4 }}>{q.answerSource}</span>}</td>
+                  <td><QuestionInput q={q} disabled={busy || isModule} onAnswer={submit} /></td>
+                  <td className="num">{q.weight ? (q.weight * 100).toFixed(0) + "%" : "—"}</td>
+                  <td className="num">{q.score == null ? "—" : q.score.toFixed(0)}</td>
+                </tr>
+              ); })}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      <div className="prov">
+        Composite is a deterministic weighted roll-up of the answers; it is advisory context for the
+        credit decision and never pre-fills or moves the authoritative grade.
+      </div>
+    </Card>
+  );
+}
+
+/** Renders the input for one question by type, submitting answers on change. */
+function QuestionInput({ q, disabled, onAnswer }: { q: any; disabled: boolean; onAnswer: (a: any[]) => void }) {
+  const [newItem, setNewItem] = useState<Record<string, string>>({});
+  if (q.type === "DROPDOWN") {
+    return (
+      <select disabled={disabled} value={q.answer ?? ""}
+        onChange={(e) => onAnswer([{ questionKey: q.key, value: e.target.value }])}>
+        <option value="">— select —</option>
+        {(q.options || []).map((o: any) => <option key={o.label} value={o.label}>{o.label} ({o.score})</option>)}
+      </select>
+    );
+  }
+  if (q.type === "ITERATIVE") {
+    const items: any[] = q.items || [];
+    const fields: any[] = q.itemFields || [];
+    const addItem = () => {
+      const idx = items.reduce((m, it) => Math.max(m, (it._index ?? 0) + 1), 0);
+      const answers = fields
+        .filter((f) => (newItem[f.key] ?? "").trim() !== "")
+        .map((f) => ({ questionKey: q.key, itemIndex: idx, itemFieldKey: f.key, value: newItem[f.key] }));
+      if (answers.length) { onAnswer(answers); setNewItem({}); }
+    };
+    const removeItem = (it: any) =>
+      onAnswer(fields.map((f) => ({ questionKey: q.key, itemIndex: it._index, itemFieldKey: f.key, value: "" })));
+    return (
+      <div>
+        {items.length > 0 && (
+          <table style={{ marginBottom: 6 }}>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it._index}>
+                  {fields.map((f) => <td key={f.key} className="mono">{it[f.key] ?? "—"}</td>)}
+                  <td><Button kind="ghost" onClick={() => removeItem(it)}>×</Button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {fields.map((f) => (
+            <input key={f.key} placeholder={f.label} disabled={disabled} value={newItem[f.key] ?? ""}
+              style={{ width: 110 }}
+              onChange={(e) => setNewItem((m) => ({ ...m, [f.key]: e.target.value }))} />
+          ))}
+          <Button kind="subtle" disabled={disabled} onClick={addItem}>Add</Button>
+        </div>
+        <span className="muted" style={{ fontSize: 11 }}>{items.length} item(s){q.min ? ` · min ${q.min}` : ""}{q.max ? ` · max ${q.max}` : ""}</span>
+      </div>
+    );
+  }
+  // INPUT / NUMBER
+  return (
+    <input type={q.type === "NUMBER" ? "number" : "text"} disabled={disabled}
+      defaultValue={q.answer ?? ""} style={{ width: 140 }}
+      onBlur={(e) => { if ((e.target.value ?? "") !== (q.answer ?? "")) onAnswer([{ questionKey: q.key, value: e.target.value }]); }} />
   );
 }

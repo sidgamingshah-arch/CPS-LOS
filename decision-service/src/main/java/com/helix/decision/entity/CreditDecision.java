@@ -59,6 +59,15 @@ public class CreditDecision {
     @Column(nullable = false, length = 30)
     private String status;                  // PENDING_APPROVAL | DECIDED
 
+    // ---- committee / quorum routing (PRD §8) — additive, default single-approver ----
+    /** True when the routed authority tier is a COMMITTEE (flagged in the DOA_MATRIX pack). */
+    private boolean committeeMode = false;
+    /** Approving votes needed to finalise a committee decision (1 for single-authority tiers). */
+    private int quorumRequired = 1;
+    /** The actor who routed the deal — a committee voter must differ from the router (SoD). */
+    @Column(length = 80)
+    private String routedBy;
+
     // ---- the decision itself ----
     private String outcome;                 // Enums.DecisionOutcome name
     private String decidedBy;

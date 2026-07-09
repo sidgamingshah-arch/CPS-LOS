@@ -50,6 +50,11 @@ public class LoanApplication {
     @Column(nullable = false, length = 40)
     private String segment;
 
+    /** Borrower sector (from the counterparty), resolved at create — drives sector-specific
+     *  financial / projection / scoring-model templates. Nullable: legacy rows / unavailable. */
+    @Column(length = 60)
+    private String sector;
+
     @Column(nullable = false, length = 40)
     private String facilityType;
 

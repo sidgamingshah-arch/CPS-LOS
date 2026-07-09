@@ -34,8 +34,13 @@ public class MasterController {
     }
 
     @GetMapping("/{type}/{key}")
-    public MasterRecord active(@PathVariable String type, @PathVariable String key) {
-        return masters.active(type, key);
+    public MasterRecord active(@PathVariable String type, @PathVariable String key,
+                               @RequestParam(required = false) String jurisdiction) {
+        // Jurisdiction-aware resolution when supplied (override → default → fallback);
+        // otherwise the jurisdiction-agnostic default.
+        return (jurisdiction == null || jurisdiction.isBlank())
+                ? masters.active(type, key)
+                : masters.resolve(type, key, jurisdiction);
     }
 
     @GetMapping("/{type}/{key}/history")

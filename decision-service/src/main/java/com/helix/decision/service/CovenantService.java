@@ -123,6 +123,48 @@ public class CovenantService {
     /** AI [C] covenant suggestions tied to the risk profile (PRD §7, US-7.2). Analyst edits/accepts. */
     public List<AddCovenantRequest> suggest(String finalGrade) {
         boolean weak = List.of("BB", "B", "CCC", "CC", "C", "D").contains(finalGrade);
+        // Base catalogue from the COVENANT_LIBRARY master; weak grades tighten the financials.
+        // A config outage degrades to the built-in fallback so suggestions never go empty.
+        var catalogue = upstream.masters("COVENANT_LIBRARY");
+        if (catalogue.isEmpty()) {
+            return hardcodedFallback(weak);
+        }
+        List<AddCovenantRequest> out = new ArrayList<>();
+        for (var r : catalogue) {
+            Map<String, Object> p = r.payload();
+            String op = String.valueOf(p.getOrDefault("operator", ""));
+            if (!List.of(">=", ">", "<=", "<", "==").contains(op)) {
+                continue;   // skip BY_DATE / NEGATIVE-pledge style library entries — not testable thresholds
+            }
+            if (!(p.get("defaultThreshold") instanceof Number base)) {
+                continue;   // skip threshold-less entries
+            }
+            boolean fin = "FINANCIAL".equalsIgnoreCase(String.valueOf(p.get("category")));
+            out.add(new AddCovenantRequest(
+                    fin ? "FINANCIAL_MAINTENANCE" : "INFORMATION",
+                    r.recordKey(), op, tighten(r.recordKey(), base.doubleValue(), weak),
+                    fin ? "QUARTERLY" : "ANNUAL",
+                    fin ? "borrower_management_accounts" : "audited_financials",
+                    fin ? 30 : 0, fin ? "MAJOR" : "MINOR",
+                    fin ? List.of("notify_RM", "raise_EWS") : List.of("notify_RM")));
+        }
+        return out.isEmpty() ? hardcodedFallback(weak) : out;
+    }
+
+    /** Weak grades tighten the two financial covenants; the rest ride the library's default threshold. */
+    private double tighten(String metric, double base, boolean weak) {
+        if (!weak) {
+            return base;
+        }
+        return switch (metric) {
+            case "DSCR" -> Math.max(base, 1.35);
+            case "NET_LEVERAGE" -> Math.min(base, 3.0);
+            default -> base;
+        };
+    }
+
+    /** Built-in suggestions used only when the COVENANT_LIBRARY master is unreachable. */
+    private List<AddCovenantRequest> hardcodedFallback(boolean weak) {
         double dscr = weak ? 1.35 : 1.25;
         double leverage = weak ? 3.0 : 3.5;
         return List.of(

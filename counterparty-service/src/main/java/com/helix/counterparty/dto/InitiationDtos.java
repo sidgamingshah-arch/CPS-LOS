@@ -30,7 +30,8 @@ public final class InitiationDtos {
                              String kycStatus, String lifecycleStatus, String matchType, double score, String updatedAt) {
     }
 
-    public record DedupResult(Long prospectId, String strategy, int matchCount, List<DedupMatch> matches) {
+    public record DedupResult(Long prospectId, String strategy, List<String> identifierFields,
+                              int matchCount, List<DedupMatch> matches) {
     }
 
     public record NegativeHit(String type, String value, String reason, String matchedOn) {
@@ -55,5 +56,24 @@ public final class InitiationDtos {
     }
 
     public record FetchCheckRequest(String entityType, String entityName, String checkType) {
+    }
+
+    // ---- group identification (advisory, AI-assisted, PRD §1 group fetching) ----
+
+    public record GroupCandidate(Long groupId, String reference, String name, String groupRm,
+                                 int memberCount, double score, List<String> signals) {
+    }
+
+    public record SiblingCandidate(Long counterpartyId, String reference, String legalName,
+                                   String country, String sector, double score, List<String> signals) {
+    }
+
+    public record GroupSuggestionResult(Long subjectId, String subjectReference, String subjectLegalName,
+                                        Long currentGroupId, String currentGroupReference,
+                                        List<GroupCandidate> groupMatches,
+                                        List<SiblingCandidate> ungroupedSiblings,
+                                        String recommendation,           // TAG_TO_EXISTING_GROUP | CREATE_NEW_GROUP | NO_STRONG_MATCH
+                                        double topScore,
+                                        boolean advisory) {
     }
 }

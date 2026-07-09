@@ -1,14 +1,17 @@
 package com.helix.decision.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.helix.common.audit.AuditService;
 import com.helix.common.web.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,15 +25,21 @@ public class UpstreamClient {
     private static final Logger log = LoggerFactory.getLogger(UpstreamClient.class);
 
     private final RestClient config;
+    private final RestClient counterparty;
     private final RestClient origination;
     private final RestClient risk;
+    private final AuditService audit;
 
     public UpstreamClient(@Value("${helix.config-service.base-url}") String configUrl,
+                          @Value("${helix.counterparty-service.base-url}") String counterpartyUrl,
                           @Value("${helix.origination-service.base-url}") String originationUrl,
-                          @Value("${helix.risk-service.base-url}") String riskUrl) {
+                          @Value("${helix.risk-service.base-url}") String riskUrl,
+                          AuditService audit) {
         this.config = RestClient.builder().baseUrl(configUrl).build();
+        this.counterparty = RestClient.builder().baseUrl(counterpartyUrl).build();
         this.origination = RestClient.builder().baseUrl(originationUrl).build();
         this.risk = RestClient.builder().baseUrl(riskUrl).build();
+        this.audit = audit;
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -63,6 +72,8 @@ public class UpstreamClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record FacilityViewDto(Long id, String reference, int ordinal, boolean primary, String facilityType,
                                   double amount, String currency, int tenorMonths, String purpose, Double indicativeRate,
+                                  String rateType, String benchmarkCode, Double spreadBps,
+                                  Integer resetFrequencyMonths,
                                   List<SublimitViewDto> sublimits, List<InterchangeabilityGroupViewDto> interchangeabilityGroups,
                                   double sublimitTotal, double sublimitHeadroom) {
     }
@@ -93,7 +104,31 @@ public class UpstreamClient {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record MasterRecordDto(Long id, String masterType, String recordKey, Map<String, Object> payload) {
+    public record MasterRecordDto(Long id, String masterType, String recordKey, String jurisdiction,
+                                  Map<String, Object> payload) {
+    }
+
+    /**
+     * Looks up the current benchmark rate from the BENCHMARK master. Decimal (e.g.
+     * 0.087 for EBLR), null when the benchmark is not present.
+     */
+    public Double benchmarkRate(String code) {
+        if (code == null || code.isBlank()) return null;
+        try {
+            MasterRecordDto[] arr = config.get().uri("/api/masters/BENCHMARK").retrieve().body(MasterRecordDto[].class);
+            if (arr == null) return null;
+            for (MasterRecordDto m : arr) {
+                if (!code.equalsIgnoreCase(m.recordKey())) continue;
+                Object v = m.payload().get("currentRate");
+                if (v instanceof Number n) return n.doubleValue();
+                if (v instanceof String s) try { return Double.parseDouble(s); } catch (Exception ignored) { }
+                return null;
+            }
+            return null;
+        } catch (Exception e) {
+            log.warn("BENCHMARK lookup failed for {} ({})", code, e.getMessage());
+            return null;
+        }
     }
 
     /** Active master records of a type (e.g. CHECKLIST_MASTER) from config-service. */
@@ -117,6 +152,27 @@ public class UpstreamClient {
             log.warn("config-service unreachable for DOA_MATRIX/{}; using fallback ({})", jurisdiction, e.getMessage());
             return fallbackDoa();
         }
+    }
+
+    /** GROUP_GRADE method + params for a jurisdiction (D10). Fallback == the seeded default,
+     *  so the derived group grade is deterministic even if config-service is unreachable. */
+    public RulePackDto groupGradePolicy(String jurisdiction) {
+        try {
+            RulePackDto p = config.get().uri(uri -> uri.path("/api/rulepacks")
+                            .queryParam("jurisdiction", jurisdiction)
+                            .queryParam("type", "GROUP_GRADE").build())
+                    .retrieve().body(RulePackDto.class);
+            return p != null ? p : fallbackGroupGrade();
+        } catch (Exception e) {
+            log.warn("config-service unreachable for GROUP_GRADE/{}; using fallback ({})", jurisdiction, e.getMessage());
+            return fallbackGroupGrade();
+        }
+    }
+
+    private RulePackDto fallbackGroupGrade() {
+        return new RulePackDto("fallback_group_grade", 0, Map.of(
+                "method", "EXPOSURE_WEIGHTED_NOTCH", "rounding", "HALF_UP_WORSE",
+                "parent_support_notches", 0, "min_rated_members", 1));
     }
 
     public CreditInputsDto creditInputs(String reference) {
@@ -143,6 +199,252 @@ public class UpstreamClient {
         } catch (Exception e) {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "risk-service unavailable: " + e.getMessage());
         }
+    }
+
+    public RiskSummaryDto riskSummaryOrNull(String reference) {
+        try {
+            return risk.get().uri("/api/risk/{ref}", reference).retrieve().body(RiskSummaryDto.class);
+        } catch (Exception e) {
+            log.warn("risk-service summary unavailable for {} ({})", reference, e.getMessage());
+            return null;
+        }
+    }
+
+    public DealEnvelopeDto envelopeOrNull(String reference) {
+        try {
+            return origination.get().uri("/api/applications/{ref}/envelope", reference)
+                    .retrieve().body(DealEnvelopeDto.class);
+        } catch (Exception e) {
+            log.warn("origination-service envelope unavailable for {} ({})", reference, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Best-effort syndication agency allocation on drawdown release. If the deal is
+     * a syndication, the agent allocates the funded draw pro-rata across lenders.
+     * Idempotent on {@code drawdownRef}, so this never double-counts.
+     *
+     * <p>Outcomes:
+     * <ul>
+     *   <li>200 — allocated (or reused an existing allocation): silent success.</li>
+     *   <li>400/404 — not a syndication deal: legitimate skip, logged at DEBUG, no audit.</li>
+     *   <li>Anything else (5xx, network, 4xx other than the two above) — origination
+     *       briefly broken on a deal that <em>is</em> a syndication: we log a WARN and
+     *       stamp a {@code SYNDICATION_ALLOCATION_SKIPPED} audit event so the agency
+     *       desk has a discoverable trail and can re-trigger via {@code /allocate}.</li>
+     * </ul>
+     * The release path itself is never blocked: the limit booking has already succeeded
+     * and the agency reconciliation is a downstream concern, not a money-movement.</p>
+     */
+    public void allocateSyndicationOrSkip(String reference, String drawdownRef, double amount,
+                                          String currency, String actor) {
+        try {
+            origination.post().uri("/api/syndication/{ref}/allocate", reference)
+                    .header("X-Actor", actor == null ? "agency.desk" : actor)
+                    .body(Map.of("drawdownRef", drawdownRef, "amount", amount,
+                            "currency", currency == null ? "" : currency))
+                    .retrieve().toBodilessEntity();
+        } catch (HttpClientErrorException.BadRequest | HttpClientErrorException.NotFound expected) {
+            // Not a syndication deal — the standalone /allocate endpoint rejects
+            // with 400/404 in that case. Truly silent skip; no audit.
+            log.debug("syndication allocate skipped for {} draw {} (not a syndication: {})",
+                    reference, drawdownRef, expected.getMessage());
+        } catch (Exception e) {
+            // Origination is reachable-but-broken, or the deal IS a syndication and
+            // something further down threw. Surface it.
+            log.warn("syndication allocate FAILED for {} draw {} — agency desk must re-trigger ({})",
+                    reference, drawdownRef, e.getMessage());
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("drawdownRef", drawdownRef);
+            details.put("amount", amount);
+            details.put("currency", currency == null ? "" : currency);
+            details.put("error", e.getMessage());
+            try {
+                audit.engine("SYNDICATION_ALLOCATION_SKIPPED", "Application", reference,
+                        "Syndication allocation failed on release of " + drawdownRef
+                                + " — agency desk must re-trigger /allocate (" + e.getMessage() + ")",
+                        details);
+            } catch (Exception auditErr) {
+                log.warn("could not stamp SYNDICATION_ALLOCATION_SKIPPED audit ({})", auditErr.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Best-effort syndication allocation reversal when a released drawdown is
+     * reversed. Same outcome semantics as {@link #allocateSyndicationOrSkip}:
+     * 400/404 (not a syndication) is a silent skip; any other failure is WARN +
+     * audited so the agency desk can re-trigger.
+     */
+    public void reverseSyndicationOrSkip(String reference, String drawdownRef, String actor) {
+        try {
+            origination.post().uri("/api/syndication/{ref}/allocations/reverse", reference)
+                    .header("X-Actor", actor == null ? "agency.desk" : actor)
+                    .body(Map.of("drawdownRef", drawdownRef))
+                    .retrieve().toBodilessEntity();
+        } catch (HttpClientErrorException.BadRequest | HttpClientErrorException.NotFound expected) {
+            log.debug("syndication reverse skipped for {} draw {} (not a syndication: {})",
+                    reference, drawdownRef, expected.getMessage());
+        } catch (Exception e) {
+            log.warn("syndication reverse FAILED for {} draw {} — agency desk must re-trigger ({})",
+                    reference, drawdownRef, e.getMessage());
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("drawdownRef", drawdownRef);
+            details.put("error", e.getMessage());
+            try {
+                audit.engine("SYNDICATION_REVERSAL_SKIPPED", "Application", reference,
+                        "Syndication allocation reversal failed for " + drawdownRef
+                                + " — agency desk must re-trigger (" + e.getMessage() + ")",
+                        details);
+            } catch (Exception auditErr) {
+                log.warn("could not stamp SYNDICATION_REVERSAL_SKIPPED audit ({})", auditErr.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Applies an APPROVED facility amendment on the origination record. Throws on
+     * failure — the amendment approval must not complete half-applied. Absolute
+     * target values make a retry a no-op upstream.
+     */
+    public void applyFacilityAmendment(String reference, String facilityRef, Double newAmount,
+                                       Integer newTenorMonths, String amendmentRef, String actor) {
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            if (newAmount != null) body.put("newAmount", newAmount);
+            if (newTenorMonths != null) body.put("newTenorMonths", newTenorMonths);
+            body.put("amendmentRef", amendmentRef);
+            origination.post().uri("/api/applications/{ref}/facilities/{fac}/amend", reference, facilityRef)
+                    .header("X-Actor", actor)
+                    .body(body)
+                    .retrieve().toBodilessEntity();
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "origination-service could not apply the amendment: " + e.getMessage());
+        }
+    }
+
+    // ---- group / counterparty / per-counterparty applications lookup ----
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record CounterpartyGroupDto(Long id, String reference, String name, String groupRmId,
+                                       String country, boolean multiCountry) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GroupMemberDto(String reference, String name, String recordType,
+                                 String segment, String rm) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GroupExposureDto(CounterpartyGroupDto group, int memberCount, int obligorCount,
+                                   List<GroupMemberDto> members, Map<String, Object> riskFlags) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record LoanApplicationRefDto(String reference, String counterpartyRef,
+                                        String counterpartyName, String status,
+                                        String createdAt) {
+    }
+
+    public CounterpartyGroupDto groupByReference(String groupReference) {
+        try {
+            return counterparty.get().uri("/api/initiation/groups/by-reference/{r}", groupReference)
+                    .retrieve().body(CounterpartyGroupDto.class);
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound nf) {
+            throw ApiException.notFound("No group: " + groupReference);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "counterparty-service unavailable for group " + groupReference + ": " + e.getMessage());
+        }
+    }
+
+    public CounterpartyGroupDto groupByIdOrNull(Long groupId) {
+        if (groupId == null) return null;
+        try {
+            return counterparty.get().uri("/api/initiation/groups/{id}", groupId)
+                    .retrieve().body(CounterpartyGroupDto.class);
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound nf) {
+            return null;       // 404 = group no longer exists; treat as untagged
+        } catch (Exception e) {
+            log.warn("counterparty-service group lookup unavailable for id={} ({})", groupId, e.getMessage());
+            return null;
+        }
+    }
+
+    public GroupExposureDto groupExposure(String groupReference) {
+        try {
+            return counterparty.get()
+                    .uri("/api/initiation/groups/by-reference/{r}/exposure", groupReference)
+                    .retrieve().body(GroupExposureDto.class);
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound nf) {
+            throw ApiException.notFound("No group: " + groupReference);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "counterparty-service group exposure unavailable: " + e.getMessage());
+        }
+    }
+
+    public List<LoanApplicationRefDto> applicationsForCounterparty(String counterpartyRef) {
+        try {
+            LoanApplicationRefDto[] arr = origination.get()
+                    .uri("/api/applications/by-counterparty/{r}", counterpartyRef)
+                    .retrieve().body(LoanApplicationRefDto[].class);
+            return arr == null ? List.of() : List.of(arr);
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound nf) {
+            return List.of();   // 404 = no apps for this counterparty; not an outage
+        } catch (Exception e) {
+            // Transient / upstream failure — surface to the caller so a 0-app rollup
+            // can't be mistaken for a real "no applications" answer.
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "origination-service unavailable for applications-by-counterparty "
+                            + counterpartyRef + ": " + e.getMessage());
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record CounterpartyDto(Long id, String reference, String legalName, String segment,
+                                  String sector, String country, String industry, String subIndustry,
+                                  String businessSegment, String borrowerType, String recordType,
+                                  String lifecycleStatus, String rmId, Long groupId, String externalId,
+                                  String createdAt) {
+    }
+
+    public CounterpartyDto counterpartyByReference(String reference) {
+        try {
+            return counterparty.get().uri("/api/counterparties/by-reference/{r}", reference)
+                    .retrieve().body(CounterpartyDto.class);
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound nf) {
+            throw ApiException.notFound("No counterparty: " + reference);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "counterparty-service unavailable for " + reference + ": " + e.getMessage());
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record AuditEventDto(Long id, String actor, String actorType, String eventType,
+                                String subjectType, String subjectId, String summary,
+                                String occurredAt) {
+    }
+
+    /** Audit history for any subject; used by CPT to detect missing call reports / RM changes. */
+    public List<AuditEventDto> auditFor(RestClient client, String type, String id) {
+        try {
+            AuditEventDto[] arr = client.get()
+                    .uri(uri -> uri.path("/api/audit/subject").queryParam("type", type).queryParam("id", id).build())
+                    .retrieve().body(AuditEventDto[].class);
+            return arr == null ? List.of() : List.of(arr);
+        } catch (Exception e) {
+            log.warn("audit lookup unavailable for {}/{} ({})", type, id, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** Counterparty-service audit (RM ownership history etc.). */
+    public List<AuditEventDto> counterpartyAudit(String type, String id) {
+        return auditFor(counterparty, type, id);
     }
 
     private RulePackDto fallbackDoa() {

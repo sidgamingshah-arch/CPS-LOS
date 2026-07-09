@@ -30,4 +30,5 @@ management:
 helix:
   config-service:
     base-url: ${CONFIG_SERVICE_URL:http://localhost:8081}
-
+  workflow-service:
+    base-url: ${WORKFLOW_SERVICE_URL:http://localhost:8089}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { cad, mer, origination } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, statusTone, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, statusTone, useAsync } from "../ui";
 
 /**
  * CAD inbox + per-case workspace (PRD CAD module).
@@ -21,7 +21,13 @@ export default function Cad() {
         <Card title="CAD inbox"
           right={<Button kind="ghost" onClick={() => setOpening((o) => !o)}>{opening ? "Close" : "+ Open case"}</Button>}
           sub="Post-approval documentation. Open a case to start the checklist.">
-          {(inbox.data || []).length === 0 ? <div className="muted">No CAD cases yet.</div> : (
+          {(inbox.data || []).length === 0 ? (
+            <EmptyState
+              glyph="◰"
+              title="No CAD cases yet"
+              sub="Open a case from an approved deal using +&nbsp;Open case to start its post-approval checklist."
+            />
+          ) : (
             <table>
               <thead><tr><th>Application</th><th>Counterparty</th><th>Type</th><th>Status</th></tr></thead>
               <tbody>
@@ -44,7 +50,15 @@ export default function Cad() {
       </div>
       <div>
         {selected ? <CaseDetail caseId={selected} onChange={inbox.reload} />
-          : <Card title="Select a case" sub="Pick a row to open the checklist."><div className="muted" /></Card>}
+          : (
+            <Card>
+              <EmptyState
+                glyph="◧"
+                title="Select a case to open its checklist"
+                sub="Click any row on the left to load its CAD checklist — comply, waive or raise a deviation per item, then complete and trigger the limit release."
+              />
+            </Card>
+          )}
       </div>
     </div>
   );

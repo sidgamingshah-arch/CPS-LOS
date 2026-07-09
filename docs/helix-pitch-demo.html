@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Helix — Governed AI for Wholesale Credit · Pitch</title>
+<style>
+  :root{
+    --bg:#070b18; --panel:#0f172a; --muted:#94a3b8; --line:rgba(255,255,255,.08);
+    --ai:#a78bfa; --ai-deep:#7c3aed; --human:#4ade80; --human-deep:#16a34a; --det:#38bdf8;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;background:var(--bg);color:#e2e8f0;overflow:hidden}
+  .stage{position:relative;width:100vw;height:100vh;display:flex;flex-direction:column}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:9px 18px;background:rgba(0,0,0,.4);border-bottom:1px solid var(--line);font-size:13px;gap:12px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap}
+  .brand .logo{font-size:19px;color:var(--ai)}.brand .logo b{color:#fff}
+  .brand .sub{color:#cbd5e1;font-weight:500;font-size:12.5px}
+  .modes{display:flex;gap:6px;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .modes button{appearance:none;border:0;background:transparent;color:#cbd5e1;font-weight:700;font-size:12px;padding:6px 12px;border-radius:7px;cursor:pointer;letter-spacing:.02em}
+  .modes button.on{background:var(--ai-deep);color:#fff}
+  .clock{font-variant-numeric:tabular-nums;color:var(--ai);font-weight:800;font-size:14px;min-width:96px;text-align:right}
+
+  .frame{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;position:relative;overflow:hidden}
+  .slide{position:absolute;inset:16px;display:none;animation:fade .5s ease}
+  .slide.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  /* content slide = shot + panel */
+  .slide.shot{display:none;grid-template-columns:1.5fr .92fr;gap:16px}
+  .slide.shot.active{display:grid}
+  .shotwrap{background:#0b1222;border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+  .shotwrap img{max-width:100%;max-height:100%;display:block}
+  .panel{background:linear-gradient(165deg,#15203f,#0c1426);border:1px solid var(--line);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:11px;box-shadow:0 24px 70px rgba(0,0,0,.45);overflow:auto}
+  .tag{font-size:11px;letter-spacing:1.3px;text-transform:uppercase;color:var(--ai);font-weight:800;display:flex;align-items:center;gap:7px}
+  .tag::before{content:"";width:6px;height:6px;border-radius:99px;background:var(--ai)}
+  h2.headline{font-size:22px;line-height:1.2;margin:0;color:#fff;font-weight:750;letter-spacing:-.2px}
+  .pbadges{display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}
+  .pbadge{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border-radius:99px;border:1px solid}
+  .pbadge::before{content:"";width:6px;height:6px;border-radius:99px;background:currentColor}
+  .pbadge.ai{color:#c4b5fd;border-color:rgba(167,139,250,.4);background:rgba(124,58,237,.16)}
+  .pbadge.human{color:#86efac;border-color:rgba(74,222,128,.4);background:rgba(22,163,74,.16)}
+  .pbadge.det{color:#7dd3fc;border-color:rgba(56,189,248,.4);background:rgba(2,132,199,.16)}
+  p.narration{font-size:15px;line-height:1.55;color:#e2e8f0;margin:2px 0 0}
+  p.narration b{color:#fff}
+  .callouts{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  .callout{font-size:11px;font-weight:700;color:#cbd5e1;background:rgba(255,255,255,.05);border:1px solid var(--line);padding:5px 10px;border-radius:8px}
+  .callout b{color:var(--det)}
+
+  /* hook / title / close (centered) */
+  .center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;height:100%;gap:18px;padding:40px}
+  .hook-line{font-size:34px;font-weight:800;line-height:1.18;letter-spacing:-.5px;color:#e2e8f0;opacity:.5}
+  .hook-line.em{color:#fff;opacity:1}
+  .hook-line.q{color:var(--ai);font-size:24px;font-weight:700;margin-top:8px}
+  .bigtitle{font-size:72px;line-height:.95;font-weight:850;letter-spacing:-2px;background:linear-gradient(120deg,#fff,#a78bfa 55%,#38bdf8);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .promise{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;margin-top:6px}
+  .promise .p{font-size:16px;color:#cbd5e1}.promise .p b{color:#fff}
+  .promise .p .k{font-weight:800}
+  .promise .p.ai .k{color:var(--ai)}.promise .p.human .k{color:var(--human)}.promise .p.det .k{color:var(--det)}
+  .metrics{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:14px}
+  .metric{padding:7px 16px;border-radius:99px;border:1px solid var(--line);background:rgba(255,255,255,.05);font-size:13px;font-weight:600;color:#e2e8f0}
+  .metric b{color:var(--ai)}
+  .closeval{font-size:30px;font-weight:800;color:#fff;letter-spacing:-.4px;line-height:1.25}
+  .closeval span{color:var(--ai)}
+  .closebrand{font-size:84px;font-weight:850;letter-spacing:-3px;background:linear-gradient(120deg,#fff,#a78bfa 55%,#38bdf8);-webkit-background-clip:text;background-clip:text;color:transparent;margin-top:6px}
+  .closesub{font-size:18px;color:#c4b5fd;font-weight:600;letter-spacing:.4px}
+
+  .bottombar{display:flex;align-items:center;gap:12px;padding:10px 18px;background:rgba(0,0,0,.4);border-top:1px solid var(--line)}
+  .btn{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff;padding:7px 14px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer}
+  .btn:hover{background:rgba(255,255,255,.14)}
+  .btn.primary{background:var(--ai-deep);border-color:var(--ai-deep)}
+  .beatnum{font-size:12px;color:var(--muted);min-width:92px;text-align:center;font-variant-numeric:tabular-nums}
+  .segments{display:flex;gap:3px;flex:1;margin:0 8px}
+  .seg{flex:1;height:6px;border-radius:99px;background:rgba(255,255,255,.09);overflow:hidden;cursor:pointer}
+  .seg .fill{height:100%;width:0%;background:linear-gradient(90deg,var(--ai),var(--det))}
+  .seg.done .fill{width:100%}
+  .seg.active{box-shadow:0 0 0 1px rgba(167,139,250,.5)}
+  @media (max-width:1100px){.slide.shot.active{grid-template-columns:1fr;grid-template-rows:1.1fr .9fr}.bigtitle{font-size:46px}.hook-line{font-size:24px}}
+
+  /* ---- motion polish ---- */
+  /* every shot beat zooms in slowly (Ken Burns) while a soft spotlight sweeps */
+  .slide.shot.active .shotwrap img{ animation: kenburns 12s ease-out both; transform-origin: 50% 38%; }
+  @keyframes kenburns{ from{transform:scale(1.0)} to{transform:scale(1.05)} }
+  .shotwrap{ position:relative }
+  .spotlight{ position:absolute; inset:0; pointer-events:none;
+    background: radial-gradient(circle at var(--sx,50%) var(--sy,42%), transparent 0, transparent 18%, rgba(8,12,28,.18) 42%, rgba(8,12,28,.42) 100%);
+    opacity:0; transition: opacity .8s ease; }
+  .slide.shot.active .spotlight{ opacity:1; animation: spot 9s ease-in-out infinite; }
+  @keyframes spot{
+    0%   { --sx:30%; --sy:38%; }
+    50%  { --sx:72%; --sy:50%; }
+    100% { --sx:30%; --sy:38%; }
+  }
+  /* one-by-one panel reveal */
+  .panel > *{ opacity:0; transform: translateY(6px); animation: rise .55s ease forwards }
+  .panel > *:nth-child(1){ animation-delay: .05s }
+  .panel > *:nth-child(2){ animation-delay: .20s }
+  .panel > *:nth-child(3){ animation-delay: .35s }
+  .panel > *:nth-child(4){ animation-delay: .50s }
+  .panel > *:nth-child(5){ animation-delay: .65s }
+  @keyframes rise{ to{ opacity:1; transform:none } }
+
+  /* Risk Lab signature-split full-bleed slide */
+  .slide.split{ display:none; align-items:center; justify-content:center; height:100%; padding:24px 32px; }
+  .slide.split.active{ display:flex; }
+  .split-wrap{ display:grid; grid-template-columns:1fr auto 1fr; gap:24px; align-items:center; width:100%; max-width:1320px }
+  .split-pane{ border-radius:18px; padding:30px 32px; min-height:340px; display:flex; flex-direction:column; gap:14px; box-shadow:0 30px 80px rgba(0,0,0,.45) }
+  .split-pane.ai{ background:linear-gradient(160deg,#3b0764,#1a0b3e); border:1px solid rgba(167,139,250,.45) }
+  .split-pane.auth{ background:linear-gradient(160deg,#052e16,#0c1426); border:1px solid rgba(74,222,128,.45) }
+  .split-pane .label{ font-size:11.5px; letter-spacing:.16em; text-transform:uppercase; font-weight:800; color:#c4b5fd }
+  .split-pane.auth .label{ color:#86efac }
+  .split-pane h4{ margin:0; font-size:18px; font-weight:700; color:#fff }
+  .split-pane .big{ font-size:64px; font-weight:850; letter-spacing:-2px; color:#fff; line-height:1 }
+  .split-pane.auth .big{ background:linear-gradient(140deg,#fff,#86efac);-webkit-background-clip:text;background-clip:text;color:transparent }
+  .split-pane.ai .big{ background:linear-gradient(140deg,#fff,#a78bfa);-webkit-background-clip:text;background-clip:text;color:transparent }
+  .split-pane .sub{ color:#cbd5e1; font-size:13.5px; line-height:1.5 }
+  .split-pane.auth .pulse{ display:inline-flex; align-items:center; gap:8px; padding:6px 14px; border-radius:99px; border:1px dashed #86efac; font-size:11.5px; font-weight:800; letter-spacing:.1em; color:#86efac; align-self:flex-start; animation: pulseRing 2.4s ease-in-out infinite }
+  .split-pane.auth .pulse::before{ content:""; width:8px;height:8px;border-radius:99px;background:#22c55e; box-shadow:0 0 0 0 rgba(34,197,94,.7); animation: ringPulse 2.4s infinite }
+  @keyframes ringPulse{ 0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)} 70%{box-shadow:0 0 0 12px rgba(34,197,94,0)} 100%{box-shadow:0 0 0 0 rgba(34,197,94,0)} }
+  @keyframes pulseRing{ 50%{ border-color:#22c55e } }
+  .split-arrow{ font-size:34px; font-weight:900; color:#94a3b8 }
+  .split-bottom{ position:absolute; bottom:46px; left:0; right:0; text-align:center; color:#94a3b8; font-size:13.5px; letter-spacing:.04em }
+  .split-bottom b{ color:#a78bfa }
+
+  /* Pricing value-chain reveal */
+  .slide.valuechain{ display:none; align-items:center; justify-content:center; height:100% }
+  .slide.valuechain.active{ display:flex; }
+  .vc-wrap{ display:flex; flex-direction:column; align-items:center; gap:8px; max-width:560px; width:100% }
+  .vc-step{ padding:14px 22px; border-radius:14px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); min-width:340px; text-align:center; opacity:0; transform:translateY(10px) }
+  .vc-step .lbl{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#94a3b8; font-weight:700 }
+  .vc-step .val{ font-size:24px; font-weight:800; color:#fff; letter-spacing:-.5px; margin-top:2px }
+  .vc-step.tick .val{ color:#86efac }
+  .vc-step.preserved{ background:linear-gradient(140deg,rgba(22,163,74,.18),rgba(56,189,248,.10)); border-color:#22c55e; }
+  .vc-step.preserved .val{ background:linear-gradient(120deg,#fff,#86efac);-webkit-background-clip:text;background-clip:text;color:transparent }
+  .vc-arrow{ color:#7c3aed; font-size:18px; font-weight:800; opacity:0; transform:translateY(4px); height:18px }
+  .slide.valuechain.active .vc-step,.slide.valuechain.active .vc-arrow{ animation: vcShow .55s ease forwards }
+  .slide.valuechain.active .vc-step:nth-child(1){ animation-delay:.10s }
+  .slide.valuechain.active .vc-arrow:nth-child(2){ animation-delay:.50s }
+  .slide.valuechain.active .vc-step:nth-child(3){ animation-delay:.90s }
+  .slide.valuechain.active .vc-arrow:nth-child(4){ animation-delay:1.30s }
+  .slide.valuechain.active .vc-step:nth-child(5){ animation-delay:1.70s }
+  .slide.valuechain.active .vc-arrow:nth-child(6){ animation-delay:2.10s }
+  .slide.valuechain.active .vc-step:nth-child(7){ animation-delay:2.50s }
+  .slide.valuechain.active .vc-arrow:nth-child(8){ animation-delay:2.90s }
+  .slide.valuechain.active .vc-step:nth-child(9){ animation-delay:3.30s }
+  @keyframes vcShow{ to{ opacity:1; transform:none } }
+  .vc-headline{ font-size:22px;font-weight:800;color:#fff;margin-bottom:12px;text-align:center;letter-spacing:-.3px }
+  .vc-foot{ margin-top:14px; color:#94a3b8; font-size:13px; text-align:center }
+  .vc-foot b{ color:#86efac }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="topbar">
+    <div class="brand"><div class="logo">Heli<b>x</b></div><span class="sub">Governed AI for Wholesale Credit</span></div>
+    <div class="modes">
+      <button id="mode-exec" class="on">Executive · 2:30</button>
+      <button id="mode-deep">Product Deep-Dive · 5:30</button>
+    </div>
+    <div class="clock" id="clock">0:00 / 0:00</div>
+  </div>
+  <div class="frame" id="frame"></div>
+  <div class="bottombar">
+    <button class="btn" id="prev">◀</button>
+    <button class="btn primary" id="play">▶ Play</button>
+    <button class="btn" id="next">▶</button>
+    <span class="beatnum" id="beatnum">—</span>
+    <div class="segments" id="segments"></div>
+    <button class="btn" id="restart">↺</button>
+  </div>
+</div>
+
+<script>
+const ASSETS = "./demo-assets/";
+
+// ---- shared content building blocks ----
+const HOOK = {kind:"hook", dur:16, lines:[
+  {t:"Banks want AI."}, {t:"Regulators want accountability."},
+  {t:"Most platforms force a choice.", em:true}, {t:"Helix doesn't.", q:true}],
+  speak:"Banks want AI. Regulators want accountability. Most platforms force a choice. Helix doesn't."};
+
+const TITLE = {kind:"title", dur:14,
+  speak:"Helix — governed AI for wholesale credit. AI where it helps. Humans where regulation demands. Deterministic figures throughout.",
+  metrics:["<b>239</b> end-to-end safety assertions","<b>Human-gated</b> decisions","<b>Deterministic</b> financial figures","<b>9</b> microservices"]};
+
+const CLOSE = {kind:"close", dur:12,
+  speak:"Governed AI. Deterministic figures. End-to-end wholesale credit. Helix — AI you can defend to regulators.",
+  vals:["Governed <span>AI</span>","Deterministic <span>Figures</span>","End-to-End <span>Wholesale Credit</span>"]};
+
+// content beats (reused across decks)
+const B = {
+  dashboard:{kind:"shot", img:"01-dashboard.png", tag:"Portfolio Dashboard", headline:"One lifecycle. One workspace.",
+    badges:["det","human"], callouts:["Composition","RAROC variance","ECL by stage","Watchlist"],
+    speak:"The whole wholesale-credit lifecycle is one product, not seven systems. Live exposure, RAROC variance, ECL by stage, early-warning watchlist — one book, one source of record."},
+  workspace:{kind:"shot", img:"03-workspace.png", tag:"Deal Workspace", headline:"AI-executed. Human-gated. End to end.",
+    badges:["ai","human","det"], callouts:["Intake→Decision","Named accountable user","Audited every step"],
+    speak:"One deal, one workspace. Intake, spread, rating, capital, pricing, decision — every step an audited action with a named accountable human. The chips never leave the screen: AI advisory, human-gated, deterministic figures."},
+  spreading:{kind:"shot", img:"04-spreading.png", tag:"Financial Spreading", headline:"Provenance on every cell. Overrides gated.",
+    badges:["human","det"], callouts:["Cell <b>provenance</b>","<b>Override</b> gate","Per-period ratios"],
+    speak:"Spreading is a grid where every cell shows its confidence and its source document and page. Edit past the material threshold and the override-with-reason gate fires — the deal flips back to draft. Material changes can't slip through."},
+  docintel:{kind:"shot", img:"05-docintel.png", tag:"Document Intelligence", headline:"AI extracts. A human confirms. Always.",
+    badges:["ai","human"], callouts:["Multilingual","<b>Suggest→Confirm</b>","Never auto-applied"],
+    speak:"GenAI document intelligence — multilingual extraction, each field with its own confidence. But it's suggest then human-confirm. Confirmed extractions record accountability; they are never auto-applied to the figures."},
+  risklab:{kind:"shot", img:"06-risklab.png", tag:"Risk Lab", headline:"AI recommends. Humans decide. Rating unchanged.",
+    badges:["ai","det"], callouts:["Statistical RAG <b>86.2/100</b>","Explainable","Advisory only","Rating <b>AA · UNCHANGED</b>"],
+    speak:"This is the heart of the story. Statistical RAG scoring — explainable, every factor attributed. Macro overlays project PD direction. Both advisory. And right beside them, the authoritative rating — AA — marked unchanged. AI recommends; the figure of record never moves."},
+  pricinglab:{kind:"shot", img:"07-pricinglab.png", tag:"Pricing Lab", headline:"Optimise freely. The price of record is preserved.",
+    badges:["ai","det"], callouts:["Goal-seek RAROC","Hurdle <b>15%</b>","Pricing <b>PRESERVED</b>"],
+    speak:"The goal-seek optimiser finds the rate, fee or collateral mix to clear any target RAROC. It explores freely — and the authoritative pricing stays preserved, untouched."},
+  exceptions:{kind:"shot", img:"08-pricing-exceptions.png", tag:"Concession Workflow", headline:"Concessions routed to the right authority.",
+    badges:["human"], callouts:["Authority tiers","SoD · <b>1–2 levels</b>","-522bps → L1 ✓ L2 ✓"],
+    speak:"Price below recommended and the concession is routed to an authority tier sized to its depth and any hurdle breach — relationship head, credit officer, credit head, committee. Maker-checker, segregation of duties, one or two levels. Governance, not friction."},
+  structuring:{kind:"shot", img:"09-structuring.png", tag:"Deal Structuring", headline:"Group, syndication, dual-obligor — validated.",
+    badges:["human"], callouts:["Syndication share %","Dual-obligor (Islamic)","<b>Copy-from</b> renewal"],
+    speak:"Specialised credit-proposal variants — group, joint and dual-obligor for Islamic structures, syndication, FI review — each with live validation. Renewals copy the whole structure forward. No re-keying."},
+  docgen:{kind:"shot", img:"10-docgen.png", tag:"Document Generation", headline:"Grounded drafts. Clause surgery. Confirm locks.",
+    badges:["ai","human"], callouts:["Grounded in the deal","Clause add/remove","Confirm <b>locks</b>"],
+    speak:"Documents generate from the master library, grounded in the live deal — borrower, amount, rate. Add, remove, edit clauses. The human-confirm gate locks the document."},
+  commentary:{kind:"shot", img:"11-commentary.png", tag:"AI Commentary", headline:"AI drafts the narrative. A human approves it.",
+    badges:["ai","human"], callouts:["Grounded narrative","Source provenance","Draft→Approve"],
+    speak:"AI narrative commentary for the proposal — industry, management, financials, risk — every paragraph grounded in real ratios with source provenance the reviewer can drill into. Advisory; the figure path is untouched."},
+  cad:{kind:"shot", img:"12-cad.png", tag:"CAD + Monitoring", headline:"Documentation, then monitoring of exceptions.",
+    badges:["human"], callouts:["2-level <b>SoD</b>","Limit-release trigger","MER renewals + DMS"],
+    speak:"Post-sanction: credit administration with two-level deviation approvals and the limit-release trigger; then monitoring of exceptions and renewals — deferred docs, insurance, reviews — with reminders, escalation and a DMS feed."},
+  limits:{kind:"shot", img:"15-eod.png", tag:"Limits + EOD", headline:"Limit tree, product APIs, end-of-day reconciliation.",
+    badges:["det"], callouts:["Fungibility pools","FX revaluation","Ledger <b>reconciliation</b>"],
+    speak:"A multi-level limit tree with fungibility and product-processor APIs. The end-of-day batch marks limits to today's FX and reconciles the ledger leaf-by-leaf — any variance is surfaced for the ops desk."},
+  exports:{kind:"shot", img:"16-exports.png", tag:"Downstream + Audit", headline:"Examiner-ready: canonical feeds + full audit.",
+    badges:["det","human"], callouts:["ERM · Finance · CPR","<b>239</b> assertions","HUMAN / AI / SYSTEM stamped"],
+    speak:"Canonical outbound feeds to ERM, Finance and portfolio reporting — idempotent, full envelope. And underneath everything, an immutable audit trail stamping every action human, AI or system, with a named user. Two hundred and thirty-nine assertions prove the safety invariants."},
+  audit:{kind:"shot", img:"17-audit.png", tag:"Audit & Compliance", headline:"Every action attributable. Examiner-ready.",
+    badges:["human","det"], callouts:["HUMAN / AI / SYSTEM","Named accountable user","<b>239</b> safety assertions"],
+    speak:"Every action — human, AI or system — is stamped with a named accountable user on an immutable trail. This is what a regulator asks for, and it's there by construction. AI you can defend."},
+  copilot:{kind:"shot", img:"19-copilot.png", tag:"Conversational Copilot", headline:"Ask anything. Answers cite. Actions refuse.",
+    badges:["ai","human"], callouts:["<b>8</b> personas","Grounded · cited","Refuses credit-consequential actions"],
+    speak:"A persona-scoped, grounded-and-cited, non-binding conversational layer fans out read-only across all nine services. Every answer cites the service and the endpoint. Ask it to approve a deal and it refuses, routing you to the gated workflow."},
+
+  // ---- motion-rich centerpiece slides ----
+  splitRisk:{kind:"split", tag:"Risk Lab · governance frame", dur:18,
+    aiHead:"Statistical RAG",   aiBig:"GREEN · 86.2",  aiSub:"Explainable factor attribution. Macro overlays project PD direction. Advisory only — never alters figures.",
+    authHead:"Authoritative rating", authBig:"AA",     authSub:"PD 0.05% · deterministic scorecard. The rating of record. Unchanged by every overlay above.",
+    foot:"<b>AI recommends. Humans decide. The figure of record never moves.</b>",
+    speak:"This is the whole pitch in one frame. On the left, AI advisory: a statistical RAG band of GREEN 86 out of 100, with every factor attributed. On the right, the authoritative rating — AA — marked unchanged. AI recommends; the figure of record never moves."},
+  pricingChain:{kind:"valuechain", tag:"Pricing governance · the chain", dur:18,
+    headline:"Optimise freely. The price of record stays preserved.",
+    steps:[
+      {lbl:"Target RAROC",       val:"20%"},
+      {lbl:"Optimiser",          val:"8.71%  (rate · fee · collateral)"},
+      {lbl:"Concession requested", val:"−522 bps"},
+      {lbl:"L1 approval (SoD)",  val:"✓ Credit Head",   tick:true},
+      {lbl:"L2 approval (SoD)",  val:"✓ Credit Committee", tick:true},
+      {lbl:"Authoritative pricing", val:"● PRESERVED", preserved:true},
+    ],
+    foot:"Concessions <b>routed to the right authority</b>. Authoritative pricing <b>never overwritten</b>.",
+    speak:"Watch the pricing governance chain. Target RAROC. The optimiser proposes a rate. A concession of 522 basis points is requested. Level one and level two approvers sign off — segregation of duties. And the authoritative pricing — preserved. AI explored, humans approved, the price of record never moved."},
+};
+
+// ---- decks ----
+function deckExec(){
+  return [
+    {...HOOK, dur:14},
+    {...TITLE, dur:12},
+    {...B.workspace, dur:18},
+    {...B.risklab, dur:14},
+    {...B.splitRisk, dur:16},
+    {...B.pricinglab, dur:12},
+    {...B.pricingChain, dur:18},
+    {...B.copilot, dur:16},
+    {...B.audit, dur:16},
+    {...CLOSE, dur:14},
+  ];
+}
+function deckDeep(){
+  return [
+    {...HOOK, dur:14},
+    {...TITLE, dur:14},
+    {...B.dashboard, dur:16},
+    {...B.workspace, dur:18},
+    {...B.spreading, dur:22},
+    {...B.docintel, dur:18},
+    {...B.risklab, dur:18},
+    {...B.splitRisk, dur:16},
+    {...B.pricinglab, dur:14},
+    {...B.pricingChain, dur:18},
+    {...B.exceptions, dur:18},
+    {...B.structuring, dur:18},
+    {...B.docgen, dur:16},
+    {...B.commentary, dur:14},
+    {...B.copilot, dur:18},
+    {...B.cad, dur:18},
+    {...B.limits, dur:16},
+    {...B.exports, dur:18},
+    {...B.audit, dur:14},
+    {...CLOSE, dur:10},
+  ];
+}
+
+let SLIDES = [], TOTAL = 0, current = 0, elapsedInSlide = 0, totalElapsed = 0, playing = false, lastTick = 0, rafId = 0, mode = "exec";
+const frame = document.getElementById('frame'), segments = document.getElementById('segments');
+const clockEl = document.getElementById('clock'), beatNumEl = document.getElementById('beatnum'), playBtn = document.getElementById('play');
+const fmtT = (s)=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+
+function slideHTML(s){
+  if(s.kind==="hook"){
+    return `<div class="center">${s.lines.map(l=>`<div class="hook-line ${l.em?'em':''} ${l.q?'q':''}">${l.t}</div>`).join('')}</div>`;
+  }
+  if(s.kind==="title"){
+    return `<div class="center">
+      <div class="bigtitle">Helix</div>
+      <div class="promise">
+        <div class="p ai"><span class="k">AI</span> where it helps</div>
+        <div class="p human"><span class="k">Humans</span> where regulation demands</div>
+        <div class="p det"><span class="k">Deterministic figures</span> throughout</div>
+      </div>
+      <div class="metrics">${s.metrics.map(m=>`<span class="metric">${m}</span>`).join('')}</div>
+    </div>`;
+  }
+  if(s.kind==="close"){
+    return `<div class="center">
+      ${s.vals.map(v=>`<div class="closeval">${v}</div>`).join('')}
+      <div class="closebrand">HELIX</div>
+      <div class="closesub">AI You Can Defend To Regulators</div>
+    </div>`;
+  }
+  if(s.kind==="split"){
+    return `<div class="split-wrap">
+      <div class="split-pane ai">
+        <div class="label">AI · ADVISORY</div>
+        <h4>${s.aiHead}</h4>
+        <div class="big">${s.aiBig}</div>
+        <div class="sub">${s.aiSub}</div>
+      </div>
+      <div class="split-arrow">→</div>
+      <div class="split-pane auth">
+        <div class="pulse">● UNCHANGED</div>
+        <div class="label">AUTHORITATIVE · OF RECORD</div>
+        <h4>${s.authHead}</h4>
+        <div class="big">${s.authBig}</div>
+        <div class="sub">${s.authSub}</div>
+      </div>
+    </div>
+    <div class="split-bottom">${s.foot || ''}</div>`;
+  }
+  if(s.kind==="valuechain"){
+    return `<div class="vc-wrap">
+      <div class="vc-headline">${s.headline}</div>
+      ${s.steps.map((st,i)=>{
+        const arrow = i<s.steps.length-1 ? '<div class="vc-arrow">↓</div>' : '';
+        const cls = st.preserved?'vc-step preserved':(st.tick?'vc-step tick':'vc-step');
+        return `<div class="${cls}"><div class="lbl">${st.lbl}</div><div class="val">${st.val}</div></div>${arrow}`;
+      }).join('')}
+      <div class="vc-foot">${s.foot}</div>
+    </div>`;
+  }
+  // shot
+  return `<div class="shotwrap"><img alt="${s.tag}" src="${ASSETS}${s.img}" /><div class="spotlight"></div></div>
+    <div class="panel">
+      <div class="tag">${s.tag}</div>
+      <h2 class="headline">${s.headline}</h2>
+      <div class="pbadges">${(s.badges||[]).map(b=>`<span class="pbadge ${b}">${b==='ai'?'AI · Advisory':b==='human'?'Human-Gated':'Deterministic'}</span>`).join('')}</div>
+      <p class="narration">${s.speak}</p>
+      <div class="callouts">${(s.callouts||[]).map(c=>`<span class="callout">${c}</span>`).join('')}</div>
+    </div>`;
+}
+
+function buildDeck(name){
+  mode = name;
+  SLIDES = name==="exec" ? deckExec() : deckDeep();
+  TOTAL = SLIDES.reduce((a,x)=>a+x.dur,0);
+  current = 0; elapsedInSlide = 0; totalElapsed = 0;
+  frame.innerHTML = ""; segments.innerHTML = "";
+  SLIDES.forEach((s,i)=>{
+    const el = document.createElement('div');
+    el.className = 'slide ' + (s.kind==='shot'?'shot':s.kind) + (i===0?' active':'');
+    el.innerHTML = slideHTML(s);
+    frame.appendChild(el);
+    const seg = document.createElement('div'); seg.className='seg'+(i===0?' active':''); seg.innerHTML='<div class="fill"></div>';
+    seg.addEventListener('click',()=>jumpTo(i)); segments.appendChild(seg);
+  });
+  document.getElementById('mode-exec').classList.toggle('on', name==='exec');
+  document.getElementById('mode-deep').classList.toggle('on', name==='deep');
+  render();
+}
+
+function render(){
+  [...frame.children].forEach((el,i)=>el.classList.toggle('active', i===current));
+  [...segments.children].forEach((el,i)=>{
+    el.classList.toggle('active', i===current); el.classList.toggle('done', i<current);
+    const f = el.querySelector('.fill');
+    f.style.width = i<current ? '100%' : i>current ? '0%' : (elapsedInSlide/SLIDES[i].dur*100)+'%';
+  });
+  clockEl.textContent = `${fmtT(totalElapsed)} / ${fmtT(TOTAL)}`;
+  beatNumEl.textContent = `Beat ${current+1} of ${SLIDES.length}`;
+}
+function loop(ts){
+  if(!playing) return;
+  if(!lastTick) lastTick = ts;
+  const dt=(ts-lastTick)/1000; lastTick=ts; elapsedInSlide+=dt;
+  totalElapsed = SLIDES.slice(0,current).reduce((a,x)=>a+x.dur,0)+elapsedInSlide;
+  if(elapsedInSlide>=SLIDES[current].dur){
+    if(current<SLIDES.length-1){current++; elapsedInSlide=0;}
+    else { playing=false; playBtn.textContent='↺ Replay'; }
+  }
+  render();
+  if(playing) rafId=requestAnimationFrame(loop);
+}
+function play(){ if(current>=SLIDES.length-1 && elapsedInSlide>=SLIDES[current].dur){current=0;elapsedInSlide=0;totalElapsed=0;}
+  playing=true; lastTick=0; playBtn.textContent='⏸ Pause'; rafId=requestAnimationFrame(loop); }
+function pause(){ playing=false; cancelAnimationFrame(rafId); playBtn.textContent='▶ Play'; }
+function jumpTo(i){ current=Math.max(0,Math.min(SLIDES.length-1,i)); elapsedInSlide=0; totalElapsed=SLIDES.slice(0,current).reduce((a,x)=>a+x.dur,0); render(); }
+
+document.getElementById('play').addEventListener('click',()=>playing?pause():play());
+document.getElementById('next').addEventListener('click',()=>jumpTo(current+1));
+document.getElementById('prev').addEventListener('click',()=>jumpTo(current-1));
+document.getElementById('restart').addEventListener('click',()=>{pause();jumpTo(0);});
+document.getElementById('mode-exec').addEventListener('click',()=>{pause();playBtn.textContent='▶ Play';buildDeck('exec');});
+document.getElementById('mode-deep').addEventListener('click',()=>{pause();playBtn.textContent='▶ Play';buildDeck('deep');});
+window.addEventListener('keydown',(e)=>{
+  if(e.code==='Space'){e.preventDefault();playing?pause():play();}
+  else if(e.code==='ArrowRight')jumpTo(current+1);
+  else if(e.code==='ArrowLeft')jumpTo(current-1);
+  else if(e.code==='KeyR'){pause();jumpTo(0);}
+});
+
+buildDeck('exec');
+</script>
+</body>
+</html>

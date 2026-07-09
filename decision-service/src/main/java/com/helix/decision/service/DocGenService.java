@@ -4,10 +4,15 @@ import com.helix.common.audit.AuditService;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.DealEnvelopeDto;
+import com.helix.decision.client.UpstreamClient.FacilityViewDto;
 import com.helix.decision.client.UpstreamClient.MasterRecordDto;
 import com.helix.decision.client.UpstreamClient.RiskSummaryDto;
 import com.helix.decision.dto.DocGenDtos.AddClauseRequest;
+import com.helix.decision.entity.ConditionPrecedent;
+import com.helix.decision.entity.CreditDecision;
 import com.helix.decision.entity.GeneratedDocument;
+import com.helix.decision.repo.ConditionPrecedentRepository;
+import com.helix.decision.repo.CreditDecisionRepository;
 import com.helix.decision.repo.GeneratedDocumentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,11 +42,16 @@ public class DocGenService {
     private final GeneratedDocumentRepository docs;
     private final UpstreamClient upstream;
     private final AuditService audit;
+    private final CreditDecisionRepository decisions;
+    private final ConditionPrecedentRepository conditionsPrecedent;
 
-    public DocGenService(GeneratedDocumentRepository docs, UpstreamClient upstream, AuditService audit) {
+    public DocGenService(GeneratedDocumentRepository docs, UpstreamClient upstream, AuditService audit,
+                         CreditDecisionRepository decisions, ConditionPrecedentRepository conditionsPrecedent) {
         this.docs = docs;
         this.upstream = upstream;
         this.audit = audit;
+        this.decisions = decisions;
+        this.conditionsPrecedent = conditionsPrecedent;
     }
 
     @Transactional(readOnly = true)
@@ -96,6 +106,11 @@ public class DocGenService {
             vars.putIfAbsent("rate", rs.pricing().recommendedRate());
             vars.putIfAbsent("raroc", rs.pricing().raroc());
         }
+        // A sanction letter weaves in the deterministic per-facility table + the decision's
+        // conditions of sanction; every other template renders exactly as before (unchanged).
+        if ("SANCTION_LETTER".equalsIgnoreCase(templateKey)) {
+            enrichSanctionVars(reference, vars);
+        }
 
         List<String> clauseKeys = (List<String>) template.payload().getOrDefault("clauses",
                 List.of("definitions", "facility", "interest", "covenants", "events_of_default"));
@@ -126,6 +141,63 @@ public class DocGenService {
                         .formatted(d.getTitle(), templateKey, order.size()),
                 Map.of("templateKey", templateKey, "clauses", order.size(), "advisory", true));
         return saved;
+    }
+
+    /**
+     * Generates the sanction letter for an approved deal — the artifact that follows a
+     * credit decision. Requires a DECIDED decision with an APPROVE / CONDITIONAL_APPROVE
+     * outcome; the letter quotes the deterministic approved figures (facilities, pricing)
+     * and the conditions of sanction, is DRAFT + advisory, and is issued only after the
+     * existing maker≠checker human confirm. It mutates no authoritative figure.
+     */
+    @Transactional
+    public GeneratedDocument generateSanctionLetter(String reference, String actor) {
+        CreditDecision d = decisions.findFirstByApplicationReferenceOrderByCreatedAtDesc(reference)
+                .orElseThrow(() -> ApiException.conflict("No credit decision to sanction for " + reference));
+        if (!"DECIDED".equals(d.getStatus())) {
+            throw ApiException.conflict("Sanction letter requires a DECIDED decision (is " + d.getStatus() + ")");
+        }
+        if (!"APPROVE".equals(d.getOutcome()) && !"CONDITIONAL_APPROVE".equals(d.getOutcome())) {
+            throw ApiException.conflict(
+                    "Sanction letter only for an APPROVE / CONDITIONAL_APPROVE outcome (is " + d.getOutcome() + ")");
+        }
+        return generate(reference, "SANCTION_LETTER", new LinkedHashMap<>(), actor);
+    }
+
+    /**
+     * Weaves the deterministic per-facility table and the decision's conditions of sanction
+     * into the render vars. All figures are quoted verbatim from origination / the decision —
+     * nothing is computed or mutated here.
+     */
+    private void enrichSanctionVars(String reference, Map<String, Object> vars) {
+        DealEnvelopeDto env = upstream.envelopeOrNull(reference);
+        if (env != null && env.facilities() != null) {
+            List<Map<String, Object>> facs = new ArrayList<>();
+            for (FacilityViewDto f : env.facilities()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("reference", f.reference());
+                row.put("facilityType", f.facilityType());
+                row.put("amount", f.amount());
+                row.put("currency", f.currency());
+                row.put("tenorMonths", f.tenorMonths());
+                row.put("indicativeRate", f.indicativeRate());
+                facs.add(row);
+            }
+            vars.put("facilities", facs);
+        }
+        CreditDecision d = decisions.findFirstByApplicationReferenceOrderByCreatedAtDesc(reference).orElse(null);
+        List<String> conditions = new ArrayList<>();
+        if (d != null && d.getConditions() != null) conditions.addAll(d.getConditions());
+        for (ConditionPrecedent cp : conditionsPrecedent.findByApplicationReferenceOrderByIdAsc(reference)) {
+            if ("SANCTION".equals(cp.getSource())) {
+                conditions.add(cp.getCode() + ": " + cp.getTitle());
+            }
+        }
+        vars.put("conditions", conditions);
+        if (d != null) {
+            vars.put("outcome", d.getOutcome());
+            vars.put("requiredAuthority", d.getRequiredAuthority());
+        }
     }
 
     // --------------------------------------------------- clause surgery
@@ -213,6 +285,10 @@ public class DocGenService {
         if (!"DRAFT".equals(d.getStatus())) {
             throw ApiException.conflict("Document is " + d.getStatus());
         }
+        if (actor.equalsIgnoreCase(d.getGeneratedBy())) {
+            throw ApiException.forbiddenAutonomy(
+                    "Confirmer '" + actor + "' cannot confirm a document they generated — maker must differ from checker");
+        }
         d.setStatus("CONFIRMED");
         d.setConfirmedBy(actor);
         d.setConfirmedAt(Instant.now());
@@ -281,7 +357,26 @@ public class DocGenService {
         Object borrower = vars.getOrDefault("borrower", "the Borrower");
         Object grade = vars.getOrDefault("grade", "—");
         Object rate = vars.getOrDefault("rate", null);
+        Object raroc = vars.getOrDefault("raroc", null);
         return switch (key.toLowerCase()) {
+            case "sanction_summary" -> "Helix Bank is pleased to advise the sanction of credit facilities to " +
+                    "<b>" + borrower + "</b> aggregating " + ccy + " " + fmt(amount) + ", on the terms set out below " +
+                    "and subject to the conditions of sanction. Rating assigned: <b>" + grade + "</b>.";
+            case "approved_facilities" -> renderFacilitiesTable(vars, ccy, amount, tenor);
+            case "pricing_terms" -> rate == null
+                    ? "Pricing shall be as advised by the Lender in accordance with its schedule of charges."
+                    : "Indicative all-in rate: <b>" + percent(rate) + " per annum</b>" +
+                    (raroc == null ? "" : " (risk-adjusted return " + percent(raroc) + ")") +
+                    ", reset in line with the applicable benchmark.";
+            case "conditions_precedent" -> renderConditions(vars);
+            case "conditions_general" -> "The Borrower shall comply with the Lender's general covenants and " +
+                    "reporting obligations, maintain the agreed security, and furnish periodic financials and " +
+                    "compliance certificates throughout the currency of the facilities.";
+            case "validity" -> "This sanction is valid for 90 days from the date of this letter, within which the " +
+                    "facility documentation must be executed and the conditions precedent satisfied, failing which " +
+                    "the sanction shall lapse unless extended in writing by the Lender.";
+            case "acceptance" -> "Kindly signify acceptance of this sanction by returning a countersigned copy of " +
+                    "this letter together with the board resolution authorising acceptance of the facilities.";
             case "definitions" -> "In this Agreement, '<b>" + borrower + "</b>' means the Borrower, " +
                     "'<b>Facility</b>' means the credit facility of " + ccy + " " + fmt(amount) +
                     " described herein, and '<b>Lender</b>' means Helix Bank.";
@@ -305,6 +400,45 @@ public class DocGenService {
                     "jurisdiction of the courts at the Lender's head office.";
             default -> "[Clause '" + key + "' — populate from template].";
         };
+    }
+
+    /** Deterministic per-facility sanction table from the woven {@code facilities} var. */
+    @SuppressWarnings("unchecked")
+    private String renderFacilitiesTable(Map<String, Object> vars, Object ccy, Object amount, Object tenor) {
+        Object raw = vars.get("facilities");
+        if (!(raw instanceof List<?> list) || list.isEmpty()) {
+            return "Facility: " + ccy + " " + fmt(amount) + " for a tenor of " + tenor + " months.";
+        }
+        StringBuilder sb = new StringBuilder("<table class=\"facilities\"><thead><tr>")
+                .append("<th>Facility</th><th>Type</th><th>Amount</th><th>Tenor (months)</th><th>Indicative rate</th>")
+                .append("</tr></thead><tbody>");
+        for (Object o : list) {
+            if (!(o instanceof Map<?, ?> raw2)) continue;
+            Map<String, Object> f = (Map<String, Object>) raw2;
+            Object rate = f.get("indicativeRate");
+            sb.append("<tr><td>").append(escape(String.valueOf(f.get("reference"))))
+                    .append("</td><td>").append(escape(String.valueOf(f.get("facilityType"))))
+                    .append("</td><td>").append(f.getOrDefault("currency", ccy)).append(" ").append(fmt(f.get("amount")))
+                    .append("</td><td>").append(f.getOrDefault("tenorMonths", tenor))
+                    .append("</td><td>").append(rate == null ? "—" : percent(rate))
+                    .append("</td></tr>");
+        }
+        sb.append("</tbody></table>");
+        return sb.toString();
+    }
+
+    /** The conditions-of-sanction list from the woven {@code conditions} var. */
+    private String renderConditions(Map<String, Object> vars) {
+        Object raw = vars.get("conditions");
+        if (!(raw instanceof List<?> list) || list.isEmpty()) {
+            return "The facilities are sanctioned subject to the Lender's standard conditions precedent to drawdown.";
+        }
+        StringBuilder sb = new StringBuilder("The following conditions must be satisfied prior to drawdown:<ol>");
+        for (Object c : list) {
+            sb.append("<li>").append(escape(String.valueOf(c))).append("</li>");
+        }
+        sb.append("</ol>");
+        return sb.toString();
     }
 
     /** Assemble the HTML view of the document from its clauses + order. */

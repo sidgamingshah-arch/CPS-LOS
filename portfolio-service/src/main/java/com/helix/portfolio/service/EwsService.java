@@ -2,6 +2,7 @@ package com.helix.portfolio.service;
 
 import com.helix.common.audit.AuditService;
 import com.helix.common.model.Enums.SignalSeverity;
+import com.helix.common.notify.NotificationService;
 import com.helix.common.web.ApiException;
 import com.helix.portfolio.client.PortfolioUpstreamClient;
 import com.helix.portfolio.client.PortfolioUpstreamClient.CovenantDto;
@@ -28,11 +29,14 @@ public class EwsService {
     private final EwsSignalRepository signals;
     private final PortfolioUpstreamClient upstream;
     private final AuditService audit;
+    private final NotificationService notifications;
 
-    public EwsService(EwsSignalRepository signals, PortfolioUpstreamClient upstream, AuditService audit) {
+    public EwsService(EwsSignalRepository signals, PortfolioUpstreamClient upstream, AuditService audit,
+                      NotificationService notifications) {
         this.signals = signals;
         this.upstream = upstream;
         this.audit = audit;
+        this.notifications = notifications;
     }
 
     @Transactional
@@ -43,6 +47,7 @@ public class EwsService {
         CreditInputsDto inputs = upstream.creditInputs(exp.getApplicationReference());
         List<CovenantDto> covenants = upstream.covenants(exp.getApplicationReference());
         Map<String, Double> ratios = inputs.ratios() == null ? Map.of() : inputs.ratios();
+        Map<String, PortfolioUpstreamClient.EwsTriggerDto> triggers = upstream.ewsTriggers();
 
         List<EwsSignal> raised = new ArrayList<>();
 
@@ -60,26 +65,35 @@ public class EwsService {
             }
         }
 
-        // 2) Leverage / coverage stress (internal).
+        // 2) Leverage / coverage stress (internal) — thresholds from the EWS_TRIGGER master,
+        //    built-in constants as fallback (early-warning must not go silent if config is down).
+        var levT = triggers.get("NET_LEVERAGE");
+        double levThreshold = levT != null ? levT.amberThreshold(4.0) : 4.0;
         double netLeverage = ratios.getOrDefault("NET_LEVERAGE", 0.0);
-        if (netLeverage > 4.0) {
+        if ((levT == null || levT.enabled()) && netLeverage > levThreshold) {
             raised.add(build(exp, "LEVERAGE_SPIKE", SignalSeverity.MEDIUM, "INTERNAL",
-                    Math.min(0.5 + (netLeverage - 4.0) / 10.0, 0.9),
-                    "Net leverage %.1fx above 4.0x watch level".formatted(netLeverage),
+                    Math.min(0.5 + (netLeverage - levThreshold) / 10.0, 0.9),
+                    "Net leverage %.1fx above %.1fx watch level".formatted(netLeverage, levThreshold),
                     "Refresh financials; assess for watchlist"));
         }
+        var dscrT = triggers.get("DSCR");
+        double dscrThreshold = dscrT != null ? dscrT.amberThreshold(1.1) : 1.1;
         double dscr = ratios.getOrDefault("DSCR", 99.0);
-        if (dscr < 1.1) {
+        if ((dscrT == null || dscrT.enabled()) && dscr < dscrThreshold) {
             raised.add(build(exp, "DSCR_PRESSURE", SignalSeverity.HIGH, "INTERNAL", 0.8,
-                    "DSCR %.2f below 1.10x — debt-service pressure".formatted(dscr),
+                    "DSCR %.2f below %.2fx — debt-service pressure".formatted(dscr, dscrThreshold),
                     "Engage RM; consider review trigger"));
         }
 
-        // 3) Delinquency (internal/conduct).
+        // 3) Delinquency (internal/conduct) — watch/severe DPD cutpoints from the EWS_TRIGGER master.
+        var dpdT = triggers.get("DPD");
+        int dpdWatch = dpdT != null ? (int) dpdT.amberThreshold(30) : 30;
+        int dpdSevere = dpdT != null ? (int) dpdT.redThreshold(90) : 90;
         int dpd = exp.getDaysPastDue();
-        if (dpd >= 30) {
-            SignalSeverity sev = dpd >= 90 ? SignalSeverity.SEVERE : SignalSeverity.HIGH;
-            raised.add(build(exp, "DAYS_PAST_DUE", sev, "INTERNAL", dpd >= 90 ? 0.95 : 0.7,
+        if ((dpdT == null || dpdT.enabled()) && dpd >= dpdWatch) {
+            boolean severe = dpd >= dpdSevere;
+            SignalSeverity sev = severe ? SignalSeverity.SEVERE : SignalSeverity.HIGH;
+            raised.add(build(exp, "DAYS_PAST_DUE", sev, "INTERNAL", severe ? 0.95 : 0.7,
                     "%d days past due".formatted(dpd),
                     "Candidate for stage migration — staging is human-decided, not auto-applied"));
         }
@@ -95,6 +109,22 @@ public class EwsService {
         audit.ai("ews-agent", "EWS_SCAN", "Application", exp.getApplicationReference(),
                 "Scan raised %d signal(s); flags only — no autonomous reclassification".formatted(saved.size()),
                 Map.of("signalCount", saved.size()));
+        // A SEVERE/HIGH signal is worth notifying the desk about — deterministic, SYSTEM-actor
+        // (the notification is not an AI decision; the advisory EWS flag it reports is unchanged).
+        for (EwsSignal s : saved) {
+            if (!"SEVERE".equals(s.getSeverity()) && !"HIGH".equals(s.getSeverity())) continue;
+            try {
+                notifications.enqueue(new NotificationService.Enqueue("EWS_BREACH", "EWS_BREACH",
+                        "Application", exp.getApplicationReference(),
+                        "ews:" + exp.getApplicationReference() + ":" + s.getSignalType(), exp.getJurisdiction(),
+                        Map.of("borrower", exp.getCounterpartyName() == null ? exp.getApplicationReference()
+                                : exp.getCounterpartyName(), "reference", exp.getApplicationReference(),
+                                "signalType", s.getSignalType(), "severity", s.getSeverity(),
+                                "rationale", s.getRationale() == null ? "" : s.getRationale()), null), "ews.agent");
+            } catch (Exception e) {
+                // notification failures never break the scan
+            }
+        }
         return saved;
     }
 

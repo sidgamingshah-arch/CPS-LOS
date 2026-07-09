@@ -15,5 +15,11 @@ public interface LimitNodeRepository extends JpaRepository<LimitNode, Long> {
 
     List<LimitNode> findByParentId(Long parentId);
 
+    List<LimitNode> findByParentIdAndInterchangeableGroup(Long parentId, String interchangeableGroup);
+
     List<LimitNode> findByLevel(int level);
+
+    List<LimitNode> findByApplicationRefOrderByLevelAscOrdinalAsc(String applicationRef);
+
+    Optional<LimitNode> findByApplicationRefAndFacilityRef(String applicationRef, String facilityRef);
 }

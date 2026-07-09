@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export HELIX_DATA_DIR="${HELIX_DATA_DIR:-$ROOT/data}"
 mkdir -p "$HELIX_DATA_DIR"
+# G7: enable the test-only fail-closed-posture outage-simulation hook in the local/e2e stack
+# (prod default is false; the endpoint does not exist unless this is true).
+export HELIX_RBAC_SIMULATE_OUTAGE_ENABLED="${HELIX_RBAC_SIMULATE_OUTAGE_ENABLED:-true}"
 
 declare -A SERVICES=(
   [config-service]=8081
@@ -14,6 +17,7 @@ declare -A SERVICES=(
   [portfolio-service]=8086
   [copilot-service]=8087
   [limit-service]=8088
+  [workflow-service]=8089
   [gateway-service]=8080
 )
 
@@ -26,12 +30,12 @@ start() {
 
 # config first (others fall back gracefully if it lags)
 start config-service 8081
-for svc in counterparty-service origination-service risk-service decision-service portfolio-service copilot-service limit-service gateway-service; do
+for svc in counterparty-service origination-service risk-service decision-service portfolio-service copilot-service limit-service workflow-service gateway-service; do
   start "$svc" "${SERVICES[$svc]}"
 done
 
 echo "All services launching. Waiting for health..."
-for port in 8081 8082 8083 8084 8085 8086 8087 8088 8080; do
+for port in 8081 8082 8083 8084 8085 8086 8087 8088 8089 8080; do
   curl -s --retry 60 --retry-connrefused --retry-delay 1 "http://localhost:$port/actuator/health" >/dev/null && echo "  :$port UP"
 done
 echo "Helix is up. Gateway at http://localhost:8080"

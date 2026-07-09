@@ -67,6 +67,10 @@ public final class Dtos {
     public record FreezeRequest(String reason) {
     }
 
+    public record ApplicationStatusResult(String applicationRef, String targetStatus,
+                                          int affectedCount, int totalNodes, List<String> affectedRefs) {
+    }
+
     public record ExposureCheckResult(boolean withinNorms, List<ValidationCheck> checks, Map<String, Object> norms) {
     }
 }

@@ -14,7 +14,7 @@ import java.util.Map;
 @Component
 public class DoaRouter {
 
-    public record Routing(String requiredAuthority, String ruleApplied) {
+    public record Routing(String requiredAuthority, String ruleApplied, boolean committee, int quorum) {
     }
 
     @SuppressWarnings("unchecked")
@@ -37,11 +37,39 @@ public class DoaRouter {
             }
         }
 
+        String finalAuthority = base;
+        String rule = matchedRule;
         boolean escalates = Boolean.TRUE.equals(payload.get("deviation_escalates_one_level"));
         if (hasDeviation && escalates) {
-            String escalated = Authorities.escalateOneLevel(base);
-            return new Routing(escalated, matchedRule + "; deviation present -> escalated to " + escalated);
+            finalAuthority = Authorities.escalateOneLevel(base);
+            rule = matchedRule + "; deviation present -> escalated to " + finalAuthority;
         }
-        return new Routing(base, matchedRule);
+
+        // Committee / quorum are optional properties of the resolved (post-escalation) tier, read
+        // from that tier's level in the pack. Absent keys -> single-approver (current behaviour).
+        boolean committee = false;
+        int quorum = 1;
+        int defaultQuorum = intVal(payload.get("committee_default_quorum"), 2);
+        for (Map<String, Object> level : levels) {
+            if (finalAuthority.equalsIgnoreCase(String.valueOf(level.get("authority")))) {
+                committee = boolVal(level.get("committee"));
+                quorum = committee ? Math.max(1, intVal(level.get("quorum"), defaultQuorum)) : 1;
+                break;
+            }
+        }
+        return new Routing(finalAuthority, rule, committee, quorum);
+    }
+
+    private static boolean boolVal(Object o) {
+        return Boolean.TRUE.equals(o) || "true".equalsIgnoreCase(String.valueOf(o));
+    }
+
+    private static int intVal(Object o, int dflt) {
+        if (o instanceof Number n) return n.intValue();
+        try {
+            return o == null ? dflt : Integer.parseInt(String.valueOf(o).trim());
+        } catch (NumberFormatException e) {
+            return dflt;
+        }
     }
 }
