@@ -6,7 +6,7 @@ document intelligence and agents spread, rate, capitalise, price and draft, whil
 human authorities review, override and sign at every credit-consequential gate.
 
 This repository delivers the **P1 MVP spine** end-to-end (mid-corporate, RBI), built as
-**Java 21 / Spring Boot microservices** with **SQLite-per-service** and a **React + TypeScript**
+**Java 25 / Spring Boot microservices** with **SQLite-per-service** and a **React + TypeScript**
 front end, behind a single **API gateway**.
 
 > Scope note: this is a working, runnable demonstration of the architecture and the credit
@@ -52,7 +52,7 @@ front end, behind a single **API gateway**.
   (PRD §6.6) that reads (GET-only) across the services and cites its sources.
 ```
 
-**Tech:** Java 21, Spring Boot 3.3, Spring Cloud Gateway 2023.0, SQLite (xerial JDBC +
+**Tech:** Java 25, Spring Boot 3.5, Spring Cloud Gateway 2025.0, SQLite (xerial JDBC +
 Hibernate community dialect), React 18, Vite 5, TypeScript 5.
 
 ---
@@ -60,7 +60,7 @@ Hibernate community dialect), React 18, Vite 5, TypeScript 5.
 ## Run it
 
 ### Prerequisites
-- JDK 21 (Maven is bundled as `./mvnw` — no separate install)
+- JDK 25 (Maven is bundled as `./mvnw` — no separate install)
 - Node 20+ (for the UI)
 - Optionally Docker (for the containerised stack)
 
@@ -117,9 +117,8 @@ bash scripts/run-all.sh
 ```
 
 Both helpers download into each `<service>/target/` slot (no git involved).
-The jars target Java 21 bytecode (`--release 21`) and boot on Java 21+
-(Spring Boot 3.3.5 wasn't formally tested on Java 25; expect deprecation
-warnings on startup but it runs). The release is refreshed automatically by
+The jars target Java 25 bytecode (`--release 25`) and boot on Java 25+
+(Spring Boot 3.5.16 formally supports Java 25). The release is refreshed automatically by
 the `Refresh prebuilt jars` GitHub Actions workflow on every backend
 change. Direct URL for a single jar:
 `https://github.com/<owner>/<repo>/releases/download/prebuilt-latest/<svc>-service.jar`.
