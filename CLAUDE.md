@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Helix is **governed AI for wholesale credit** — an AI-first wholesale loan origination & lifecycle
-platform. Java 21 / Spring Boot microservices (9 of them), SQLite-per-service, React + Vite + TS
+platform. Java 25 / Spring Boot microservices (9 of them), SQLite-per-service, React + Vite + TS
 frontend behind a Spring Cloud Gateway. The product thesis is the spine of every design decision:
 
 > **AI where it helps. Humans where regulation demands. Deterministic figures throughout.**

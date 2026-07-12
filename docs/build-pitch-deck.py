@@ -825,7 +825,7 @@ def s_architecture():
              "helix-common · canonical enums · append-only audit · ingest (Envelope/Connector/Guard) · export (Envelope/ErmRiskRecord/FinanceProvisionEntry/CprPortfolioLine)",
              size=11, color=OCEAN_8, bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
     add_text(s, Inches(0.6), Inches(6.75), SW-Inches(1.2), Inches(0.4),
-             "Java 21 · Spring Boot · SQLite-per-service (Hikari pool=1, single-writer) · ddl-auto=update · Hibernate community SQLite dialect",
+             "Java 25 · Spring Boot · SQLite-per-service (Hikari pool=1, single-writer) · ddl-auto=update · Hibernate community SQLite dialect",
              size=10, color=MUTED, align=PP_ALIGN.CENTER, italic=True)
     add_footer(s)
 
@@ -937,7 +937,7 @@ def s_metrics():
         ("100", "obligor stress run", "distributed book, ~60s"),
         ("8", "copilot personas", "scoped, read-only"),
         ("AI · HUMAN · SYSTEM", "actor types", "stamped on every audit row"),
-        ("Java 21", "stack", "Spring · React · Vite · TS"),
+        ("Java 25", "stack", "Spring · React · Vite · TS"),
     ]
     cols = 4; rows = 2; gap = Inches(0.15); top = Inches(1.3); ch = Inches(2.5)
     avail = SW - Inches(1.2) - gap*(cols-1)

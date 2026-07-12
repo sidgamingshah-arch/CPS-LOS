@@ -33,11 +33,11 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
           cache: maven
 
       - name: Build all service jars
@@ -67,9 +67,9 @@ jobs:
           files: staging/*-service.jar
           fail_on_unmatched_files: true
           body: |
-            Prebuilt service jars for all 9 modules. Targets Java 21 bytecode
-            (`--release 21`); boots on Java 21+ (Spring Boot 3.3.5 wasn't
-            formally tested on Java 25 but starts with deprecation warnings).
+            Prebuilt service jars for all 9 modules. Targets Java 25 bytecode
+            (`--release 25`); boots on Java 25+ (Spring Boot 3.5.16 formally
+            supports Java 25).
 
             Source snapshot: `${{ github.ref_name }}@${{ github.sha }}`.
 
