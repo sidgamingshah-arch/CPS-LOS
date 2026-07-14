@@ -3,6 +3,7 @@ import { AppContext, AI_BY_NAV, isNavEnabled } from "./app-context";
 import { governance, setAuthToken } from "./api";
 import { Toast, AiBadge, HumanBadge, DeterministicBadge, GovernanceStrip } from "./ui";
 import CommandPalette from "./CommandPalette";
+import CopilotDock from "./CopilotDock";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import RulePacks from "./pages/RulePacks";
@@ -384,6 +385,7 @@ export default function App() {
         </main>
       </div>
       <CommandPalette open={cmdkOpen} onClose={() => setCmdkOpen(false)} screens={SCREENS} onPick={nav} />
+      <CopilotDock reference={ref} />
       <Toast msg={msg} onClose={() => setMsg(null)} />
     </AppContext.Provider>
   );
