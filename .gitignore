@@ -45,3 +45,6 @@ frontend/tsconfig.tsbuildinfo
 __pycache__/
 *.pyc
 *.pyo
+
+# Claude Code transient agent worktrees (per-session isolation scaffolding)
+.claude/worktrees/
