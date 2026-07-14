@@ -168,8 +168,13 @@ export default function App() {
   if (token) setAuthToken(token);
   const [msg, setMsg] = useState<{ text: string; err?: boolean } | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(lsGet("helix.nav.collapsed", "{}")); } catch { return {}; }
+    const stored = lsGet("helix.nav.collapsed", "");
+    if (stored) { try { return JSON.parse(stored); } catch { /* fall through to curated default */ } }
+    // First-time user (no saved preference): keep the two secondary groups collapsed so
+    // fewer options show upfront. A returning user's saved map is honoured verbatim.
+    return { "Limits & Portfolio": true, "Configure & Govern": true };
   });
+  const [railCollapsed, setRailCollapsed] = useState(() => lsGet("helix.nav.rail", "0") === "1");
   const [navOpen, setNavOpen] = useState(false);   // mobile drawer
   const [cmdkOpen, setCmdkOpen] = useState(false); // ⌘K palette
   const [aiEnabled, setAiEnabled] = useState<Record<string, boolean>>({});
@@ -220,6 +225,7 @@ export default function App() {
   useEffect(() => { lsSet("helix.actor", actor); }, [actor]);
   useEffect(() => { if (token) lsSet("helix.token", token); }, [token]);
   useEffect(() => { lsSet("helix.nav.collapsed", JSON.stringify(collapsed)); }, [collapsed]);
+  useEffect(() => { lsSet("helix.nav.rail", railCollapsed ? "1" : "0"); }, [railCollapsed]);
 
   // Global ⌘K / Ctrl-K to open the command palette.
   useEffect(() => {
@@ -246,12 +252,21 @@ export default function App() {
 
   return (
     <AppContext.Provider value={ctx}>
-      <div className={`app${navOpen ? " nav-open" : ""}`}>
+      <div className={`app${navOpen ? " nav-open" : ""}${railCollapsed ? " rail-collapsed" : ""}`}>
         <div className="scrim" onClick={() => setNavOpen(false)} />
         <aside className="sidebar">
           <div className="brand">
             <div className="logo">Heli<span>x</span></div>
             <div className="tag">Governed AI for Wholesale Credit</div>
+            <button
+              className="rail-toggle"
+              onClick={() => setRailCollapsed((r) => !r)}
+              aria-pressed={railCollapsed}
+              aria-label={railCollapsed ? "Expand navigation" : "Collapse navigation"}
+              title={railCollapsed ? "Expand navigation" : "Collapse navigation"}
+            >
+              {railCollapsed ? "»" : "«"}
+            </button>
           </div>
           <nav className="nav">
             {NAV_GROUPS.map((g) => {
@@ -277,8 +292,10 @@ export default function App() {
                         key={n.key}
                         className={`nav-item${view === n.key ? " active" : ""}`}
                         onClick={() => nav(n.key)}
+                        title={n.label}
+                        data-glyph={n.label.charAt(0)}
                       >
-                        <span className="dot" /> {n.label}
+                        <span className="dot" /> <span className="nav-label">{n.label}</span>
                       </button>
                     ))}
                   </div>

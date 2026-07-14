@@ -120,7 +120,7 @@ h1, h2, h3, h4 { margin: 0 0 .4rem; font-weight: 600; letter-spacing: -0.02em; c
   border-right: 1px solid #073744;
   z-index: 40;
 }
-.brand { padding: 22px 22px 18px; }
+.brand { padding: 22px 22px 18px; position: relative; }
 .brand .logo {
   font-size: 22px; font-weight: 600; color: #fff; letter-spacing: -0.03em;
   display: flex; align-items: center; gap: 0;
@@ -187,6 +187,59 @@ h1, h2, h3, h4 { margin: 0 0 .4rem; font-weight: 600; letter-spacing: -0.02em; c
     display: inline-flex; align-items: center; justify-content: center;
     width: 38px; height: 38px; border: 1px solid var(--hairline); background: var(--canvas);
     border-radius: var(--r-sm); cursor: pointer; font-size: 16px; color: var(--ink); flex: 0 0 auto;
+  }
+  /* Rail collapse is desktop-only; hide its toggle in the mobile drawer where it has no effect. */
+  .rail-toggle { display: none; }
+}
+
+/* ---- desktop icon-rail collapse (orthogonal to the mobile drawer above) ---- */
+.rail-toggle {
+  position: absolute; top: 18px; right: 14px; padding: 0;
+  width: 26px; height: 26px; line-height: 1; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #0d4655; background: var(--surface-dark-2);
+  color: var(--on-dark-soft); border-radius: var(--r-sm);
+  cursor: pointer; font-size: 13px; font-family: var(--font-sans);
+}
+.rail-toggle:hover { color: #fff; border-color: #1c6076; }
+.nav-label { min-width: 0; }
+
+/* The rail is a desktop-only feature; scope it above the mobile breakpoint so the
+   .app.rail-collapsed class can never shrink or relabel the mobile drawer. */
+@media (min-width: 981px) {
+  .app.rail-collapsed .sidebar { width: 64px; flex: 0 0 64px; }
+  .app.rail-collapsed .brand {
+    padding: 16px 0 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .app.rail-collapsed .brand .logo { font-size: 18px; }
+  .app.rail-collapsed .brand .tag { display: none; }
+  .app.rail-collapsed .rail-toggle { position: static; }
+
+  .app.rail-collapsed .nav { padding: 6px 8px 12px; }
+  .app.rail-collapsed .nav-group { margin-bottom: 8px; }
+  .app.rail-collapsed .nav-group-title { display: none; }
+  /* In rail mode every item shows as a glyph, so ignore the per-group accordion. */
+  .app.rail-collapsed .nav-group.collapsed .nav-group-items { display: flex; }
+  .app.rail-collapsed .nav .dot,
+  .app.rail-collapsed .nav-label { display: none; }
+  .app.rail-collapsed .nav button.nav-item {
+    justify-content: center; gap: 0; padding: 5px 0;
+  }
+  .app.rail-collapsed .nav button.nav-item::before {
+    content: attr(data-glyph);
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: var(--r-sm);
+    font-size: 14px; font-weight: 600; text-transform: uppercase;
+    background: rgba(255,255,255,.06); color: #cddbdf;
+  }
+  .app.rail-collapsed .nav button.nav-item:hover { background: transparent; }
+  .app.rail-collapsed .nav button.nav-item:hover::before {
+    background: rgba(255,255,255,.14); color: #fff;
+  }
+  .app.rail-collapsed .nav button.nav-item.active { background: transparent; }
+  .app.rail-collapsed .nav button.nav-item.active::before {
+    background: var(--ocean-8); color: #fff;
   }
 }
 
