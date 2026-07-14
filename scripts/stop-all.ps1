@@ -1,7 +1,8 @@
 # Stop all Helix services started by run-all.ps1 (Windows / PowerShell port of
 # stop-all.sh).
 $services = "config-service","counterparty-service","origination-service","risk-service",
-            "decision-service","portfolio-service","copilot-service","limit-service","gateway-service"
+            "decision-service","portfolio-service","copilot-service","limit-service",
+            "workflow-service","gateway-service"
 
 foreach ($svc in $services) {
   $pidFile = "$env:TEMP\helix-$svc.pid"
