@@ -484,3 +484,38 @@ small.prov { color: var(--muted); font-size: 11px; }
 .gov-banner .gb-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .gov-banner .gb-chip { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16); color: #d7e4e7; padding: 5px 12px; border-radius: var(--r-pill); font-size: 11.5px; font-weight: 500; }
 .gov-banner .gb-chip b { color: #fff; font-weight: 600; }
+
+/* ============================================================================
+   Universal top-bar search (Unit 2) — an input-styled launcher that opens the
+   ⌘K palette. Sits in the topbar-right cluster; reuses the pill geometry and
+   surface tokens so it reads as chrome, not a form field.
+   ============================================================================ */
+.topsearch {
+  display: inline-flex; align-items: center; gap: 8px;
+  flex: 1 1 300px; min-width: 200px; max-width: 440px;
+  padding: 7px 12px; border-radius: var(--r-pill);
+  background: var(--surface-strong); border: 1px solid transparent; cursor: text;
+  transition: background .12s ease, border-color .12s ease;
+}
+.topsearch:hover, .topsearch:focus-within { background: var(--canvas); border-color: var(--hairline); }
+.topsearch .ico { color: var(--muted); font-size: 15px; flex: 0 0 auto; }
+.topsearch .topsearch-input {
+  flex: 1; min-width: 0; width: auto; border: 0; padding: 0; background: transparent;
+  font-size: 12.5px; color: var(--ink); cursor: text; box-shadow: none !important;
+}
+.topsearch .topsearch-input::placeholder { color: var(--muted); }
+.topsearch .topsearch-input:focus { border: 0; outline: none; box-shadow: none !important; }
+.topsearch kbd {
+  flex: 0 0 auto; font-family: var(--font-mono); font-size: 11px; background: var(--canvas);
+  border: 1px solid var(--hairline); border-radius: 5px; padding: 1px 6px; color: var(--muted);
+}
+
+/* Palette result dots, tinted per source so the universal search reads at a glance. */
+.cmdk-item .ci-dot.ci-recent       { background: var(--muted-soft); }
+.cmdk-item .ci-dot.ci-screen       { background: var(--ocean-5); }
+.cmdk-item .ci-dot.ci-counterparty { background: var(--ocean-8); }
+.cmdk-item .ci-dot.ci-deal         { background: var(--ocean-6); }
+.cmdk-item .ci-dot.ci-group        { background: var(--human); }
+.cmdk-item .ci-dot.ci-jurisdiction { background: var(--ai); }
+.cmdk-item .ci-dot.ci-country      { background: var(--ocean-4); }
+.cmdk-item .ci-dot.ci-exposure     { background: var(--down); }

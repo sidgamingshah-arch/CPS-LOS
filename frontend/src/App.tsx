@@ -321,9 +321,17 @@ export default function App() {
               )}
             </div>
             <div className="topbar-right">
-              <button className="cmdk-btn" onClick={() => setCmdkOpen(true)}>
-                <span className="ico">⌕</span> Search <kbd>⌘K</kbd>
-              </button>
+              <div className="topsearch" onClick={() => setCmdkOpen(true)}>
+                <span className="ico">⌕</span>
+                <input
+                  className="topsearch-input"
+                  placeholder="Search everything — screens, borrowers, deals, masters…"
+                  aria-label="Universal search"
+                  readOnly
+                  onFocus={(e) => { setCmdkOpen(true); e.currentTarget.blur(); }}
+                />
+                <kbd>⌘K</kbd>
+              </div>
               <div className="gov-chips">
                 <AiBadge />
                 <HumanBadge />
