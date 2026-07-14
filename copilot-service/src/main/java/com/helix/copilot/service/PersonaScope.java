@@ -34,6 +34,11 @@ public final class PersonaScope {
     /** Maps a named actor (e.g. "credit.officer") to a role. */
     public static Role roleOf(String persona) {
         String p = persona == null ? "" : persona.toLowerCase();
+        // The generic demo persona gets full read scope so the copilot can be
+        // shown answering across every capability. This widens only the READ
+        // scope; the action guardrail (approve/override/price/book) still refuses
+        // regardless of role, so the non-binding invariant is preserved.
+        if (p.contains("demo")) return Role.CRO;
         if (p.contains("cro")) return Role.CRO;
         if (p.contains("compliance")) return Role.COMPLIANCE;
         if (p.contains("portfolio")) return Role.PORTFOLIO_MGR;
