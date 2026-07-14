@@ -8,10 +8,12 @@ New-Item -ItemType Directory -Force -Path $env:HELIX_DATA_DIR | Out-Null
 
 # config first; the others fall back gracefully if it lags
 $order = "config-service","counterparty-service","origination-service","risk-service",
-         "decision-service","portfolio-service","copilot-service","limit-service","gateway-service"
+         "decision-service","portfolio-service","copilot-service","limit-service",
+         "workflow-service","gateway-service"
 $ports = @{ "config-service"=8081; "counterparty-service"=8082; "origination-service"=8083;
             "risk-service"=8084; "decision-service"=8085; "portfolio-service"=8086;
-            "copilot-service"=8087; "limit-service"=8088; "gateway-service"=8080 }
+            "copilot-service"=8087; "limit-service"=8088; "workflow-service"=8089;
+            "gateway-service"=8080 }
 
 foreach ($svc in $order) {
   $port = $ports[$svc]
@@ -30,7 +32,7 @@ foreach ($svc in $order) {
 }
 
 Write-Host "All services launching. Waiting for health..."
-foreach ($port in 8081,8082,8083,8084,8085,8086,8087,8088,8080) {
+foreach ($port in 8081,8082,8083,8084,8085,8086,8087,8088,8089,8080) {
   $up = $false
   for ($i = 0; $i -lt 60; $i++) {
     try {
