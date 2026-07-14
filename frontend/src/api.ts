@@ -740,8 +740,36 @@ export const notifications = {
   get: (svc: string, id: number) => call<any>(`/${svc}/api/notifications/${id}`, "GET"),
 };
 
+/** Currency symbol per ISO code; falls back to the code itself for anything unmapped. */
+const CCY_SYMBOL: Record<string, string> = { INR: "₹", AED: "AED ", USD: "$", EUR: "€", GBP: "£" };
+
 export const fmt = {
-  money: (v: number, ccy = "INR") =>
+  /**
+   * Compact, currency-aware money. Large figures are scaled to readable units so a
+   * book of ₹2.6 lakh-crore no longer prints as a wall of digits: INR uses the
+   * Indian scale (Cr = crore = 1e7, L = lakh = 1e5); every other currency uses the
+   * international scale (Bn/Mn/K). Pass the deal/exposure currency as `ccy`.
+   * Use `moneyFull` when the exact rupee figure matters (tooltips, exports).
+   */
+  money: (v: number, ccy = "INR") => {
+    if (v == null || Number.isNaN(v)) return "—";
+    const sign = v < 0 ? "-" : "";
+    const abs = Math.abs(v);
+    const sym = CCY_SYMBOL[ccy] ?? (ccy ? ccy + " " : "");
+    const scaled = (n: number, dp: number, locale: string) =>
+      sign + sym + n.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits: dp });
+    if (ccy === "INR") {
+      if (abs >= 1e7) return scaled(abs / 1e7, 2, "en-IN") + " Cr";
+      if (abs >= 1e5) return scaled(abs / 1e5, 2, "en-IN") + " L";
+      return scaled(abs, 0, "en-IN");
+    }
+    if (abs >= 1e9) return scaled(abs / 1e9, 2, "en-US") + " Bn";
+    if (abs >= 1e6) return scaled(abs / 1e6, 2, "en-US") + " Mn";
+    if (abs >= 1e3) return scaled(abs / 1e3, 1, "en-US") + " K";
+    return scaled(abs, 0, "en-US");
+  },
+  /** Exact grouped figure with the currency code — no unit scaling. */
+  moneyFull: (v: number, ccy = "INR") =>
     v == null ? "—" : new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(v) + (ccy ? " " + ccy : ""),
   pct: (v: number, dp = 2) => (v == null ? "—" : (v * 100).toFixed(dp) + "%"),
   num: (v: number, dp = 2) => (v == null ? "—" : v.toFixed(dp)),

@@ -310,7 +310,7 @@ function DistTable({ map }: { map: Record<string, number> | undefined }) {
           {sorted.map(([k, v]) => (
             <tr key={k}>
               <td>{k}</td>
-              <td className="num">{fmt.money(v as number, "")}</td>
+              <td className="num">{fmt.money(v as number)}</td>
               <td style={{ width: 160 }}>
                 <div className="bar"><span style={{ width: `${total > 0 ? ((v as number) / total) * 100 : 0}%` }} /></div>
                 <small className="prov">{total > 0 ? (((v as number) / total) * 100).toFixed(1) + "%" : ""}</small>
