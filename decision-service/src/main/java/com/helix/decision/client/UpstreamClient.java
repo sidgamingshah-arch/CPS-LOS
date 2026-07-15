@@ -142,6 +142,44 @@ public class UpstreamClient {
         }
     }
 
+    /** A single active master record carrying its version (for pinning). */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record MasterVersionDto(Long id, String masterType, String recordKey, int version,
+                                   Map<String, Object> payload) {
+    }
+
+    /**
+     * The active (jurisdiction-agnostic default) master record for a (type, key), including its
+     * version so a consumer can pin it. Null when absent / config-service unreachable — the
+     * caller falls back to a conservative built-in.
+     */
+    public MasterVersionDto masterActive(String type, String key) {
+        try {
+            return config.get().uri("/api/masters/{t}/{k}", type, key).retrieve().body(MasterVersionDto.class);
+        } catch (Exception e) {
+            log.warn("config master {}/{} unavailable ({})", type, key, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * OPTIONAL, DEFAULT-OFF governance switch: whether MOE-security perfection must be COMPLETED
+     * before a limit release for a flow. Read from the DOA_MATRIX pack's {@code perfectionRequired}
+     * key. ABSENT (every seeded pack today) ⇒ {@code false} ⇒ behaviour byte-identical to before.
+     * Never throws (doaMatrix already falls back to a built-in pack with no such key).
+     */
+    public boolean perfectionRequired(String jurisdiction) {
+        if (jurisdiction == null || jurisdiction.isBlank()) return false;
+        try {
+            RulePackDto doa = doaMatrix(jurisdiction);
+            Object v = doa == null ? null : doa.payload().get("perfectionRequired");
+            return Boolean.TRUE.equals(v) || "true".equalsIgnoreCase(String.valueOf(v));
+        } catch (Exception e) {
+            log.warn("perfectionRequired lookup failed for {} ({}) — treating as OFF", jurisdiction, e.getMessage());
+            return false;
+        }
+    }
+
     public RulePackDto doaMatrix(String jurisdiction) {
         try {
             return config.get().uri(uri -> uri.path("/api/rulepacks")

@@ -970,3 +970,9 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .srm-code { color: var(--ocean-8); font-size: 12px; }
 .srm-req { margin-left: auto; font-size: 11px; color: var(--muted); border: 1px solid var(--hairline);
   border-radius: 6px; padding: 1px 6px; }
+/* ---- MOE / mortgage security perfection ---- */
+.perf-gate { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px;
+  padding: 10px 12px; border: 1px solid var(--hairline-soft); border-radius: 8px;
+  background: var(--human-soft); font-size: 12.5px; line-height: 1.45; }
+.perf-gate > span { color: var(--muted); }
+.perf-btn { font-size: 11px; padding: 3px 8px; }

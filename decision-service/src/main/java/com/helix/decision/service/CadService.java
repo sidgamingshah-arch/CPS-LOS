@@ -40,6 +40,13 @@ public class CadService {
     private final AuditService audit;
 
     /**
+     * OPTIONAL, DEFAULT-OFF MOE-perfection gate on limit release. Inert unless the DOA_MATRIX
+     * config carries {@code perfectionRequired=true} for the flow — see
+     * {@link PerfectionService#limitReleaseBlocked(String)}.
+     */
+    private final PerfectionService perfection;
+
+    /**
      * Optional best-effort case-management mirror; bean absent when the workflow-service
      * URL isn't configured. The CAD case / deviation workflow (checklist, two-level SoD
      * waiver, limit-release) is authoritative and completely unaffected — a mirror
@@ -49,6 +56,7 @@ public class CadService {
 
     public CadService(CadCaseRepository cases, ChecklistItemRepository items, DeviationRepository deviations,
                       UpstreamClient upstream, LimitClient limits, AuditService audit,
+                      PerfectionService perfection,
                       @org.springframework.beans.factory.annotation.Autowired(required = false)
                       com.helix.common.workflow.TaskClient taskClient) {
         this.cases = cases;
@@ -57,6 +65,7 @@ public class CadService {
         this.upstream = upstream;
         this.limits = limits;
         this.audit = audit;
+        this.perfection = perfection;
         this.taskClient = taskClient;
     }
 
@@ -217,6 +226,13 @@ public class CadService {
         }
         if (!(req.processingFeeAmortised() && req.lienMarked())) {
             throw ApiException.badRequest("Limit-release checklist incomplete (processing fee / lien)");
+        }
+        // OPTIONAL, DEFAULT-OFF MOE-perfection gate. Returns false (no block) unless the flow's
+        // DOA_MATRIX config carries perfectionRequired=true — with the key absent (every seeded
+        // pack today) this is byte-identical to the prior behaviour.
+        if (perfection.limitReleaseBlocked(c.getApplicationRef())) {
+            throw ApiException.conflict("MOE security perfection required before limit release — "
+                    + "no COMPLETED PerfectionCase for " + c.getApplicationRef());
         }
         c.setStatus("LIMIT_RELEASED");
         cases.save(c);

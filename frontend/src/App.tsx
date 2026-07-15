@@ -17,6 +17,7 @@ import Copilot from "./pages/Copilot";
 import Mis from "./pages/Mis";
 import Customer360 from "./pages/Customer360";
 import Cad from "./pages/Cad";
+import Perfection from "./pages/Perfection";
 import Monitoring from "./pages/Monitoring";
 import MonitoringArtifacts from "./pages/MonitoringArtifacts";
 import Escrow from "./pages/Escrow";
@@ -86,6 +87,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "projections", label: "Projections" },
       { key: "pricinglab", label: "Pricing Lab" },
       { key: "cad", label: "CAD · Documentation" },
+      { key: "perfection", label: "MOE Perfection" },
       { key: "docgen", label: "Doc Generation" },
       { key: "commentary", label: "AI Commentary" },
       { key: "committee", label: "Committee Room" },
@@ -144,6 +146,7 @@ const CRUMB: Record<string, string> = {
   limits: "Multi-level limit tree · fungibility · View/Validation/Utilisation APIs",
   disbursement: "Pre-disbursement gate · CP register · drawdown maker-checker · limit-utilise booking",
   cad: "Credit Administration · checklist · waivers/deviations · limit release",
+  perfection: "Mortgage / MOE security perfection · ordered role-gated steps · MOE-vetting SoD · vendor RFQ · optional limit-release gate",
   docgen: "Template-driven document generation · clause add/remove/edit · human-confirm gate",
   commentary: "AI narrative commentary · grounded · advisory · human-confirm gate",
   pricinglab: "Pricing scenario optimiser · goal-seek · advisory (authoritative pricing untouched)",
@@ -380,6 +383,7 @@ export default function App() {
             {view === "limits" && <Limits />}
             {view === "disbursement" && <Disbursement />}
             {view === "cad" && <Cad />}
+            {view === "perfection" && <Perfection />}
             {view === "docgen" && <DocGen />}
             {view === "commentary" && <Commentary />}
             {view === "committee" && <Committee />}

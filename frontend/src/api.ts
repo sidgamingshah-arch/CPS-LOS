@@ -485,6 +485,23 @@ export const cad = {
     call<any>(`/decision/api/cad/cases/${id}/limit-release`, "POST", body, actor),
 };
 
+// ---- MOE / mortgage security perfection ----
+export const perfection = {
+  list: (subjectRef?: string, status?: string) => {
+    const q = [subjectRef ? `subjectRef=${encodeURIComponent(subjectRef)}` : "", status ? `status=${status}` : ""]
+      .filter(Boolean).join("&");
+    return call<any[]>("/decision/api/perfection/cases" + (q ? `?${q}` : ""), "GET");
+  },
+  create: (body: any, actor: string) => call<any>("/decision/api/perfection/cases", "POST", body, actor),
+  view: (perfRef: string) => call<any>(`/decision/api/perfection/cases/${perfRef}`, "GET"),
+  complete: (perfRef: string, stepKey: string, body: any, actor: string) =>
+    call<any>(`/decision/api/perfection/cases/${perfRef}/steps/${stepKey}/complete`, "POST", body, actor),
+  waive: (perfRef: string, stepKey: string, body: any, actor: string) =>
+    call<any>(`/decision/api/perfection/cases/${perfRef}/steps/${stepKey}/waive`, "POST", body, actor),
+  vendorRfq: (perfRef: string, stepKey: string, body: any, actor: string) =>
+    call<any>(`/decision/api/perfection/cases/${perfRef}/steps/${stepKey}/vendor-rfq`, "POST", body, actor),
+};
+
 // ---- MER (monitoring of exceptions & renewals) ----
 export const mer = {
   generateFromCad: (caseId: number, owner: string, actor: string) =>
