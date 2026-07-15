@@ -1,7 +1,9 @@
 package com.helix.common.notify;
 
+import com.helix.common.query.QueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -10,10 +12,12 @@ import org.springframework.stereotype.Component;
 
 /**
  * Recurring notification sweep, automatically present in every service that includes
- * helix-common (disable with {@code helix.notify.sweep-enabled=false}). Two jobs, each in
+ * helix-common (disable with {@code helix.notify.sweep-enabled=false}). Jobs, each in
  * its own short transaction (SQLite pool=1 — mirror of the workflow SLA sweep pattern):
- * (a) dispatch SCHEDULED rows whose {@code scheduledFor} has arrived, and (b) enqueue
- * auto-reminder rows for reminder-eligible notifications. Every job is wrapped in
+ * (a) dispatch SCHEDULED rows whose {@code scheduledFor} has arrived, (b) enqueue
+ * auto-reminder rows for reminder-eligible notifications, and (c) release SCHEDULED
+ * query/RFI threads whose {@code scheduleAt} has arrived (reusing this one platform sweep
+ * rather than adding a competing scheduler for the query lane). Every job is wrapped in
  * try/catch — a sweep failure must never break the app or the scheduler.
  *
  * <p>{@code POST /api/notifications/sweep} triggers the same jobs deterministically for
@@ -26,9 +30,11 @@ public class NotificationSweeper {
     private static final Logger log = LoggerFactory.getLogger(NotificationSweeper.class);
 
     private final NotificationService notifications;
+    private final ObjectProvider<QueryService> queries;
 
-    public NotificationSweeper(NotificationService notifications) {
+    public NotificationSweeper(NotificationService notifications, ObjectProvider<QueryService> queries) {
         this.notifications = notifications;
+        this.queries = queries;
     }
 
     @Scheduled(fixedDelayString = "${helix.notify.sweep-interval-ms:60000}",
@@ -45,6 +51,15 @@ public class NotificationSweeper {
             if (reminders > 0) log.info("notification sweep created {} reminder(s)", reminders);
         } catch (Exception e) {
             log.warn("notification reminder sweep failed ({})", e.getMessage());
+        }
+        try {
+            QueryService q = queries.getIfAvailable();
+            if (q != null) {
+                int released = q.dispatchDueScheduled();
+                if (released > 0) log.info("notification sweep released {} scheduled query thread(s)", released);
+            }
+        } catch (Exception e) {
+            log.warn("scheduled-query release sweep failed ({})", e.getMessage());
         }
     }
 
