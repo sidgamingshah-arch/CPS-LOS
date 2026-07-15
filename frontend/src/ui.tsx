@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 export function Card({ title, sub, right, children }: {
   title?: string; sub?: string; right?: React.ReactNode; children: React.ReactNode;
@@ -60,13 +60,38 @@ export function Button({ children, onClick, kind = "", disabled, busy }: {
 export function Field({ label, children, required, hint, error }: {
   label: string; children: React.ReactNode; required?: boolean; hint?: string; error?: string | null;
 }) {
+  // Stable, collision-free ids so the label / hint / error associate with the
+  // control for assistive tech. Additive only — the visual output is unchanged.
+  const rid = useId();
+  const hintId = hint ? `${rid}-hint` : undefined;
+  const errorId = error ? `${rid}-err` : undefined;
+  const describedBy = error ? errorId : hintId;
+
+  // If the control is a single element (input/select/textarea/etc.) we clone it to
+  // inject an id + aria-invalid + aria-describedby, preserving any props it already
+  // has. Fragments / multiple / non-element children fall back to the wrapping
+  // label's implicit association (still accessible), with no htmlFor.
+  let control = children;
+  let forId: string | undefined;
+  if (React.isValidElement(children) && children.type !== React.Fragment) {
+    const cp = children.props as Record<string, unknown>;
+    forId = (cp.id as string | undefined) ?? `${rid}-ctl`;
+    const mergedDescribedBy =
+      [cp["aria-describedby"] as string | undefined, describedBy].filter(Boolean).join(" ") || undefined;
+    control = React.cloneElement(children as React.ReactElement<Record<string, unknown>>, {
+      id: forId,
+      "aria-invalid": error ? true : cp["aria-invalid"],
+      "aria-describedby": mergedDescribedBy,
+    });
+  }
+
   return (
-    <label className={`field${error ? " has-error" : ""}`}>
+    <label className={`field${error ? " has-error" : ""}`} htmlFor={forId}>
       <span className="lbl">{label}{required && <span className="req" aria-hidden="true"> *</span>}</span>
-      {children}
+      {control}
       {error
-        ? <span className="field-error" role="alert">{error}</span>
-        : hint && <span className="field-hint">{hint}</span>}
+        ? <span className="field-error" id={errorId} role="alert">{error}</span>
+        : hint && <span className="field-hint" id={hintId}>{hint}</span>}
     </label>
   );
 }
@@ -77,7 +102,7 @@ export function EmptyState({ glyph = "◴", title, sub, action }: {
 }) {
   return (
     <div className="empty">
-      <div className="empty-glyph">{glyph}</div>
+      <div className="empty-glyph" aria-hidden="true">{glyph}</div>
       <div className="empty-title">{title}</div>
       {sub && <div className="empty-sub">{sub}</div>}
       {action && <div style={{ marginTop: 10 }}>{action}</div>}
@@ -111,7 +136,15 @@ export function Toast({ msg, onClose }: { msg: { text: string; err?: boolean } |
     if (msg) { const t = setTimeout(onClose, 4200); return () => clearTimeout(t); }
   }, [msg, onClose]);
   if (!msg) return null;
-  return <div className={`toast ${msg.err ? "err" : ""}`}>{msg.text}</div>;
+  return (
+    <div
+      className={`toast ${msg.err ? "err" : ""}`}
+      role={msg.err ? "alert" : "status"}
+      aria-live={msg.err ? "assertive" : "polite"}
+    >
+      {msg.text}
+    </div>
+  );
 }
 
 /* ---- Governance design language ----
@@ -120,27 +153,27 @@ export function Toast({ msg, onClose }: { msg: { text: string; err?: boolean } |
    action is AI-generated, human-gated, or a deterministic figure that AI never touches. */
 
 export function AiBadge({ label = "AI · ADVISORY" }: { label?: string }) {
-  return <span className="gov-badge ai" title="AI-generated · advisory · non-binding"><span className="gdot" />{label}</span>;
+  return <span className="gov-badge ai" title="AI-generated · advisory · non-binding"><span className="gdot" aria-hidden="true" />{label}</span>;
 }
 
 export function HumanBadge({ label = "HUMAN-GATED" }: { label?: string }) {
-  return <span className="gov-badge human" title="Requires a named accountable human"><span className="gdot" />{label}</span>;
+  return <span className="gov-badge human" title="Requires a named accountable human"><span className="gdot" aria-hidden="true" />{label}</span>;
 }
 
 export function DeterministicBadge({ label = "DETERMINISTIC" }: { label?: string }) {
-  return <span className="gov-badge det" title="Deterministic figure — AI never produces this"><span className="gdot" />{label}</span>;
+  return <span className="gov-badge det" title="Deterministic figure — AI never produces this"><span className="gdot" aria-hidden="true" />{label}</span>;
 }
 
 /** A small "● UNCHANGED / PRESERVED" tag for an authoritative figure an AI overlay left untouched. */
 export function Unchanged({ label = "UNCHANGED" }: { label?: string }) {
-  return <span className="unchanged"><span className="gdot" />{label}</span>;
+  return <span className="unchanged"><span className="gdot" aria-hidden="true" />{label}</span>;
 }
 
 /** AI-drafts → human-confirms flow indicator for suggest/confirm screens. */
 export function GovFlow({ ai, human, note }: { ai: string; human: string; note?: string }) {
   return (
     <div className="gov-flow">
-      <AiBadge label={ai} /> <span className="gov-flow-arrow">→</span> <HumanBadge label={human} />
+      <AiBadge label={ai} /> <span className="gov-flow-arrow" aria-hidden="true">→</span> <HumanBadge label={human} />
       {note && <span className="gov-flow-note">{note}</span>}
     </div>
   );
@@ -173,7 +206,7 @@ export function GovSplit({ advisoryLabel, advisory, authLabel, auth }: {
         <div className="gov-pane-head"><AiBadge /> <span>{advisoryLabel}</span></div>
         <div className="gov-pane-body">{advisory}</div>
       </div>
-      <div className="gov-arrow">→</div>
+      <div className="gov-arrow" aria-hidden="true">→</div>
       <div className="gov-pane auth">
         <div className="gov-pane-head"><DeterministicBadge label="AUTHORITATIVE" /> <Unchanged /></div>
         <div className="gov-pane-body">
@@ -268,6 +301,9 @@ export function DataTable<T>({
   const [menu, setMenu] = useState<null | "cols" | "views">(null);
   const [viewName, setViewName] = useState("");
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const colsBtnRef = useRef<HTMLButtonElement>(null);
+  const viewsBtnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { dtStore(colsKey, hidden); }, [colsKey, hidden]);
   useEffect(() => { dtStore(sizeKey, pageSize); }, [sizeKey, pageSize]);
@@ -285,6 +321,23 @@ export function DataTable<T>({
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
+  }, [menu]);
+
+  // Keyboard operability for the column-chooser / saved-views menus: move focus into
+  // the menu on open, close on Escape and return focus to the trigger that opened it.
+  useEffect(() => {
+    if (!menu) return;
+    menuRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        const trigger = menu === "cols" ? colsBtnRef.current : viewsBtnRef.current;
+        setMenu(null);
+        trigger?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, [menu]);
 
   const basis = useCallback((col: Col<T>, row: T): string | number => {
@@ -401,10 +454,10 @@ export function DataTable<T>({
             aria-pressed={showFilters} onClick={() => setShowFilters((s) => !s)}>Filters</button>
 
           <div className="dt-menu-wrap">
-            <button className="btn subtle dt-btn" aria-haspopup="true" aria-expanded={menu === "cols"}
+            <button ref={colsBtnRef} className="btn subtle dt-btn" aria-haspopup="true" aria-expanded={menu === "cols"}
               onClick={() => setMenu(menu === "cols" ? null : "cols")}>Columns</button>
             {menu === "cols" && (
-              <div className="dt-menu" role="menu">
+              <div className="dt-menu" role="menu" aria-label="Show columns" tabIndex={-1} ref={menuRef}>
                 <div className="dt-menu-title">Show columns</div>
                 {columns.map((c) => (
                   <label key={c.key} className="dt-menu-check">
@@ -418,10 +471,10 @@ export function DataTable<T>({
           </div>
 
           <div className="dt-menu-wrap">
-            <button className="btn subtle dt-btn" aria-haspopup="true" aria-expanded={menu === "views"}
+            <button ref={viewsBtnRef} className="btn subtle dt-btn" aria-haspopup="true" aria-expanded={menu === "views"}
               onClick={() => setMenu(menu === "views" ? null : "views")}>Views</button>
             {menu === "views" && (
-              <div className="dt-menu" role="menu">
+              <div className="dt-menu" role="menu" aria-label="Saved views" tabIndex={-1} ref={menuRef}>
                 <div className="dt-menu-title">Saved views</div>
                 {views.length === 0 && <div className="dt-menu-empty">No saved views yet.</div>}
                 {views.map((v) => (
@@ -458,8 +511,14 @@ export function DataTable<T>({
                     const sortable = c.sortable !== false;
                     const active = sort?.key === c.key;
                     const arrow = active ? (sort!.dir === "asc" ? "▲" : "▼") : "";
+                    const ariaSort: React.AriaAttributes["aria-sort"] = !sortable
+                      ? undefined
+                      : active
+                        ? (sort!.dir === "asc" ? "ascending" : "descending")
+                        : "none";
                     return (
-                      <th key={c.key} className={alignCls(c)} style={c.width ? { width: c.width } : undefined}>
+                      <th key={c.key} scope="col" aria-sort={ariaSort}
+                        className={alignCls(c)} style={c.width ? { width: c.width } : undefined}>
                         {sortable ? (
                           <button className={`dt-sort${active ? " active" : ""}`}
                             onClick={() => toggleSort(c)} aria-label={`Sort by ${c.header}`}>

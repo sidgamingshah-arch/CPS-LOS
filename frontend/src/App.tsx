@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppContext, AI_BY_NAV, isNavEnabled } from "./app-context";
 import { governance, masters, setAuthToken } from "./api";
 import {
@@ -221,6 +221,10 @@ export default function App() {
   // master engine). Empty until fetched; role-scope.ts falls back to its baked-in
   // conservative map when this is empty, so the nav works even if the master is absent.
   const [roleWorkspace, setRoleWorkspace] = useState<RoleWorkspaceMap>({});
+  // The main content region, focused on view change so keyboard / screen-reader
+  // users land on the freshly-rendered screen (skipped on first mount).
+  const mainRef = useRef<HTMLElement>(null);
+  const didMountRef = useRef(false);
 
   // Pull the resolved AI-governance map on boot. Conservative fallback: if the
   // call fails we treat every capability as enabled (matches the server's TTL'd
@@ -298,6 +302,14 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // On view change, move focus to the main region so keyboard / screen-reader users
+  // land on the new content. Additive: skipped on first mount, and preventScroll keeps
+  // the viewport still, so there is no observable change for mouse users.
+  useEffect(() => {
+    if (!didMountRef.current) { didMountRef.current = true; return; }
+    mainRef.current?.focus({ preventScroll: true });
+  }, [view]);
+
   // Resolve the effective role workspace (nav scope + landing). Default-permissive:
   // see-all identities (demo / admin / CRO / unmapped) resolve to "show everything".
   const workspace = useMemo(
@@ -330,6 +342,7 @@ export default function App() {
   return (
     <AppContext.Provider value={ctx}>
       <div className={`app${navOpen ? " nav-open" : ""}${railCollapsed ? " rail-collapsed" : ""}`}>
+        <a href="#main" className="skip-link">Skip to content</a>
         <div className="scrim" onClick={() => setNavOpen(false)} />
         <aside className="sidebar">
           <div className="brand">
@@ -345,7 +358,7 @@ export default function App() {
               {railCollapsed ? "»" : "«"}
             </button>
           </div>
-          <nav className="nav">
+          <nav className="nav" aria-label="Primary">
             {NAV_GROUPS.map((g) => {
               const isCollapsed = !!collapsed[g.title];
               // Hide AI-disabled screens from the nav. The server-side enforcement
@@ -357,17 +370,19 @@ export default function App() {
                 (n) => isNavEnabled(n.key, aiEnabled) && isNavItemInScope(workspace, g.title, n.key),
               );
               if (items.length === 0) return null;
+              const groupId = `navgrp-${g.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
               return (
                 <div key={g.title} className={`nav-group${isCollapsed ? " collapsed" : ""}`}>
                   <button
                     className="nav-group-title"
                     onClick={() => toggleGroup(g.title)}
                     aria-expanded={!isCollapsed}
+                    aria-controls={groupId}
                   >
                     <span>{g.title}</span>
-                    <span className="chev">▾</span>
+                    <span className="chev" aria-hidden="true">▾</span>
                   </button>
-                  <div className="nav-group-items">
+                  <div className="nav-group-items" id={groupId}>
                     {items.map((n) => (
                       <button
                         key={n.key}
@@ -375,8 +390,9 @@ export default function App() {
                         onClick={() => nav(n.key)}
                         title={n.label}
                         data-glyph={n.label.charAt(0)}
+                        aria-current={view === n.key ? "page" : undefined}
                       >
-                        <span className="dot" /> <span className="nav-label">{n.label}</span>
+                        <span className="dot" aria-hidden="true" /> <span className="nav-label">{n.label}</span>
                       </button>
                     ))}
                   </div>
@@ -386,8 +402,8 @@ export default function App() {
           </nav>
         </aside>
 
-        <main className="main">
-          <div className="topbar">
+        <main className="main" id="main" tabIndex={-1} ref={mainRef}>
+          <header className="topbar">
             <div className="topbar-left">
               <button className="hamburger" aria-label="Toggle navigation" onClick={() => setNavOpen((o) => !o)}>≡</button>
               <div>
@@ -426,7 +442,7 @@ export default function App() {
                 <button className="cmdk-btn" style={{ marginLeft: 8 }} onClick={onLogout}>Logout</button>
               </div>
             </div>
-          </div>
+          </header>
           <GovernanceStrip />
           <div className="content">
             {view === "home" && <RoleDashboard />}

@@ -1015,3 +1015,47 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
   align-items: center; gap: 10px; flex-wrap: wrap; }
 .rolehome-hero .rh-roles { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .rolehome-hero .rh-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ============================================================================
+   Accessibility — keyboard focus visibility + skip-to-content link
+   (Wave-3 a11y pass; APPENDED at EOF — additive only, no existing rule touched).
+   ============================================================================ */
+
+/* Visible keyboard-focus indicator. Scoped to :focus-visible so pointer clicks
+   never show it — mouse users see no change. Lower specificity than the existing
+   `input:focus` glow, so form fields keep their box-shadow ring untouched; this
+   covers buttons, links, nav items and other controls that had no focus style. */
+:focus-visible {
+  outline: 2px solid var(--ocean-8);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* The main content region receives programmatic focus on view change / skip-link;
+   suppress the outline so there is no box around the whole content area. */
+#main:focus,
+#main:focus-visible { outline: none; }
+
+/* Skip-to-content link: off-screen until keyboard-focused, then pinned top-left.
+   position:fixed keeps it out of layout flow (no visual change for mouse users). */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  padding: 10px 16px;
+  background: var(--ocean-8);
+  color: var(--on-primary);
+  border-radius: var(--r-sm);
+  font-weight: 600;
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-160%);
+  transition: transform .15s ease;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid var(--on-primary);
+  outline-offset: 2px;
+  text-decoration: none;
+}
