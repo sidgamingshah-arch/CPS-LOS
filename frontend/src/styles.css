@@ -931,3 +931,13 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .mon-artifact-vendor { margin-top: 16px; border-top: 1px solid var(--hairline-soft); padding-top: 12px; }
 .mon-artifact-vendor ul { margin: 8px 0 0; padding-left: 18px; }
 .mon-artifact-vendor li { font-size: 13px; margin-bottom: 4px; }
+
+/* ---- IP Notes (In-Principle sponsorship notes; precede a full application) ---- */
+.ipnote-note {
+  margin: 4px 0 12px; padding: 8px 12px; font-size: 12px; line-height: 1.5;
+  border-left: 3px solid var(--human); border-radius: 6px;
+  background: var(--human-soft); color: var(--ink-2, inherit);
+}
+.ipnote-converted {
+  font-size: 13px; color: var(--human); font-weight: 600; align-self: center;
+}

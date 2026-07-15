@@ -864,3 +864,26 @@ export const fmt = {
       ", " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   },
 };
+
+// ---- IP notes (In-Principle sponsorship notes; precede a full application) ----
+export const ipNotes = {
+  list: (params?: { counterpartyRef?: string; status?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.counterpartyRef) q.set("counterpartyRef", params.counterpartyRef);
+    if (params?.status) q.set("status", params.status);
+    const qs = q.toString();
+    return call<any[]>(`/origination/api/ip-notes${qs ? `?${qs}` : ""}`, "GET");
+  },
+  get: (ref: string) => call<any>(`/origination/api/ip-notes/${ref}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/origination/api/ip-notes", "POST", body, actor),
+  submit: (ref: string, actor: string) =>
+    call<any>(`/origination/api/ip-notes/${ref}/submit`, "POST", undefined, actor),
+  approve: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/origination/api/ip-notes/${ref}/approve`, "POST", { note }, actor),
+  reject: (ref: string, reason: string, actor: string) =>
+    call<any>(`/origination/api/ip-notes/${ref}/reject`, "POST", { reason }, actor),
+  withdraw: (ref: string, actor: string) =>
+    call<any>(`/origination/api/ip-notes/${ref}/withdraw`, "POST", undefined, actor),
+  convert: (ref: string, actor: string) =>
+    call<any>(`/origination/api/ip-notes/${ref}/convert`, "POST", undefined, actor),
+};

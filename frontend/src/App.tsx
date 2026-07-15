@@ -40,6 +40,7 @@ import Committee from "./pages/Committee";
 import DrawingPower from "./pages/DrawingPower";
 import Notifications from "./pages/Notifications";
 import Notings from "./pages/Notings";
+import IpNotes from "./pages/IpNotes";
 import PostureChip from "./pages/PostureChip";
 import NotificationBell from "./notification-center";
 import { prefetchAllCodes } from "./code-values";
@@ -66,6 +67,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "counterparties", label: "Counterparties" },
       { key: "groups", label: "Borrower Groups" },
       { key: "cpt", label: "Client Planning" },
+      { key: "ipnotes", label: "IP Notes" },
       { key: "deals", label: "Deals" },
       { key: "structuring", label: "Deal Structuring" },
       { key: "syndication", label: "Syndication" },
@@ -357,6 +359,7 @@ export default function App() {
           <div className="content">
             {view === "dashboard" && <Dashboard />}
             {view === "deals" && <Deals />}
+            {view === "ipnotes" && <IpNotes />}
             {view === "spreading" && <Spreading />}
             {view === "structuring" && <Structuring />}
             {view === "syndication" && <Syndication />}
