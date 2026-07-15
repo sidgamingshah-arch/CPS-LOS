@@ -773,4 +773,19 @@ export const fmt = {
     v == null ? "—" : new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(v) + (ccy ? " " + ccy : ""),
   pct: (v: number, dp = 2) => (v == null ? "—" : (v * 100).toFixed(dp) + "%"),
   num: (v: number, dp = 2) => (v == null ? "—" : v.toFixed(dp)),
+  /** Date-only, unambiguous "12 Mar 2026" (locale-stable; accepts ISO strings/epoch/Date). */
+  date: (v: string | number | Date | null | undefined) => {
+    if (v == null || v === "") return "—";
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  },
+  /** Date + 24h time "12 Mar 2026, 14:05" for timestamps (audit rows, events). */
+  dateTime: (v: string | number | Date | null | undefined) => {
+    if (v == null || v === "") return "—";
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) +
+      ", " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  },
 };

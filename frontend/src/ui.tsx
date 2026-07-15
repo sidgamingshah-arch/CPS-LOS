@@ -57,8 +57,18 @@ export function Button({ children, onClick, kind = "", disabled, busy }: {
   );
 }
 
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="field"><span className="lbl">{label}</span>{children}</label>;
+export function Field({ label, children, required, hint, error }: {
+  label: string; children: React.ReactNode; required?: boolean; hint?: string; error?: string | null;
+}) {
+  return (
+    <label className={`field${error ? " has-error" : ""}`}>
+      <span className="lbl">{label}{required && <span className="req" aria-hidden="true"> *</span>}</span>
+      {children}
+      {error
+        ? <span className="field-error" role="alert">{error}</span>
+        : hint && <span className="field-hint">{hint}</span>}
+    </label>
+  );
 }
 
 /** A friendly placeholder for a screen (or card) that needs a selection/action first. */
