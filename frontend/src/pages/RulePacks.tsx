@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { config } from "../api";
+import { config, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Field, useAsync } from "../ui";
 
@@ -52,6 +52,7 @@ export default function RulePacks() {
         {(drafts || []).length === 0
           ? <div className="muted">No drafts awaiting sign-off.</div>
           : (
+          <div className="table-scroll">
           <table>
             <thead><tr><th>Pack</th><th>Juris · Type</th><th>Ver</th><th>Effective</th><th>Policy</th><th>Model-risk</th><th>Sign off</th></tr></thead>
             <tbody>
@@ -60,7 +61,7 @@ export default function RulePacks() {
                   <td><b>{p.code}</b></td>
                   <td className="mono"><small>{p.jurisdiction} · {p.type}</small></td>
                   <td className="mono">v{p.version}</td>
-                  <td className="mono"><small>{p.effectiveFrom}</small></td>
+                  <td className="mono"><small>{fmt.date(p.effectiveFrom)}</small></td>
                   <td className="mono"><small>{p.policySignedOffBy || "—"}</small></td>
                   <td className="mono"><small>{p.modelRiskSignedOffBy || "—"}</small></td>
                   <td>
@@ -75,6 +76,7 @@ export default function RulePacks() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
@@ -111,7 +113,7 @@ export default function RulePacks() {
             {pack ? (
               <>
                 <div className="flexbetween" style={{ marginBottom: 8 }}>
-                  <span className="mono">{pack.code} · v{pack.version} · eff {pack.effectiveFrom}</span>
+                  <span className="mono">{pack.code} · v{pack.version} · eff {fmt.date(pack.effectiveFrom)}</span>
                   <div className="btnrow">
                     {pack.active ? <Badge kind="ok">ACTIVE</Badge> : <Badge>superseded</Badge>}
                     {pack.fullySignedOff

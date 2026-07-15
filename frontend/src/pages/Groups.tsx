@@ -308,7 +308,7 @@ export default function Groups() {
               )}
 
               <h4 style={{ margin: "12px 0 6px" }}>Members</h4>
-              <div style={{ overflowX: "auto" }}>
+              <div className="table-scroll">
                 <table>
                   <thead>
                     <tr>

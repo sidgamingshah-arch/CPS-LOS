@@ -59,8 +59,10 @@ function stageBadgeKind(stage: string): string {
 }
 
 function RecordsTable({ batch }: { batch: ExportBatch }) {
+  const [showAll, setShowAll] = useState(false);
   const { envelope } = batch;
-  const records = (envelope?.records ?? []).slice(0, 50);
+  const all = envelope?.records ?? [];
+  const records = showAll ? all : all.slice(0, 50);
 
   if (records.length === 0) {
     return (
@@ -68,8 +70,10 @@ function RecordsTable({ batch }: { batch: ExportBatch }) {
     );
   }
 
+  let table: any = null;
+
   if (batch.destination === "ERM") {
-    return (
+    table = (
       <table>
         <thead>
           <tr>
@@ -102,7 +106,7 @@ function RecordsTable({ batch }: { batch: ExportBatch }) {
   }
 
   if (batch.destination === "FINANCE_GL") {
-    return (
+    table = (
       <table>
         <thead>
           <tr>
@@ -131,7 +135,7 @@ function RecordsTable({ batch }: { batch: ExportBatch }) {
   }
 
   if (batch.destination === "CPR") {
-    return (
+    table = (
       <table>
         <thead>
           <tr>
@@ -156,7 +160,7 @@ function RecordsTable({ batch }: { batch: ExportBatch }) {
   }
 
   if (batch.destination === "CRILC") {
-    return (
+    table = (
       <table>
         <thead>
           <tr>
@@ -186,7 +190,19 @@ function RecordsTable({ batch }: { batch: ExportBatch }) {
     );
   }
 
-  return <div className="muted">Unknown destination — raw records not renderable.</div>;
+  if (!table) return <div className="muted">Unknown destination — raw records not renderable.</div>;
+
+  return (
+    <>
+      <div className="table-scroll">{table}</div>
+      {all.length > 50 && (
+        <div className="table-more">
+          <span>showing {records.length} of {all.length}</span>
+          <button onClick={() => setShowAll((s) => !s)}>{showAll ? "show less" : "show all"}</button>
+        </div>
+      )}
+    </>
+  );
 }
 
 /** Exports page: downstream canonical export feeds (ERM/Finance-GL/CPR), idempotent batches, examiner-retrievable. */
@@ -247,6 +263,7 @@ export default function Exports() {
           />
         )}
         {batchList.length > 0 && (
+          <div className="table-scroll">
           <table>
             <thead>
               <tr>
@@ -271,17 +288,18 @@ export default function Exports() {
                   <td className="mono">{b.id}</td>
                   <td><Badge kind={destBadgeKind(b.destination)}>{b.destination}</Badge></td>
                   <td className="mono">{b.feedType}</td>
-                  <td>{b.asOf}</td>
+                  <td>{fmt.date(b.asOf)}</td>
                   <td className="num">{b.recordCount}</td>
                   <td>
                     <Badge kind={b.status === "DELIVERED" ? "ok" : "info"}>{b.status}</Badge>
                   </td>
                   <td>{b.generatedBy}</td>
-                  <td>{new Date(b.createdAt).toLocaleString()}</td>
+                  <td>{fmt.dateTime(b.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
@@ -305,7 +323,7 @@ export default function Exports() {
                 {" records · "}
                 <span className="mono">{detail.data.idempotencyKey}</span>
               </div>
-              <RecordsTable batch={detail.data} />
+              <RecordsTable key={detail.data.id} batch={detail.data} />
             </>
           )}
         </Card>
