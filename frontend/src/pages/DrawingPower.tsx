@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { portfolio } from "../api";
+import { origination, portfolio } from "../api";
+import { useApp } from "../app-context";
 import { Badge, Button, Card, DeterministicBadge, EmptyState, Field, Stat, Toast, Unchanged, useAsync } from "../ui";
 import { fmt } from "../api";
 
@@ -10,8 +11,11 @@ import { fmt } from "../api";
  * authoritative utilisation — the ledger figure is UNCHANGED.
  */
 export default function DrawingPower() {
-  const [ref, setRef] = useState("");
+  const { ref: ctxRef } = useApp();
+  const apps = useAsync(() => origination.list(), []);
+  const [ref, setRef] = useState(ctxRef ?? "");
   const [facilityRef, setFacilityRef] = useState("");
+  const facs = useAsync(() => (ref ? origination.facilities(ref).catch(() => [] as any[]) : Promise.resolve([] as any[])), [ref]);
   const [stock, setStock] = useState("100000000");
   const [debtors, setDebtors] = useState("50000000");
   const [creditors, setCreditors] = useState("20000000");
@@ -47,8 +51,24 @@ export default function DrawingPower() {
         sub="Working-capital DP from the borrowing base (RBI norms). Deterministic + advisory — flags a shortfall; the authoritative utilisation ledger is never touched."
         right={<div className="gov-chips"><DeterministicBadge label="DETERMINISTIC · ADVISORY" /></div>}>
         <div className="btnrow" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Application ref"><input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="APP-XXXX" /></Field>
-          <Field label="Facility ref"><input value={facilityRef} onChange={(e) => setFacilityRef(e.target.value)} placeholder="FAC-XXXX" /></Field>
+          <Field label="Deal">
+            <select value={ref} onChange={(e) => { setRef(e.target.value); setFacilityRef(""); }}>
+              <option value="">— select deal —</option>
+              {(apps.data ?? []).map((a: any) => (
+                <option key={a.reference} value={a.reference}>{a.reference} · {a.counterpartyName} · {a.status}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Facility">
+            <select value={facilityRef} onChange={(e) => setFacilityRef(e.target.value)} disabled={!ref}>
+              <option value="">— select facility —</option>
+              {(facs.data ?? []).map((f: any) => (
+                <option key={f.reference} value={f.reference}>
+                  {f.reference} · {f.facilityType} · {fmt.money(f.amount, f.currency)}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="Stock"><input value={stock} onChange={(e) => setStock(e.target.value)} /></Field>
           <Field label="Debtors"><input value={debtors} onChange={(e) => setDebtors(e.target.value)} /></Field>
           <Field label="Creditors"><input value={creditors} onChange={(e) => setCreditors(e.target.value)} /></Field>
@@ -79,12 +99,13 @@ export default function DrawingPower() {
       {ref && (
         <Card title="History" sub={`${(history || []).length} assessment(s)`}>
           {(history || []).length === 0 ? <EmptyState glyph="◴" title="No assessments yet" /> : (
+            <div className="table-scroll">
             <table>
               <thead><tr><th>When</th><th>Facility</th><th>DP</th><th>Outstanding</th><th>Shortfall</th><th>Status</th></tr></thead>
               <tbody>
                 {(history || []).map((h: any) => (
                   <tr key={h.id}>
-                    <td className="mono" style={{ whiteSpace: "nowrap" }}>{h.createdAt ? new Date(h.createdAt).toLocaleString() : "—"}</td>
+                    <td className="mono" style={{ whiteSpace: "nowrap" }}>{fmt.dateTime(h.createdAt)}</td>
                     <td className="mono">{h.facilityRef}</td>
                     <td>{fmt.money(h.drawingPower)}</td>
                     <td>{fmt.money(h.outstanding)}</td>
@@ -94,6 +115,7 @@ export default function DrawingPower() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </Card>
       )}

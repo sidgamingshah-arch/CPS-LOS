@@ -660,3 +660,58 @@ small.prov { color: var(--muted); font-size: 11px; }
 .table-more { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
 .table-more button { border: 0; background: transparent; color: var(--ocean-8); cursor: pointer; font-size: 12px; font-weight: 600; padding: 0; }
 .table-more button:hover { text-decoration: underline; }
+
+/* ============================ Deal Workspace navigation ===================
+   Wave-0 nav cluster: the workspace case-file chrome — the sticky section
+   jump-list, the "Open in …" deep-link chips (nav carries the deal ref into
+   each deal-scoped screen), the next-action CTA beside the pill-steps, and
+   the compact workflow-stage strip. Ocean tokens + pill radius only, so the
+   chips read as part of the existing design language. */
+
+/* anchored sections: keep card headings clear of the sticky jump bar */
+.ws-anchor { scroll-margin-top: 64px; }
+
+/* sticky horizontal jump-list under the workspace header */
+.ws-jumpbar {
+  position: sticky; top: 8px; z-index: 30;
+  display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto;
+  padding: 8px 10px;
+  background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-pill);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .05);
+}
+.ws-jump-chip {
+  flex: 0 0 auto; white-space: nowrap; cursor: pointer;
+  padding: 5px 12px; border-radius: var(--r-pill); font-size: 11.5px; font-weight: 500;
+  background: var(--light-blue-soft); color: var(--ocean-7); border: 1px solid transparent;
+}
+.ws-jump-chip:hover { background: var(--ocean-8); color: #fff; }
+
+/* "Open in …" deep-link chips */
+.ws-links { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+.ws-links-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 600; color: var(--muted); margin-right: 2px;
+}
+.ws-link-chip {
+  cursor: pointer; padding: 4px 11px; border-radius: var(--r-pill); font-size: 11.5px; font-weight: 500;
+  background: var(--canvas); color: var(--ocean-8); border: 1px solid var(--hairline);
+}
+.ws-link-chip:hover { background: var(--light-blue-soft); border-color: var(--ocean-8); }
+
+/* next-action CTA beside the pill-steps */
+.ws-next-cta {
+  cursor: pointer; padding: 5px 13px; border-radius: var(--r-pill); font-size: 11.5px; font-weight: 600;
+  background: var(--canvas); color: var(--ocean-8); border: 1px dashed var(--ocean-6);
+}
+.ws-next-cta:hover { background: var(--light-blue-soft); }
+
+/* compact workflow-stage strip (stage · status · SLA) atop the case file */
+.ws-workflow-strip {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 12px; margin: 0 0 12px;
+  background: var(--light-blue-soft); border: 1px solid var(--hairline); border-radius: var(--r-sm);
+  font-size: 12.5px; color: var(--ocean-7);
+}
+.ws-workflow-strip .wsw-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.ws-workflow-strip .wsw-stage { color: var(--body); }
+.ws-workflow-strip .wsw-sla { font-size: 11.5px; color: var(--muted); }

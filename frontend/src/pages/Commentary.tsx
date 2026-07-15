@@ -167,7 +167,7 @@ function CommentaryCard({
       {(entry.status === "CONFIRMED" || entry.status === "REJECTED") && entry.reviewedBy && (
         <small className="prov" style={{ display: "block", marginTop: 6 }}>
           reviewed by {entry.reviewedBy}
-          {entry.reviewedAt ? ` · ${new Date(entry.reviewedAt).toLocaleString()}` : ""}
+          {entry.reviewedAt ? ` · ${fmt.dateTime(entry.reviewedAt)}` : ""}
           {entry.reviewNote ? ` · "${entry.reviewNote}"` : ""}
         </small>
       )}
@@ -178,11 +178,11 @@ function CommentaryCard({
 // ── main page ──────────────────────────────────────────────────────────────
 
 export default function Commentary() {
-  const { actor, notify } = useApp();
+  const { actor, notify, ref: ctxRef } = useApp();
 
   // Deal selector
   const deals = useAsync(() => origination.list(), []);
-  const [selectedRef, setSelectedRef] = useState<string>("");
+  const [selectedRef, setSelectedRef] = useState<string>(ctxRef ?? "");
 
   // Commentary list — reloaded whenever selectedRef changes or reload() called
   const entries = useAsync<ProposalCommentary[]>(

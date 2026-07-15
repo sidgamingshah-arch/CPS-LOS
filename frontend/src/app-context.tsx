@@ -7,6 +7,13 @@ export interface AppCtx {
   notify: (text: string, err?: boolean) => void;
   nav: Nav;
   /**
+   * The active deal reference (set by nav(view, ref) — e.g. arriving from the
+   * Deal Workspace deep links). Deal-scoped screens seed their own deal
+   * selector from this so context carries across screens; undefined when no
+   * deal is active. Screens stay fully usable standalone.
+   */
+  ref?: string;
+  /**
    * Resolved enabled-state of every governed AI capability, keyed by capability key
    * (e.g. "doc-intel", "rag-overlay"). When a capability is off, the matching UI
    * surface is hidden — the server-side gate (HTTP 403) is the source of truth, the
