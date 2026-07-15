@@ -738,6 +738,20 @@ export const notifications = {
     return call<any[]>(`/${svc}/api/notifications` + (qs ? `?${qs}` : ""), "GET");
   },
   get: (svc: string, id: number) => call<any>(`/${svc}/api/notifications/${id}`, "GET"),
+  // ---- notification-center read-state (bell + unread badge) ----
+  unreadCount: (svc: string, q?: { recipient?: string; role?: string }) => {
+    const p = new URLSearchParams();
+    if (q?.recipient) p.set("recipient", q.recipient);
+    if (q?.role) p.set("role", q.role);
+    const qs = p.toString();
+    return call<{ unread: number }>(`/${svc}/api/notifications/unread-count` + (qs ? `?${qs}` : ""), "GET");
+  },
+  markRead: (svc: string, id: number, actor: string) =>
+    call<any>(`/${svc}/api/notifications/${id}/read`, "POST", undefined, actor),
+  markAllRead: (svc: string, actor: string, recipient?: string) =>
+    call<{ read: number }>(
+      `/${svc}/api/notifications/read-all` + (recipient ? `?recipient=${encodeURIComponent(recipient)}` : ""),
+      "POST", undefined, actor),
 };
 
 /** Currency symbol per ISO code; falls back to the code itself for anything unmapped. */

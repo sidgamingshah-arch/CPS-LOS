@@ -43,6 +43,29 @@ public class NotificationController {
         return notifications.get(id);
     }
 
+    // -------- read-state (notification-center); additive, does not change the list/enqueue surface
+
+    /** Unread count for the notification bell, optionally scoped to a recipient and/or role. */
+    @GetMapping("/unread-count")
+    public Map<String, Object> unreadCount(@RequestParam(required = false) String recipient,
+                                           @RequestParam(required = false) String role) {
+        return Map.of("unread", notifications.unreadCount(recipient, role));
+    }
+
+    /** Mark one notification read (idempotent). Human action — carries X-Actor into the audit trail. */
+    @PostMapping("/{id}/read")
+    public Notification markRead(@PathVariable Long id,
+                                 @RequestHeader(value = "X-Actor", defaultValue = "system") String actor) {
+        return notifications.markRead(id, actor);
+    }
+
+    /** Mark all unread read (optionally scoped to a recipient); returns how many flipped. */
+    @PostMapping("/read-all")
+    public Map<String, Object> readAll(@RequestParam(required = false) String recipient,
+                                       @RequestHeader(value = "X-Actor", defaultValue = "system") String actor) {
+        return Map.of("read", notifications.markAllRead(recipient, actor));
+    }
+
     /** Force-run both sweep jobs now (same code path as the scheduled sweeper). */
     @PostMapping("/sweep")
     public Map<String, Object> sweep(@RequestHeader(value = "X-Actor", defaultValue = "system") String actor) {

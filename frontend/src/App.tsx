@@ -39,6 +39,7 @@ import Committee from "./pages/Committee";
 import DrawingPower from "./pages/DrawingPower";
 import Notifications from "./pages/Notifications";
 import PostureChip from "./pages/PostureChip";
+import NotificationBell from "./notification-center";
 import { prefetchAllCodes } from "./code-values";
 
 /**
@@ -339,6 +340,7 @@ export default function App() {
                 <DeterministicBadge label="DETERMINISTIC FIGURES" />
                 <PostureChip />
               </div>
+              <NotificationBell />
               <div className="topbar-actor" title="Verified identity from your login token — drives every SoD check">
                 <span className="ta-label">Signed in</span>
                 <span className="mono" style={{ fontWeight: 600 }}>{actor}</span>

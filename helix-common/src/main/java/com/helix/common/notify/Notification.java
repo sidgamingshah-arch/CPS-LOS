@@ -113,6 +113,19 @@ public class Notification {
 
     private Instant lastReminderAt;
 
+    /**
+     * Read-state (notification-center). Nullable so existing rows/tests are unaffected — an
+     * absent {@code readAt} means unread. Column names are reserved-word-safe: a bare
+     * {@code read} column would clash with SQLite keywords, whereas {@code read_at}/{@code read_by}
+     * do not. Stamped only by the human-gated {@code POST /{id}/read} + {@code /read-all}
+     * endpoints; the enqueue / dispatch / reminder paths never touch these.
+     */
+    @Column(name = "read_at")
+    private Instant readAt;
+
+    @Column(name = "read_by", length = 120)
+    private String readBy;
+
     public Long getId() { return id; }
 
     public String getEventType() { return eventType; }
@@ -185,4 +198,10 @@ public class Notification {
 
     public Instant getLastReminderAt() { return lastReminderAt; }
     public void setLastReminderAt(Instant lastReminderAt) { this.lastReminderAt = lastReminderAt; }
+
+    public Instant getReadAt() { return readAt; }
+    public void setReadAt(Instant readAt) { this.readAt = readAt; }
+
+    public String getReadBy() { return readBy; }
+    public void setReadBy(String readBy) { this.readBy = readBy; }
 }

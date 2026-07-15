@@ -23,4 +23,10 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     /** Reminder-eligible rows in a given status (sweep job b filters cadence/cap in code). */
     List<Notification> findByStatusAndReminderEveryHoursIsNotNullOrderByIdAsc(String status);
+
+    /** Fast unread total (notification-center) when no recipient/role scope is applied. */
+    long countByReadAtIsNull();
+
+    /** Unread rows, newest first — the recipient/role scope (JSON list columns) is filtered in code. */
+    List<Notification> findByReadAtIsNullOrderByIdDesc();
 }

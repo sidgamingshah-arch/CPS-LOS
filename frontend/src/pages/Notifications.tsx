@@ -37,6 +37,13 @@ export default function Notifications() {
       render: (n) => <Badge kind={statusTone(n.status)}>{n.status}</Badge>, value: (n) => n.status ?? "",
     },
     {
+      key: "read", header: "Read",
+      render: (n) => n.readAt
+        ? <Badge kind="ok" >Read</Badge>
+        : <Badge kind="warn">Unread</Badge>,
+      value: (n) => (n.readAt ? "Read" : "Unread"),
+    },
+    {
       key: "_view", header: "", sortable: false, filterable: false, csv: false,
       render: (n) => (
         <button className="btn subtle" onClick={() => setOpen(open?.id === n.id ? null : n)}>
@@ -75,7 +82,9 @@ export default function Notifications() {
       </Card>
 
       {open && (
-        <Card title={open.renderedSubject || open.eventType} sub={`${open.channel} · ${open.transport} · ${open.templateKey || "raw"}`}>
+        <Card title={open.renderedSubject || open.eventType}
+          sub={`${open.channel} · ${open.transport} · ${open.templateKey || "raw"}` +
+            (open.readAt ? ` · read by ${open.readBy || "—"} on ${fmt.dateTime(open.readAt)}` : " · unread")}>
           <div style={{ whiteSpace: "pre-wrap" }} dangerouslySetInnerHTML={{ __html: open.renderedBody || "" }} />
         </Card>
       )}

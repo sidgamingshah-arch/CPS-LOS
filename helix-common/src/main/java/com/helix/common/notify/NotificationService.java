@@ -301,6 +301,79 @@ public class NotificationService {
         return repo.findById(id).orElse(null);
     }
 
+    // =============================================================== read-state (notification-center)
+
+    /**
+     * Count of unread notifications, optionally scoped to a {@code recipient} and/or {@code role}.
+     * With no scope this is a fast {@code COUNT(*) WHERE read_at IS NULL}; with a scope the unread
+     * rows are filtered in code because recipients/roles are persisted as JSON list columns.
+     * Purely additive — enqueue/dispatch/reminder paths are untouched.
+     */
+    @Transactional(readOnly = true)
+    public long unreadCount(String recipient, String role) {
+        boolean noScope = (recipient == null || recipient.isBlank()) && (role == null || role.isBlank());
+        if (noScope) return repo.countByReadAtIsNull();
+        return repo.findByReadAtIsNullOrderByIdDesc().stream()
+                .filter(n -> addressedTo(n, recipient, role))
+                .count();
+    }
+
+    /**
+     * Mark one notification read (human action, X-Actor). Idempotent — an already-read row keeps
+     * its original {@code readAt}/{@code readBy}. Never deletes; the row stays in the outbox list.
+     */
+    @Transactional
+    public Notification markRead(Long id, String actor) {
+        Notification n = repo.findById(id).orElse(null);
+        if (n == null) return null;
+        if (n.getReadAt() != null) return n;            // idempotent — already read stays read
+        String by = actor == null || actor.isBlank() ? "system" : actor;
+        n.setReadAt(Instant.now());
+        n.setReadBy(by);
+        Notification saved = repo.save(n);
+        safeHumanAudit(by, "NOTIFICATION_READ", saved.getSubjectType(), saved.getSubjectRef(),
+                "%s notification marked read".formatted(saved.getEventType()),
+                Map.of("eventType", String.valueOf(saved.getEventType()), "notificationId", saved.getId(),
+                        "readBy", by));
+        return saved;
+    }
+
+    /**
+     * Mark every unread notification read, optionally scoped to a {@code recipient} (matched against
+     * the row's recipients/roles). Returns how many rows flipped. Idempotent — already-read rows are
+     * skipped, so re-running returns 0.
+     */
+    @Transactional
+    public int markAllRead(String recipient, String actor) {
+        String by = actor == null || actor.isBlank() ? "system" : actor;
+        Instant now = Instant.now();
+        boolean scoped = recipient != null && !recipient.isBlank();
+        int count = 0;
+        for (Notification n : repo.findByReadAtIsNullOrderByIdDesc()) {
+            if (scoped && !addressedTo(n, recipient, recipient)) continue;
+            n.setReadAt(now);
+            n.setReadBy(by);
+            repo.save(n);
+            count++;
+        }
+        if (count > 0) {
+            safeHumanAudit(by, "NOTIFICATION_READ_ALL", "Notification", scoped ? recipient : "all",
+                    "%d notification(s) marked read".formatted(count),
+                    Map.of("count", count, "recipient", scoped ? recipient : ""));
+        }
+        return count;
+    }
+
+    /** True iff a row is addressed to {@code recipient} or {@code role} (either JSON list may carry it). */
+    private static boolean addressedTo(Notification n, String recipient, String role) {
+        if (listHas(n.getRecipients(), recipient) || listHas(n.getRecipientRoles(), recipient)) return true;
+        return listHas(n.getRecipientRoles(), role) || listHas(n.getRecipients(), role);
+    }
+
+    private static boolean listHas(List<String> list, String value) {
+        return value != null && !value.isBlank() && list != null && list.contains(value);
+    }
+
     private String render(String template, Map<String, Object> vars) {
         if (template == null) return "";
         Matcher m = TOKEN.matcher(template);
@@ -333,6 +406,16 @@ public class NotificationService {
                            Map<String, Object> detail) {
         try {
             audit.engine(eventType, subjectType, subjectRef, summary, detail);
+        } catch (Exception e) {
+            log.warn("could not stamp {} audit ({})", eventType, e.getMessage());
+        }
+    }
+
+    /** HUMAN-actor variant for the read-state gates (a named user clicked "read"). Never throws. */
+    private void safeHumanAudit(String actor, String eventType, String subjectType, String subjectRef,
+                                String summary, Map<String, Object> detail) {
+        try {
+            audit.human(actor, eventType, subjectType, subjectRef, summary, detail);
         } catch (Exception e) {
             log.warn("could not stamp {} audit ({})", eventType, e.getMessage());
         }
