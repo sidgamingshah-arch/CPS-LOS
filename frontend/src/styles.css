@@ -923,3 +923,11 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
   border-left: 3px solid var(--human); border-radius: 6px;
   background: var(--human-soft); color: var(--ink-2, inherit);
 }
+
+/* ---- Monitoring Artifacts (post-disbursement; one master-driven lifecycle) ---- */
+.mon-artifact-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.mon-artifact-sections textarea { width: 100%; resize: vertical; font: inherit; }
+.mon-artifact-sections textarea:disabled { background: var(--surface-strong); color: var(--muted); }
+.mon-artifact-vendor { margin-top: 16px; border-top: 1px solid var(--hairline-soft); padding-top: 12px; }
+.mon-artifact-vendor ul { margin: 8px 0 0; padding-left: 18px; }
+.mon-artifact-vendor li { font-size: 13px; margin-bottom: 4px; }

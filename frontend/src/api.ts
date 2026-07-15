@@ -410,6 +410,33 @@ export const cap = {
   sweep: (actor: string) => call<any>("/portfolio/api/cap/sweep", "POST", undefined, actor),
 };
 
+// ---- monitoring artifacts (post-disbursement; ONE lifecycle, master-driven) ----
+export const monitoringArtifacts = {
+  list: (q?: { subjectRef?: string; status?: string; type?: string }) => {
+    const p = new URLSearchParams();
+    if (q?.subjectRef) p.set("subjectRef", q.subjectRef);
+    if (q?.status) p.set("status", q.status);
+    if (q?.type) p.set("type", q.type);
+    const qs = p.toString();
+    return call<any[]>("/portfolio/api/monitoring/artifacts" + (qs ? `?${qs}` : ""), "GET");
+  },
+  get: (ref: string) => call<any>(`/portfolio/api/monitoring/artifacts/${ref}`, "GET"),
+  create: (body: any, actor: string) =>
+    call<any>("/portfolio/api/monitoring/artifacts", "POST", body, actor),
+  updateSections: (ref: string, sections: any, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/sections`, "PUT", { sections }, actor),
+  submit: (ref: string, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/submit`, "POST", undefined, actor),
+  review: (ref: string, notes: string, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/review`, "POST", { notes }, actor),
+  approve: (ref: string, notes: string, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/approve`, "POST", { notes }, actor),
+  authorize: (ref: string, notes: string, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/authorize`, "POST", { notes }, actor),
+  vendorRfq: (ref: string, vendorId: string, question: string, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/vendor-rfq`, "POST", { vendorId, question }, actor),
+};
+
 // ---- CAD ----
 export const cad = {
   initiate: (body: any, actor: string) => call<any>("/decision/api/cad/cases", "POST", body, actor),
