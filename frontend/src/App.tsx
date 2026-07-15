@@ -19,6 +19,7 @@ import Customer360 from "./pages/Customer360";
 import Cad from "./pages/Cad";
 import Monitoring from "./pages/Monitoring";
 import MonitoringArtifacts from "./pages/MonitoringArtifacts";
+import Escrow from "./pages/Escrow";
 import Limits from "./pages/Limits";
 import Masters from "./pages/Masters";
 import Structuring from "./pages/Structuring";
@@ -98,6 +99,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "drawingpower", label: "Drawing Power" },
       { key: "monitoring", label: "Monitoring · MER" },
       { key: "monitoringartifacts", label: "Monitoring Artifacts" },
+      { key: "escrow", label: "Escrow Monitoring" },
       { key: "customer360", label: "Customer-360" },
       { key: "mis", label: "MIS · Reports" },
       { key: "reportbuilder", label: "Ad-hoc Reports" },
@@ -145,6 +147,7 @@ const CRUMB: Record<string, string> = {
   pricinglab: "Pricing scenario optimiser · goal-seek · advisory (authoritative pricing untouched)",
   monitoring: "Deferred docs · conditions subsequent · renewals · reminders · escalation · DMS feed",
   monitoringartifacts: "One master-driven lifecycle · call memo/plant visit/LCR/QPR/broker/stock audit/audit note · review→approve→authorize SoD · vendor RFQ · ECL/exposure untouched",
+  escrow: "Escrow monitoring · append-only versioned budget lines · category-tagged transactions · deterministic budget-vs-actual + RAG (VALIDATION_PARAMETER) · ECL/exposure/limit untouched",
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
   risklab: "Advisory overlays · statistical RAG scoring · macro directional impact (non-binding)",
   projections: "Multi-year proforma · driver assumptions · projected DSCR · sensitivity (advisory)",
@@ -383,6 +386,7 @@ export default function App() {
             {view === "pricinglab" && <PricingLab />}
             {view === "monitoring" && <Monitoring />}
             {view === "monitoringartifacts" && <MonitoringArtifacts />}
+            {view === "escrow" && <Escrow />}
             {view === "customer360" && <Customer360 />}
             {view === "risklab" && <RiskLab />}
             {view === "projections" && <Projections />}

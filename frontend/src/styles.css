@@ -955,3 +955,5 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .scf-rollup b { color: var(--ink, inherit); font-variant-numeric: tabular-nums; }
 .scf-reasons { margin: 0; padding-left: 16px; }
 .scf-reasons li { margin-bottom: 2px; color: var(--muted); }
+/* ---- Escrow monitoring (record surface; deterministic budget-vs-actual + RAG) ---- */
+.escrow-note { font-size: 12px; color: var(--muted); margin-top: 10px; }

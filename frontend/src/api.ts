@@ -455,6 +455,21 @@ export const monitoringArtifacts = {
     call<any>(`/portfolio/api/monitoring/artifacts/${ref}/vendor-rfq`, "POST", { vendorId, question }, actor),
 };
 
+// ---- escrow monitoring (record surface; deterministic budget-vs-actual + RAG) ----
+export const escrow = {
+  list: (subjectRef?: string) =>
+    call<any[]>("/portfolio/api/escrow/accounts" + (subjectRef ? `?subjectRef=${encodeURIComponent(subjectRef)}` : ""), "GET"),
+  get: (ref: string) => call<any>(`/portfolio/api/escrow/accounts/${ref}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/portfolio/api/escrow/accounts", "POST", body, actor),
+  addBudgetLine: (ref: string, body: any, actor: string) =>
+    call<any>(`/portfolio/api/escrow/accounts/${ref}/budget-lines`, "POST", body, actor),
+  budgetHistory: (ref: string) => call<any[]>(`/portfolio/api/escrow/accounts/${ref}/budget-lines`, "GET"),
+  postTransaction: (ref: string, body: any, actor: string) =>
+    call<any>(`/portfolio/api/escrow/accounts/${ref}/transactions`, "POST", body, actor),
+  transactions: (ref: string) => call<any[]>(`/portfolio/api/escrow/accounts/${ref}/transactions`, "GET"),
+  budgetVsActual: (ref: string) => call<any>(`/portfolio/api/escrow/accounts/${ref}/budget-vs-actual`, "GET"),
+};
+
 // ---- CAD ----
 export const cad = {
   initiate: (body: any, actor: string) => call<any>("/decision/api/cad/cases", "POST", body, actor),
