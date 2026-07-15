@@ -660,3 +660,24 @@ small.prov { color: var(--muted); font-size: 11px; }
 .table-more { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
 .table-more button { border: 0; background: transparent; color: var(--ocean-8); cursor: pointer; font-size: 12px; font-weight: 600; padding: 0; }
 .table-more button:hover { text-decoration: underline; }
+
+/* ================= Disbursement: inline action panels (Wave-0) =============
+   Replaces window.prompt() capture on the Disbursement screen. A single
+   per-action panel expands in place — inside a full-width table row
+   (tr.inline-panel-row) or at the top of a card — and reuses the shared
+   Field hint/error slots and existing tokens. Appended section only. */
+.inline-panel {
+  display: grid; gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--human);   /* human-gated action */
+  border-radius: var(--r-sm);
+}
+.inline-panel.danger { border-left-color: var(--bad); }
+.inline-panel-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.inline-panel.danger .inline-panel-title { color: var(--bad); }
+.inline-panel-fields { display: flex; flex-wrap: wrap; gap: 0 12px; align-items: flex-start; }
+.inline-panel-fields .field { flex: 1 1 220px; min-width: 180px; max-width: 360px; margin-bottom: 0; }
+.inline-panel textarea { resize: vertical; min-height: 44px; }
+tr.inline-panel-row > td { padding: 6px 6px 10px; }
