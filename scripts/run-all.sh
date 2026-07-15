@@ -7,6 +7,9 @@ mkdir -p "$HELIX_DATA_DIR"
 # G7: enable the test-only fail-closed-posture outage-simulation hook in the local/e2e stack
 # (prod default is false; the endpoint does not exist unless this is true).
 export HELIX_RBAC_SIMULATE_OUTAGE_ENABLED="${HELIX_RBAC_SIMULATE_OUTAGE_ENABLED:-true}"
+# Notify: enable the test-only enqueue-with-schedule hook in the local/e2e stack
+# (prod default is false; the endpoint does not exist unless this is true).
+export HELIX_NOTIFY_TEST_ENQUEUE_ENABLED="${HELIX_NOTIFY_TEST_ENQUEUE_ENABLED:-true}"
 
 declare -A SERVICES=(
   [config-service]=8081
