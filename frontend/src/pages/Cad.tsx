@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cad, mer, origination } from "../api";
+import { cad, fmt, mer, origination } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, EmptyState, Field, statusTone, useAsync } from "../ui";
 
@@ -138,7 +138,7 @@ function CaseDetail({ caseId, onChange }: { caseId: number; onChange: () => void
             <tbody>
               {d.deviations.map((dv: any) => (
                 <tr key={dv.id}>
-                  <td className="mono">{new Date(dv.createdAt).toLocaleString()}</td>
+                  <td className="mono">{fmt.dateTime(dv.createdAt)}</td>
                   <td>{dv.type}</td>
                   <td>{dv.reason}</td>
                   <td><Badge kind={dv.status === "APPROVED" ? "ok" : dv.status === "REJECTED" ? "bad" : "warn"}>{dv.status}</Badge></td>

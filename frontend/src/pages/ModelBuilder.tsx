@@ -125,7 +125,10 @@ export default function ModelBuilder() {
                     <tr key={r.id}>
                       <td><b>{r.recordKey}</b> <span className="muted">v{r.version} · maker {r.maker}</span></td>
                       <td><Button kind="subtle" onClick={() => masters.approve(r.id, actor).then(() => { notify("Approved"); reload(); }).catch((e) => notify(e.message, true))}>Approve</Button></td>
-                      <td><Button kind="ghost" onClick={() => masters.reject(r.id, actor).then(() => { notify("Rejected"); reload(); }).catch((e) => notify(e.message, true))}>Reject</Button></td>
+                      <td><Button kind="danger" onClick={() => {
+                        if (!window.confirm(`Reject pending definition ${r.recordKey}?`)) return;
+                        masters.reject(r.id, actor).then(() => { notify("Rejected"); reload(); }).catch((e) => notify(e.message, true));
+                      }}>Reject</Button></td>
                     </tr>
                   ))}
                 </tbody>

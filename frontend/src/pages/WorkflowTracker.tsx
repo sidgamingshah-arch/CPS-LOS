@@ -6,7 +6,7 @@
  * place where AI suggestions meet named-human decisions.
  */
 import { useEffect, useMemo, useState } from "react";
-import { workflow, WorkflowInstance, WorkflowStage, WorkflowView } from "../api";
+import { fmt, workflow, WorkflowInstance, WorkflowStage, WorkflowView } from "../api";
 import { useApp } from "../app-context";
 import { AiBadge, Badge, Button, Card, EmptyState, Field, GovFlow, HumanBadge, useAsync } from "../ui";
 
@@ -168,7 +168,7 @@ export default function WorkflowTracker() {
                       <td className="mono">{b.applicationReference}</td>
                       <td><strong className="mono">{b.stageKey}</strong> {b.humanGate && <HumanBadge />}</td>
                       <td><StatusBadge s={b.status} /></td>
-                      <td className="prov">{b.slaDueAt}</td>
+                      <td className="prov">{fmt.dateTime(b.slaDueAt)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -205,8 +205,8 @@ export default function WorkflowTracker() {
           {current && (
             <div className="prov" style={{ marginTop: 12 }}>
               Currently at <strong className="mono">{current.stageKey}</strong> — {current.label}
-              {" · "} entered {current.enteredAt}
-              {current.slaDueAt && ` · SLA due ${current.slaDueAt}`}
+              {" · "} entered {fmt.dateTime(current.enteredAt)}
+              {current.slaDueAt && ` · SLA due ${fmt.dateTime(current.slaDueAt)}`}
             </div>
           )}
         </Card>

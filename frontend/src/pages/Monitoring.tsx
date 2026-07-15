@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cad, mer, origination } from "../api";
+import { cad, fmt, mer, origination } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Field, Stat, useAsync } from "../ui";
 
@@ -70,12 +70,13 @@ export default function Monitoring() {
         {(register.data || []).length === 0 ? (
           <div className="muted">No monitoring items. Build the register from a completed CAD case.</div>
         ) : (
+          <div className="table-scroll">
           <table>
             <thead><tr><th>Due</th><th>Item</th><th>Owner</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {(register.data || []).map((m: any) => (
                 <tr key={m.id}>
-                  <td className="mono">{m.dueDate}{m.recurring && <span title="recurring"> ↻</span>}</td>
+                  <td className="mono">{fmt.date(m.dueDate)}{m.recurring && <span title="recurring"> ↻</span>}</td>
                   <td>
                     {m.description}
                     <br /><small className="prov">
@@ -91,6 +92,7 @@ export default function Monitoring() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>
@@ -143,7 +145,7 @@ function RowActions({ m, actor, run }: { m: any; actor: string; run: (fn: () => 
           const docRef = window.prompt("DMS document reference:", "DMS-" + m.id);
           if (docRef) run(() => mer.submit(m.id, { docRef, comment: "submitted" }, actor), "Submitted (DMS-fed)");
         }}>Submit…</button>
-      <button className="btn subtle" style={btn}
+      <button className="btn danger" style={btn}
         onClick={() => {
           const reason = window.prompt("Waiver reason:");
           if (reason) run(() => mer.waive(m.id, { reason }, actor), "Waived");

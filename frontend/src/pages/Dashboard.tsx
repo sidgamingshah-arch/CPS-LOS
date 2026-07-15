@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { portfolio, risk, mis, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, DeterministicBadge, Stat, useAsync } from "../ui";
@@ -13,6 +14,8 @@ export default function Dashboard() {
   const dash = useAsync(() => mis.dashboard(), []);
   const p360 = useAsync(() => mis.portfolio360(), []);
   const multi = useAsync(() => portfolio.concentrationMulti("IN-RBI"), []);
+  const [showAllVariance, setShowAllVariance] = useState(false);
+  const [showAllWatch, setShowAllWatch] = useState(false);
 
   const reloadAll = () => {
     summary.reload(); conc.reload(); watch.reload(); stress.reload(); overrides.reload();
@@ -163,11 +166,12 @@ export default function Dashboard() {
           {!variance.worstByVariance || variance.worstByVariance.length === 0 ? (
             <div className="muted">No actual-RAROC observations yet — compute actuals on the workspace.</div>
           ) : (
-            <div style={{ overflowX: "auto" }}>
+            <>
+            <div className="table-scroll">
               <table>
                 <thead><tr><th>Deal</th><th>Period</th><th className="num">Proj.</th><th className="num">Actual</th><th className="num">Δ</th><th></th></tr></thead>
                 <tbody>
-                  {variance.worstByVariance.slice(0, 8).map((r: any, i: number) => (
+                  {(showAllVariance ? variance.worstByVariance : variance.worstByVariance.slice(0, 8)).map((r: any, i: number) => (
                     <tr key={i}>
                       <td className="mono">{r.reference}</td>
                       <td>{r.period}</td>
@@ -180,6 +184,13 @@ export default function Dashboard() {
                 </tbody>
               </table>
             </div>
+            {variance.worstByVariance.length > 8 && (
+              <div className="table-more">
+                <span>showing {showAllVariance ? variance.worstByVariance.length : 8} of {variance.worstByVariance.length}</span>
+                <button onClick={() => setShowAllVariance((s) => !s)}>{showAllVariance ? "show less" : "show all"}</button>
+              </div>
+            )}
+            </>
           )}
         </Card>
       </div>
@@ -232,7 +243,7 @@ export default function Dashboard() {
         right={<DeterministicBadge />}>
         {multi.loading ? <div className="loading">Loading…</div> :
           !multi.data || !multi.data.dimensions?.length ? <div className="muted">No exposures booked yet.</div> : (
-            <div style={{ overflowX: "auto" }}>
+            <div className="table-scroll">
               <table>
                 <thead>
                   <tr><th>Dimension</th><th>Basis</th><th className="num">Limit %</th><th className="num">Buckets</th>
@@ -259,10 +270,11 @@ export default function Dashboard() {
       <div className="grid cols-2">
         <Card title="Early-warning watchlist" sub="Agentic EWS flags & ranks; humans classify and remediate (never auto-reclassified).">
           {watch.data && watch.data.length ? (
+            <>
             <table>
               <thead><tr><th>Counterparty</th><th>Signal</th><th>Severity</th><th className="num">Score</th></tr></thead>
               <tbody>
-                {watch.data.slice(0, 12).map((sig: any) => (
+                {(showAllWatch ? watch.data : watch.data.slice(0, 12)).map((sig: any) => (
                   <tr key={sig.id}>
                     <td>{sig.counterpartyName}</td>
                     <td><span className="mono">{sig.signalType}</span></td>
@@ -272,6 +284,13 @@ export default function Dashboard() {
                 ))}
               </tbody>
             </table>
+            {watch.data.length > 12 && (
+              <div className="table-more">
+                <span>showing {showAllWatch ? watch.data.length : 12} of {watch.data.length}</span>
+                <button onClick={() => setShowAllWatch((s) => !s)}>{showAllWatch ? "show less" : "show all"}</button>
+              </div>
+            )}
+            </>
           ) : <div className="muted">No open signals. Run an EWS scan.</div>}
         </Card>
 

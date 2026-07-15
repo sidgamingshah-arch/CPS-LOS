@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { notifications } from "../api";
+import { fmt, notifications } from "../api";
 import { Badge, Card, DeterministicBadge, Field, statusTone, useAsync } from "../ui";
 
 // The outbound notification outbox (G5-notify) — auto-present on every service.
@@ -35,12 +35,13 @@ export default function Notifications() {
         </div>
         {error && <div className="alert err">{error}</div>}
         {loading ? <div className="loading">Loading…</div> : (
+          <div className="table-scroll">
           <table>
             <thead><tr><th>When</th><th>Event</th><th>Subject</th><th>Recipients</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {(data || []).map((n: any) => (
                 <tr key={n.id}>
-                  <td className="mono" style={{ whiteSpace: "nowrap" }}>{n.createdAt ? new Date(n.createdAt).toLocaleString() : "—"}</td>
+                  <td className="mono" style={{ whiteSpace: "nowrap" }}>{fmt.dateTime(n.createdAt)}</td>
                   <td className="mono">{n.eventType}</td>
                   <td>{n.subjectType} {n.subjectRef}</td>
                   <td>{(n.recipientRoles || []).join(", ") || "—"}</td>
@@ -51,6 +52,7 @@ export default function Notifications() {
               {(data || []).length === 0 && <tr><td colSpan={6} className="muted">No notifications for {svc}.</td></tr>}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 

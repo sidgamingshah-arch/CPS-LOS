@@ -23,6 +23,7 @@ export default function Mis() {
   const ecl = useAsync(() => mis.eclByStage(), []);
   const multi = useAsync(() => portfolio.concentrationMulti("IN-RBI"), []);
   const [openDim, setOpenDim] = useState<string | null>(null);
+  const [showAllLines, setShowAllLines] = useState(false);
 
   if (dash.loading) return <div className="loading">Loading MIS dashboard…</div>;
   if (dash.error) return <div className="alert err">{dash.error}</div>;
@@ -63,6 +64,7 @@ export default function Mis() {
         {!variance.worstByVariance || variance.worstByVariance.length === 0 ? (
           <div className="muted">No actual-RAROC observations yet — book some deals and compute actuals on the workspace.</div>
         ) : (
+          <div className="table-scroll">
           <table>
             <thead><tr><th>Deal</th><th>Period</th><th className="num">Projected</th><th className="num">Actual</th><th className="num">Δ</th><th>|Δ| / projected</th><th></th></tr></thead>
             <tbody>
@@ -79,6 +81,7 @@ export default function Mis() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
@@ -111,6 +114,7 @@ export default function Mis() {
           : "Loading…"}>
         {multi.loading ? <div className="loading">Loading…</div> :
          !multi.data ? <div className="muted">No exposures booked.</div> : (
+          <div className="table-scroll">
           <table>
             <thead>
               <tr><th>Dimension</th><th>Basis</th><th className="num">Limit %</th><th className="num">Buckets</th>
@@ -120,7 +124,7 @@ export default function Mis() {
               {multi.data.dimensions.map((d: any) => (
                 <Fragment key={d.dimension}>
                   <tr style={{ cursor: "pointer" }}
-                      onClick={() => setOpenDim(openDim === d.dimension ? null : d.dimension)}>
+                      onClick={() => { setOpenDim(openDim === d.dimension ? null : d.dimension); setShowAllLines(false); }}>
                     <td className="mono">{d.dimension.replace(/_x_/g, " × ")}</td>
                     <td><Badge kind={d.basis === "CAPITAL" ? "info" : ""}>{d.basis}</Badge></td>
                     <td className="num">{(d.limitPct * 100).toFixed(0)}%</td>
@@ -135,7 +139,7 @@ export default function Mis() {
                         <table>
                           <thead><tr><th>Bucket</th><th className="num">EAD</th><th className="num">Share</th><th className="num">Limit</th><th className="num">Utilisation</th><th>Band</th></tr></thead>
                           <tbody>
-                            {d.lines.slice(0, 12).map((l: any) => (
+                            {(showAllLines ? d.lines : d.lines.slice(0, 12)).map((l: any) => (
                               <tr key={l.key}>
                                 <td>{l.key}</td>
                                 <td className="num">{fmt.money(l.exposure, "")}</td>
@@ -147,6 +151,12 @@ export default function Mis() {
                             ))}
                           </tbody>
                         </table>
+                        {d.lines.length > 12 && (
+                          <div className="table-more">
+                            <span>showing {showAllLines ? d.lines.length : 12} of {d.lines.length}</span>
+                            <button onClick={() => setShowAllLines((s) => !s)}>{showAllLines ? "show less" : "show all"}</button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}
@@ -154,6 +164,7 @@ export default function Mis() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
@@ -276,6 +287,7 @@ function ConcentrationStressCard() {
               ))}
             </ul>
           )}
+          <div className="table-scroll">
           <table>
             <thead>
               <tr><th>Sector</th><th className="num">EAD</th><th className="num">ρ to shock</th>
@@ -297,6 +309,7 @@ function ConcentrationStressCard() {
               ))}
             </tbody>
           </table>
+          </div>
         </>
       )}
     </Card>

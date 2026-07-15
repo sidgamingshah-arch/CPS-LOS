@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { config, counterparty } from "../api";
+import { config, counterparty, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, EmptyState, Field, statusTone, useAsync } from "../ui";
 import { useCodes } from "../code-values";
@@ -154,7 +154,7 @@ export default function Counterparties() {
           right={<Badge kind={statusTone(c.kycStatus)}>{c.kycStatus}</Badge>}>
           <div className="kv">
             <div className="k">CDD tier</div><div className="v">{c.cddTier}</div>
-            <div className="k">Re-KYC due</div><div className="v">{c.reKycDueDate}</div>
+            <div className="k">Re-KYC due</div><div className="v">{fmt.date(c.reKycDueDate)}</div>
             <div className="k">Sector</div><div className="v">{c.sector}</div>
             <div className="k">Verified by</div><div className="v">{c.verifiedBy || "—"}</div>
           </div>
@@ -163,7 +163,7 @@ export default function Counterparties() {
             <Button onClick={() => act(() => counterparty.runScreening(id, actor), "Screening run")}>Run screening</Button>
             <Button kind="ghost" disabled={c.kycStatus === "VERIFIED"}
               onClick={() => act(() => counterparty.verifyKyc(id, actor), "KYC verified")}>Verify KYC</Button>
-            <Button kind="ghost" disabled={c.lifecycleStatus === "CLOSED"}
+            <Button kind="danger" disabled={c.lifecycleStatus === "CLOSED"}
               onClick={() => {
                 const reason = window.prompt("Close relationship — reason?");
                 if (reason) act(() => counterparty.close(id, { reason }, actor), "Relationship closed");
@@ -187,8 +187,11 @@ export default function Counterparties() {
                         <div className="btnrow">
                           <button className="btn subtle" style={{ fontSize: 11, padding: "4px 8px" }}
                             onClick={() => act(() => counterparty.disposition(h.id, { disposition: "FALSE_POSITIVE", note: "reviewed" }, actor), "Dispositioned")}>False+</button>
-                          <button className="btn subtle" style={{ fontSize: 11, padding: "4px 8px" }}
-                            onClick={() => act(() => counterparty.disposition(h.id, { disposition: "ESCALATED", note: "to MLRO" }, actor), "Escalated")}>Escalate</button>
+                          <button className="btn danger" style={{ fontSize: 11, padding: "4px 8px" }}
+                            onClick={() => {
+                              if (window.confirm("Escalate this hit to the MLRO? The disposition cannot be reopened."))
+                                act(() => counterparty.disposition(h.id, { disposition: "ESCALATED", note: "to MLRO" }, actor), "Escalated");
+                            }}>Escalate</button>
                         </div>
                       ) : <Badge kind={statusTone(h.disposition)}>{h.disposition}</Badge>}
                     </td>

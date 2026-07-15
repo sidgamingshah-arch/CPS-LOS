@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { masters } from "../api";
+import { fmt, masters } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Field, useAsync } from "../ui";
 
@@ -112,14 +112,17 @@ export default function Masters() {
                   <tr key={r.id}>
                     <td><b>{r.recordKey}</b></td>
                     <td className="mono"><small>{r.maker}</small></td>
-                    <td className="mono"><small>{new Date(r.makerAt).toLocaleString()}</small></td>
+                    <td className="mono"><small>{fmt.dateTime(r.makerAt)}</small></td>
                     <td><PayloadPreview payload={r.payload} /></td>
                     <td>
                       <div className="btnrow">
                         <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
                           onClick={() => run(() => masters.approve(r.id, actor), "Approved")}>Approve</button>
-                        <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
-                          onClick={() => run(() => masters.reject(r.id, actor), "Rejected")}>Reject</button>
+                        <button className="btn danger" style={{ fontSize: 11, padding: "3px 8px" }}
+                          onClick={() => {
+                            if (window.confirm(`Reject pending record ${r.recordKey}?`))
+                              run(() => masters.reject(r.id, actor), "Rejected");
+                          }}>Reject</button>
                       </div>
                     </td>
                   </tr>

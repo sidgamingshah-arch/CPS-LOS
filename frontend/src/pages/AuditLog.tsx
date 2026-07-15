@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { audit } from "../api";
+import { audit, fmt } from "../api";
 import { AiBadge, Badge, Card, DeterministicBadge, Field, HumanBadge, useAsync } from "../ui";
 
 // G8 — every service that includes helix-common auto-exposes /api/audit + /api/audit/subject.
@@ -63,12 +63,13 @@ export default function AuditLog() {
       {bySubject && <div className="sub" style={{ marginBottom: 8 }}>Showing the append-only trail for <b>{subjType} {subjId}</b> on <b>{svc}</b>.</div>}
       {error && <div className="alert err">{error}</div>}
       {loading ? <div className="loading">Loading…</div> : (
+        <div className="table-scroll">
         <table>
           <thead><tr><th>When</th><th>Actor</th><th>Type</th><th>Event</th><th>Summary</th></tr></thead>
           <tbody>
             {rows.map((e: any) => (
               <tr key={e.id}>
-                <td className="mono" style={{ whiteSpace: "nowrap" }}>{new Date(e.occurredAt).toLocaleString()}</td>
+                <td className="mono" style={{ whiteSpace: "nowrap" }}>{fmt.dateTime(e.occurredAt)}</td>
                 <td>{e.actor}</td>
                 <td><Badge kind={e.actorType === "HUMAN" ? "ok" : e.actorType === "AI" ? "ai" : "info"}>{e.actorType}</Badge></td>
                 <td className="mono">{e.eventType}</td>
@@ -78,6 +79,7 @@ export default function AuditLog() {
             {rows.length === 0 && <tr><td colSpan={5} className="muted">No matching events for {svc}.</td></tr>}
           </tbody>
         </table>
+        </div>
       )}
     </Card>
   );
