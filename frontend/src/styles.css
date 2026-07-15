@@ -916,3 +916,10 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
   background: none; border: none; color: var(--ocean-8); font-size: 12px; font-weight: 600; cursor: pointer;
 }
 .notif-viewall:hover { text-decoration: underline; }
+
+/* Notings — governed decision records (human-gated). */
+.noting-note {
+  margin: 4px 0 12px; padding: 8px 12px; font-size: 12px; line-height: 1.5;
+  border-left: 3px solid var(--human); border-radius: 6px;
+  background: var(--human-soft); color: var(--ink-2, inherit);
+}

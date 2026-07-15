@@ -321,6 +321,32 @@ export const decision = {
     call<any>(`/decision/api/decisions/${ref}/sanction-letter`, "POST", undefined, actor),
 };
 
+// ---- notings (governed decision records: TOD, CAM note, product paper, deferrals, …) ----
+export const notings = {
+  list: (params?: { subjectRef?: string; status?: string; type?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.subjectRef) q.set("subjectRef", params.subjectRef);
+    if (params?.status) q.set("status", params.status);
+    if (params?.type) q.set("type", params.type);
+    const qs = q.toString();
+    return call<any[]>(`/decision/api/notings${qs ? `?${qs}` : ""}`, "GET");
+  },
+  get: (ref: string) => call<any>(`/decision/api/notings/${ref}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/decision/api/notings", "POST", body, actor),
+  submit: (ref: string, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/submit`, "POST", undefined, actor),
+  approve: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/approve`, "POST", { note }, actor),
+  cadAuthorize: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/cad-authorize`, "POST", { note }, actor),
+  reject: (ref: string, reason: string, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/reject`, "POST", { reason }, actor),
+  reverse: (ref: string, reason: string, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/reverse`, "POST", { reason }, actor),
+  withdraw: (ref: string, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/withdraw`, "POST", undefined, actor),
+};
+
 // ---- portfolio ----
 export const portfolio = {
   exposures: () => call<any[]>("/portfolio/api/portfolio/exposures", "GET"),

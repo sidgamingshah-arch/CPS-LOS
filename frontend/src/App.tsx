@@ -38,6 +38,7 @@ import Projections from "./pages/Projections";
 import Committee from "./pages/Committee";
 import DrawingPower from "./pages/DrawingPower";
 import Notifications from "./pages/Notifications";
+import Notings from "./pages/Notings";
 import PostureChip from "./pages/PostureChip";
 import NotificationBell from "./notification-center";
 import { prefetchAllCodes } from "./code-values";
@@ -81,6 +82,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "docgen", label: "Doc Generation" },
       { key: "commentary", label: "AI Commentary" },
       { key: "committee", label: "Committee Room" },
+      { key: "notings", label: "Notings" },
     ],
   },
   {
@@ -365,6 +367,7 @@ export default function App() {
             {view === "docgen" && <DocGen />}
             {view === "commentary" && <Commentary />}
             {view === "committee" && <Committee />}
+            {view === "notings" && <Notings />}
             {view === "drawingpower" && <DrawingPower />}
             {view === "notifications" && <Notifications />}
             {view === "pricinglab" && <PricingLab />}
