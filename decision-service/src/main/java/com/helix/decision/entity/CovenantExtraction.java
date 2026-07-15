@@ -1,5 +1,6 @@
 package com.helix.decision.entity;
 
+import com.helix.common.util.EncryptedStringConverter;
 import com.helix.common.util.JsonAttributeConverters;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -40,6 +41,10 @@ public class CovenantExtraction {
     private String applicationReference;
 
     /** The clause/sentence the candidate was lifted from (grounding). */
+    // Credit-proposal free text (may name parties/guarantors). Grounding-only, the
+    // confirm path materialises from the parsed shape fields, never from this text;
+    // never queried — encrypted at rest.
+    @Convert(converter = EncryptedStringConverter.class)
     @Lob
     @Column(length = 2000)
     private String sourceText;
@@ -79,6 +84,8 @@ public class CovenantExtraction {
     private String extractedBy;        // AI capability marker
     private String reviewedBy;
     private Instant reviewedAt;
+    // Reviewer remark free text; never queried — encrypted at rest.
+    @Convert(converter = EncryptedStringConverter.class)
     private String reviewNote;
 
     /** Set on confirm — the real covenant this extraction materialised into. */

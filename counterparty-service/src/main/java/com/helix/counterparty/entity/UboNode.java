@@ -1,6 +1,8 @@
 package com.helix.counterparty.entity;
 
+import com.helix.common.util.EncryptedStringConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -32,6 +34,9 @@ public class UboNode {
     @Column(nullable = false, length = 60)
     private String nodeKey;            // stable key within the structure, e.g. "P1", "HOLDCO"
 
+    // Beneficial-owner / party PII. Ownership maths + review routing use nodeKey/edges,
+    // never the display name; not queried/ordered — safe to encrypt at rest.
+    @Convert(converter = EncryptedStringConverter.class)
     @Column(nullable = false)
     private String name;
 
