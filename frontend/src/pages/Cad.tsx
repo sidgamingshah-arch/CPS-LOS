@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cad, fmt, mer, origination } from "../api";
+import { cad, fmt, mer, origination, printing } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, EmptyState, Field, statusTone, useAsync } from "../ui";
 
@@ -104,6 +104,12 @@ function CaseDetail({ caseId, onChange }: { caseId: number; onChange: () => void
       <Card title={`CAD ${c.applicationRef}`} sub={`${c.cpType} · ${c.checklistKey}`}
         right={<Badge kind={statusTone(c.status)}>{c.status}</Badge>}>
         <div className="gate">HITL gate: every item must be complied or waived before completion. Waivers go through a 2-level approval (raiser ≠ approver, L2 ≠ L1).</div>
+        <div className="btnrow print-actions" style={{ margin: "8px 0" }}>
+          <Button kind="ghost"
+            onClick={() => printing.print(printing.proposalHtml(c.applicationRef, actor), notify)}>
+            Download credit proposal PDF
+          </Button>
+        </div>
         <h4>Checklist items</h4>
         <table>
           <thead><tr><th>Item</th><th>Status</th><th>Actions</th></tr></thead>

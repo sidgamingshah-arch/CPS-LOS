@@ -14,7 +14,7 @@
  */
 
 import { useState } from "react";
-import { origination, docs } from "../api";
+import { origination, docs, printing } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, EmptyState, Field, GovFlow, useAsync } from "../ui";
 
@@ -152,6 +152,15 @@ export default function DocGen() {
     } catch (e: any) { notify(e.message, true); }
   };
 
+  /* ── Download PDF (print pipeline) ─────────────────────────── */
+  // Opens the backend print-optimised standalone HTML in a new window and lets the
+  // browser save it as a PDF. The rendering is a faithful copy of the authoritative
+  // document body — no clause or figure is recomputed.
+  const handleDownloadPdf = () => {
+    if (!selectedDoc) return;
+    printing.print(printing.documentHtml(selectedDoc.id, actor), notify);
+  };
+
   /* ── Withdraw ──────────────────────────────────────────────── */
   const handleWithdraw = async () => {
     if (!selectedDoc) return;
@@ -277,12 +286,11 @@ export default function DocGen() {
                   </div>
                 }
               >
-                {isDraft && (
-                  <div className="btnrow" style={{ marginTop: 8 }}>
-                    <Button onClick={handleConfirm}>Confirm</Button>
-                    <Button kind="danger" onClick={handleWithdraw}>Withdraw</Button>
-                  </div>
-                )}
+                <div className="btnrow print-actions" style={{ marginTop: 8 }}>
+                  <Button kind="ghost" onClick={handleDownloadPdf}>Download PDF</Button>
+                  {isDraft && <Button onClick={handleConfirm}>Confirm</Button>}
+                  {isDraft && <Button kind="danger" onClick={handleWithdraw}>Withdraw</Button>}
+                </div>
               </Card>
 
               {/* Two-column workspace */}

@@ -1058,4 +1058,16 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
   outline: 2px solid var(--on-primary);
   outline-offset: 2px;
   text-decoration: none;
+/* ---- print / PDF rendering affordance (Wave-3: DocGen · Cad proposal · Committee sanction) ---- */
+/* The downloaded page itself is a self-contained standalone HTML document with its own
+   inlined print CSS (served by decision-service /api/docs/{id}/print and
+   /api/decisions/{ref}/credit-proposal/print). These rules only style the in-app
+   "Download PDF" action rows on the feature pages. */
+.print-actions {
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.print-actions .btn.ghost {
+  border-style: dashed;
 }

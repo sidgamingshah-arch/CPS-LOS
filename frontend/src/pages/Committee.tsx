@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { decision, origination, fmt } from "../api";
+import { decision, origination, fmt, printing } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, EmptyState, Field, GovFlow, HumanBadge, Stat, Toast, statusTone, useAsync } from "../ui";
 
@@ -10,7 +10,7 @@ import { Badge, Button, Card, EmptyState, Field, GovFlow, HumanBadge, Stat, Toas
  * sanction letter is AI-drafted then human-confirmed. AI never appears in the voter column.
  */
 export default function Committee() {
-  const { ref: ctxRef } = useApp();
+  const { ref: ctxRef, actor } = useApp();
   const apps = useAsync(() => origination.list(), []);
   const [ref, setRef] = useState(ctxRef ?? "");
   const [voter, setVoter] = useState("cro");
@@ -139,6 +139,17 @@ export default function Committee() {
                 <Badge kind={statusTone(letter.status)}>{letter.status}</Badge>{" "}
                 {letter.advisory ? <Badge kind="ai">advisory</Badge> : null}{" "}
                 <span className="mono">{letter.templateKey}</span> · clauses: {(letter.clauseOrder || []).join(", ")}
+              </div>
+              <div className="btnrow print-actions" style={{ marginTop: 8 }}>
+                <Button
+                  kind="ghost"
+                  onClick={() =>
+                    printing.print(printing.documentHtml(letter.id, actor),
+                      (m, e) => setToast({ text: m, err: e }))
+                  }
+                >
+                  Download PDF
+                </Button>
               </div>
               {letter.html && <div className="doc-preview" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: letter.html }} />}
             </div>

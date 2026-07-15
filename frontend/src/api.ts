@@ -1011,3 +1011,50 @@ export const queries = {
   },
   get: (ref: string, svc = "decision") => call<any>(`/${svc}/api/queries/${ref}`, "GET"),
 };
+
+// ---- print / PDF rendering (dependency-free print pipeline) ----
+// The backend returns a self-contained, print-optimised standalone HTML document
+// (letterhead, governance header, embedded @media print CSS, page-break styling) whose
+// body reproduces the AUTHORITATIVE artifact verbatim. The frontend opens it in a new
+// window and invokes the browser's print-to-PDF ("Save as PDF"). These endpoints return
+// text/html (not JSON), so they use a raw text fetch that still forwards the auth token
+// and X-Actor (persisted as a *_RENDERED audit event server-side).
+async function fetchText(path: string, actor = "demo.user"): Promise<string> {
+  const headers: Record<string, string> = { "X-Actor": actor };
+  if (authToken) headers["Authorization"] = "Bearer " + authToken;
+  const res = await fetch(GATEWAY + path, { method: "GET", headers });
+  const text = await res.text();
+  if (!res.ok) throw new Error(text || res.statusText || "Print render failed");
+  return text;
+}
+
+export const printing = {
+  // Standalone print/PDF HTML for a generated document (facility/sanction letter, …).
+  documentHtml: (id: number, actor: string) =>
+    fetchText(`/decision/api/docs/${id}/print`, actor),
+  // Standalone print/PDF HTML for the latest credit proposal on an application.
+  proposalHtml: (ref: string, actor: string) =>
+    fetchText(`/decision/api/decisions/${encodeURIComponent(ref)}/credit-proposal/print`, actor),
+  // Open a loaded standalone-HTML string in a new window; the page auto-invokes the
+  // browser print dialog so the user can "Save as PDF". Pop-up-blocker aware.
+  openHtmlWindow: (html: string, notify?: (m: string, err?: boolean) => void): boolean => {
+    const w = window.open("", "_blank");
+    if (!w) { notify?.("Enable pop-ups for this site to download the PDF.", true); return false; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    return true;
+  },
+  // Convenience: fetch + open in one call, surfacing errors through `notify`.
+  print: async (
+    loader: Promise<string>,
+    notify?: (m: string, err?: boolean) => void,
+  ): Promise<void> => {
+    try {
+      const html = await loader;
+      printing.openHtmlWindow(html, notify);
+    } catch (e: any) {
+      notify?.(e?.message ?? "Print render failed", true);
+    }
+  },
+};
