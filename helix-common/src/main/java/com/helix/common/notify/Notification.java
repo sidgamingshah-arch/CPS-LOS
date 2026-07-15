@@ -79,7 +79,7 @@ public class Notification {
     private Map<String, Object> vars;
 
     @Column(nullable = false, length = 20)
-    private String status = "PENDING";      // PENDING | SENT | FAILED | SUPPRESSED
+    private String status = "PENDING";      // PENDING | SCHEDULED | SENT | FAILED | SUPPRESSED
 
     @Column(nullable = false, length = 20)
     private String transport = "OUTBOX";
@@ -98,6 +98,20 @@ public class Notification {
     private Instant createdAt;
 
     private Instant sentAt;
+
+    /** When set (status SCHEDULED), transport dispatch is deferred until the sweep passes this instant. */
+    private Instant scheduledFor;
+
+    /** Reminder cadence in hours (0 = every sweep); null ⇒ not reminder-eligible. */
+    private Integer reminderEveryHours;
+
+    /** Cap on reminder rows spawned from this notification; null ⇒ not reminder-eligible. */
+    private Integer maxReminders;
+
+    /** How many reminder rows have been spawned so far (null means 0). */
+    private Integer remindersSent;
+
+    private Instant lastReminderAt;
 
     public Long getId() { return id; }
 
@@ -156,4 +170,19 @@ public class Notification {
 
     public Instant getSentAt() { return sentAt; }
     public void setSentAt(Instant sentAt) { this.sentAt = sentAt; }
+
+    public Instant getScheduledFor() { return scheduledFor; }
+    public void setScheduledFor(Instant scheduledFor) { this.scheduledFor = scheduledFor; }
+
+    public Integer getReminderEveryHours() { return reminderEveryHours; }
+    public void setReminderEveryHours(Integer reminderEveryHours) { this.reminderEveryHours = reminderEveryHours; }
+
+    public Integer getMaxReminders() { return maxReminders; }
+    public void setMaxReminders(Integer maxReminders) { this.maxReminders = maxReminders; }
+
+    public Integer getRemindersSent() { return remindersSent; }
+    public void setRemindersSent(Integer remindersSent) { this.remindersSent = remindersSent; }
+
+    public Instant getLastReminderAt() { return lastReminderAt; }
+    public void setLastReminderAt(Instant lastReminderAt) { this.lastReminderAt = lastReminderAt; }
 }
