@@ -20,6 +20,7 @@ import Cad from "./pages/Cad";
 import Monitoring from "./pages/Monitoring";
 import MonitoringArtifacts from "./pages/MonitoringArtifacts";
 import Escrow from "./pages/Escrow";
+import Srm from "./pages/Srm";
 import Limits from "./pages/Limits";
 import Masters from "./pages/Masters";
 import Structuring from "./pages/Structuring";
@@ -98,6 +99,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "disbursement", label: "Disbursement · CPs" },
       { key: "drawingpower", label: "Drawing Power" },
       { key: "monitoring", label: "Monitoring · MER" },
+      { key: "srm", label: "SRM · Renewals" },
       { key: "monitoringartifacts", label: "Monitoring Artifacts" },
       { key: "escrow", label: "Escrow Monitoring" },
       { key: "customer360", label: "Customer-360" },
@@ -146,6 +148,7 @@ const CRUMB: Record<string, string> = {
   commentary: "AI narrative commentary · grounded · advisory · human-confirm gate",
   pricinglab: "Pricing scenario optimiser · goal-seek · advisory (authoritative pricing untouched)",
   monitoring: "Deferred docs · conditions subsequent · renewals · reminders · escalation · DMS feed",
+  srm: "Structured review / renewal on the Noting engine · SRM_CHECKLIST · linked SRM_RENEWAL noting · AUTHORIZED advances the MER next-review date",
   monitoringartifacts: "One master-driven lifecycle · call memo/plant visit/LCR/QPR/broker/stock audit/audit note · review→approve→authorize SoD · vendor RFQ · ECL/exposure untouched",
   escrow: "Escrow monitoring · append-only versioned budget lines · category-tagged transactions · deterministic budget-vs-actual + RAG (VALIDATION_PARAMETER) · ECL/exposure/limit untouched",
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
@@ -385,6 +388,7 @@ export default function App() {
             {view === "notifications" && <Notifications />}
             {view === "pricinglab" && <PricingLab />}
             {view === "monitoring" && <Monitoring />}
+            {view === "srm" && <Srm />}
             {view === "monitoringartifacts" && <MonitoringArtifacts />}
             {view === "escrow" && <Escrow />}
             {view === "customer360" && <Customer360 />}

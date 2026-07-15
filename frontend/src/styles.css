@@ -957,3 +957,16 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .scf-reasons li { margin-bottom: 2px; color: var(--muted); }
 /* ---- Escrow monitoring (record surface; deterministic budget-vs-actual + RAG) ---- */
 .escrow-note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+/* SRM — Structured Review / renewal (built on the Noting engine) */
+.srm-note { font-size: 13px; color: var(--muted); background: var(--human-soft); border: 1px solid var(--hairline-soft);
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; line-height: 1.5; }
+.srm-checklist { list-style: none; margin: 0; padding: 0; }
+.srm-checklist li { border-bottom: 1px solid var(--hairline-soft); padding: 8px 2px; font-size: 13px; }
+.srm-checklist li:last-child { border-bottom: 0; }
+.srm-checklist li.done { color: var(--muted); }
+.srm-checklist li.done .srm-code { text-decoration: line-through; }
+.srm-checklist label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.srm-checklist input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--human); }
+.srm-code { color: var(--ocean-8); font-size: 12px; }
+.srm-req { margin-left: auto; font-size: 11px; color: var(--muted); border: 1px solid var(--hairline);
+  border-radius: 6px; padding: 1px 6px; }

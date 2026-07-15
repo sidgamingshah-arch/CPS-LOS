@@ -504,6 +504,20 @@ export const mer = {
   sendReminders: (days: number, actor: string) => call<any>(`/decision/api/mer/reminders/send?days=${days}`, "POST", undefined, actor),
 };
 
+// ---- SRM (structured review / renewal — built on the Noting engine) ----
+export const srm = {
+  list: (subjectRef?: string) =>
+    call<any[]>("/decision/api/srm/reviews" + (subjectRef ? `?subjectRef=${encodeURIComponent(subjectRef)}` : ""), "GET"),
+  get: (id: number) => call<any>(`/decision/api/srm/reviews/${id}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/decision/api/srm/reviews", "POST", body, actor),
+  markItem: (id: number, code: string, done: boolean, actor: string) =>
+    call<any>(`/decision/api/srm/reviews/${id}/checklist/${encodeURIComponent(code)}`, "POST", { done }, actor),
+  submitNoting: (id: number, actor: string) =>
+    call<any>(`/decision/api/srm/reviews/${id}/submit-noting`, "POST", undefined, actor),
+  refresh: (id: number, actor: string) =>
+    call<any>(`/decision/api/srm/reviews/${id}/refresh`, "POST", undefined, actor),
+};
+
 // ---- limit management ----
 export const limits = {
   build: (ref: string, actor: string) => call<any>(`/limits/api/limits/build/${ref}`, "POST", undefined, actor),
