@@ -2,6 +2,7 @@ package com.helix.counterparty.service;
 
 import com.helix.common.audit.AuditService;
 import com.helix.common.util.References;
+import com.helix.common.validate.ConfigValidator;
 import com.helix.common.web.ApiException;
 import com.helix.counterparty.client.ConfigMasterClient;
 import com.helix.counterparty.client.ConfigMasterClient.MasterRecordDto;
@@ -43,24 +44,29 @@ public class InitiationService {
             "plc", "the", "and", "spv", "holdings", "holding", "group");
 
     /**
-     * Identifier accessors keyed by the field names DEDUP_RULES.identifierFields may list. The
-     * Counterparty entity carries only registrationNo today; adding pan/passport/gstin is a
-     * one-line accessor per new column. A configured field with no accessor is ignored (not an error).
+     * Identifier accessors keyed by the field names DEDUP_RULES.identifierFields may list.
+     * A configured field with no accessor is ignored (not an error).
      */
     private static final Map<String, Function<Counterparty, String>> ID_ACCESSORS = Map.of(
-            "registrationNo", Counterparty::getRegistrationNo);
+            "registrationNo", Counterparty::getRegistrationNo,
+            "pan", Counterparty::getPan,
+            "gstin", Counterparty::getGstin,
+            "lei", Counterparty::getLei,
+            "cin", Counterparty::getCin);
 
     private final CounterpartyRepository repository;
     private final ExternalCheckRepository checks;
     private final ConfigMasterClient config;
     private final AuditService audit;
+    private final ConfigValidator validator;
 
     public InitiationService(CounterpartyRepository repository, ExternalCheckRepository checks,
-                             ConfigMasterClient config, AuditService audit) {
+                             ConfigMasterClient config, AuditService audit, ConfigValidator validator) {
         this.repository = repository;
         this.checks = checks;
         this.config = config;
         this.audit = audit;
+        this.validator = validator;
     }
 
     @Transactional
@@ -70,6 +76,11 @@ public class InitiationService {
         cp.setLegalName(req.legalName());
         cp.setLegalForm(req.legalForm());
         cp.setRegistrationNo(req.registrationNo());
+        cp.setPan(CounterpartyService.normalizeIdentifier(req.pan()));
+        cp.setGstin(CounterpartyService.normalizeIdentifier(req.gstin()));
+        cp.setLei(CounterpartyService.normalizeIdentifier(req.lei()));
+        cp.setCin(CounterpartyService.normalizeIdentifier(req.cin()));
+        CounterpartyService.validateIdentifiers(cp, validator);
         cp.setJurisdiction(req.jurisdiction());
         cp.setSegment(req.segment());
         cp.setSector(req.sector());
@@ -132,9 +143,9 @@ public class InitiationService {
     }
 
     /**
-     * Match on the identifiers DEDUP_RULES configures (identifierFields + combineWith). Today the
-     * Counterparty entity carries only registrationNo, so ID_ACCESSORS registers that one. The blank
-     * guard is load-bearing: two prospects that both lack an identifier must never match on it.
+     * Match on the identifiers DEDUP_RULES configures (identifierFields + combineWith) —
+     * registrationNo plus the statutory pan/gstin/lei/cin columns. The blank guard is
+     * load-bearing: two prospects that both lack an identifier must never match on it.
      */
     private boolean identifierMatch(Counterparty a, Counterparty b, List<String> fields, boolean andCombine) {
         boolean any = false, all = true, sawField = false;

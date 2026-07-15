@@ -4,9 +4,12 @@ import com.helix.common.audit.AuditService;
 import com.helix.common.model.Enums.CddTier;
 import com.helix.common.model.Enums.KycStatus;
 import com.helix.common.notify.NotificationService;
+import com.helix.common.validate.ConfigValidator;
 import com.helix.common.web.ApiException;
 import com.helix.counterparty.client.ConfigMasterClient;
 import com.helix.counterparty.dto.Dtos.CreateCounterpartyRequest;
+import com.helix.counterparty.dto.Dtos.HygieneCheck;
+import com.helix.counterparty.dto.Dtos.HygieneResult;
 import com.helix.counterparty.entity.Counterparty;
 import com.helix.counterparty.entity.ScreeningHit;
 import com.helix.counterparty.repo.CounterpartyRepository;
@@ -25,25 +28,32 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class CounterpartyService {
 
     private static final Logger log = LoggerFactory.getLogger(CounterpartyService.class);
 
+    /** VALIDATION_PARAMETER domain for statutory identifier formats (PAN/GSTIN/LEI/CIN). */
+    static final String IDENTIFIER_VALIDATION_DOMAIN = "COUNTERPARTY_IDENTIFIERS";
+
     private final CounterpartyRepository repository;
     private final ScreeningHitRepository hits;
     private final AuditService audit;
     private final ConfigMasterClient config;
     private final NotificationService notifications;
+    private final ConfigValidator validator;
 
     public CounterpartyService(CounterpartyRepository repository, ScreeningHitRepository hits, AuditService audit,
-                               ConfigMasterClient config, NotificationService notifications) {
+                               ConfigMasterClient config, NotificationService notifications,
+                               ConfigValidator validator) {
         this.repository = repository;
         this.hits = hits;
         this.audit = audit;
         this.config = config;
         this.notifications = notifications;
+        this.validator = validator;
     }
 
     @Transactional
@@ -53,6 +63,11 @@ public class CounterpartyService {
         cp.setLegalName(req.legalName());
         cp.setLegalForm(req.legalForm());
         cp.setRegistrationNo(req.registrationNo());
+        cp.setPan(normalizeIdentifier(req.pan()));
+        cp.setGstin(normalizeIdentifier(req.gstin()));
+        cp.setLei(normalizeIdentifier(req.lei()));
+        cp.setCin(normalizeIdentifier(req.cin()));
+        validateIdentifiers(cp, validator);
         cp.setJurisdiction(req.jurisdiction());
         cp.setSegment(req.segment());
         cp.setSector(req.sector());
@@ -273,6 +288,101 @@ public class CounterpartyService {
                 "CDD risk tier %s signed off; KYC verified".formatted(cp.getCddTier()),
                 Map.of("cddTier", cp.getCddTier()));
         return repository.save(cp);
+    }
+
+    // ---- statutory identifiers + hygiene RAG ----------------------------------------------------
+
+    /** Trim + uppercase an identifier; blank collapses to null (identifiers are optional). */
+    static String normalizeIdentifier(String value) {
+        return value == null || value.isBlank() ? null : value.trim().toUpperCase();
+    }
+
+    /** The identifier fields the COUNTERPARTY_IDENTIFIERS validation domain covers, keyed by rule field name. */
+    static Map<String, Object> identifierValues(Counterparty cp) {
+        Map<String, Object> ids = new LinkedHashMap<>();
+        ids.put("pan", cp.getPan());
+        ids.put("gstin", cp.getGstin());
+        ids.put("lei", cp.getLei());
+        ids.put("cin", cp.getCin());
+        return ids;
+    }
+
+    /**
+     * Format-validate the supplied identifiers against the VALIDATION_PARAMETER master
+     * (400 aggregating every failure). Absent identifiers skip; WARN-severity findings
+     * are logged, never blocking. Shared by counterparty create and prospect create.
+     */
+    static void validateIdentifiers(Counterparty cp, ConfigValidator validator) {
+        List<String> warnings = validator.validate(IDENTIFIER_VALIDATION_DOMAIN, identifierValues(cp));
+        if (!warnings.isEmpty()) {
+            log.warn("Identifier validation warnings for {}: {}", cp.getLegalName(), warnings);
+        }
+    }
+
+    /**
+     * Deterministic data-hygiene RAG — a read-only aggregation of identifier formats,
+     * screening state, and KYC state. RED: any malformed identifier or an unresolved
+     * screening hit at/above HIGH severity. AMBER: missing identifiers, lower-severity
+     * unresolved hits, or KYC not verified. GREEN: identifiers present + valid AND
+     * screening clear AND KYC verified. No authoritative figure is touched.
+     */
+    @Transactional
+    public HygieneResult hygiene(Long id) {
+        Counterparty cp = get(id);
+        List<HygieneCheck> checkList = new ArrayList<>();
+        boolean red = false, amber = false;
+
+        // 1) statutory identifiers — format/checksum per the VALIDATION_PARAMETER master.
+        Map<String, Object> ids = identifierValues(cp);
+        Set<String> malformed = validator.evaluate(IDENTIFIER_VALIDATION_DOMAIN, ids).stream()
+                .map(ConfigValidator.RuleFailure::field)
+                .collect(Collectors.toSet());
+        for (Map.Entry<String, Object> e : ids.entrySet()) {
+            String value = e.getValue() == null ? "" : String.valueOf(e.getValue());
+            if (value.isBlank()) {
+                checkList.add(new HygieneCheck("identifier." + e.getKey(), "MISSING", "not captured"));
+                amber = true;
+            } else if (malformed.contains(e.getKey())) {
+                checkList.add(new HygieneCheck("identifier." + e.getKey(), "MALFORMED",
+                        value + " fails format/checksum validation"));
+                red = true;
+            } else {
+                checkList.add(new HygieneCheck("identifier." + e.getKey(), "VALID", value));
+            }
+        }
+
+        // 2) screening — unresolved severe hits drive RED; any other unresolved hit AMBER.
+        List<ScreeningHit> unresolved = hits.findByCounterpartyIdOrderBySeverityDesc(id).stream()
+                .filter(h -> isBlockingDisposition(h.getDisposition()))
+                .toList();
+        long severe = unresolved.stream()
+                .filter(h -> severityRank(h.getSeverity()) >= severityRank("HIGH"))
+                .count();
+        if (severe > 0) {
+            checkList.add(new HygieneCheck("screening", "SEVERE_OPEN",
+                    severe + " unresolved screening hit(s) at/above HIGH severity"));
+            red = true;
+        } else if (!unresolved.isEmpty()) {
+            checkList.add(new HygieneCheck("screening", "OPEN",
+                    unresolved.size() + " unresolved lower-severity screening hit(s)"));
+            amber = true;
+        } else {
+            checkList.add(new HygieneCheck("screening", "CLEAR", "no unresolved screening hits"));
+        }
+
+        // 3) KYC — verified or not.
+        if (KycStatus.VERIFIED.name().equals(cp.getKycStatus())) {
+            checkList.add(new HygieneCheck("kyc", "VERIFIED", "verified by " + cp.getVerifiedBy()));
+        } else {
+            checkList.add(new HygieneCheck("kyc", "NOT_VERIFIED", "KYC status " + cp.getKycStatus()));
+            amber = true;
+        }
+
+        String status = red ? "RED" : amber ? "AMBER" : "GREEN";
+        audit.engine("HYGIENE_ASSESSED", "Counterparty", cp.getReference(),
+                "Data-hygiene RAG %s across %d check(s)".formatted(status, checkList.size()),
+                Map.of("status", status, "checks", checkList.size()));
+        return new HygieneResult(cp.getId(), cp.getReference(), status, checkList);
     }
 
     private boolean isBlockingDisposition(String disposition) {

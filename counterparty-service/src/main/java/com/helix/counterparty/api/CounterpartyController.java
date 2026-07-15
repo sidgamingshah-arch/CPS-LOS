@@ -5,6 +5,7 @@ import com.helix.common.ingest.Ingestion.Result;
 import com.helix.counterparty.dto.Dtos.CloseRequest;
 import com.helix.counterparty.dto.Dtos.CreateCounterpartyRequest;
 import com.helix.counterparty.dto.Dtos.DispositionRequest;
+import com.helix.counterparty.dto.Dtos.HygieneResult;
 import com.helix.counterparty.dto.Dtos.UboStructureRequest;
 import com.helix.counterparty.dto.IngestDtos.RawScreeningPayload;
 import com.helix.counterparty.entity.Counterparty;
@@ -63,6 +64,12 @@ public class CounterpartyController {
     @GetMapping("/by-reference/{reference}")
     public Counterparty getByReference(@PathVariable String reference) {
         return counterparties.getByReference(reference);
+    }
+
+    /** Deterministic data-hygiene RAG (identifiers + screening + KYC). Read-only; no figures touched. */
+    @GetMapping("/{id}/hygiene")
+    public HygieneResult hygiene(@PathVariable Long id) {
+        return counterparties.hygiene(id);
     }
 
     @PostMapping("/{id}/kyc/verify")
