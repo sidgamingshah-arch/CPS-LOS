@@ -1,6 +1,7 @@
 package com.helix.counterparty.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.validate.ConfigValidator;
 import com.helix.common.web.ApiException;
 import com.helix.counterparty.entity.Counterparty;
 import com.helix.counterparty.entity.ExternalCheck;
@@ -28,16 +29,23 @@ public class ExternalCheckService {
             "SCREENING_EXTERNAL", "WorldCheck",
             "CREDIT_BUREAU", "CIBIL",
             "KYC_AML", "KYC-Hub",
-            "EXTERNAL_RATING", "S&P");
+            "EXTERNAL_RATING", "S&P",
+            "PAN_VERIFY", "NSDL-PAN",
+            "CIN_VERIFY", "MCA21",
+            "LEI_VERIFY", "GLEIF",
+            "GSTIN_VERIFY", "GSTN");
 
     private final ExternalCheckRepository checks;
     private final CounterpartyRepository counterparties;
     private final AuditService audit;
+    private final ConfigValidator validator;
 
-    public ExternalCheckService(ExternalCheckRepository checks, CounterpartyRepository counterparties, AuditService audit) {
+    public ExternalCheckService(ExternalCheckRepository checks, CounterpartyRepository counterparties,
+                                AuditService audit, ConfigValidator validator) {
         this.checks = checks;
         this.counterparties = counterparties;
         this.audit = audit;
+        this.validator = validator;
     }
 
     /** Fetches (or creates) the latest status from the source system for a check type. */
@@ -111,6 +119,28 @@ public class ExternalCheckService {
             case "EXTERNAL_RATING" -> {
                 status = "CLEAR";
                 result = Map.of("agency", "S&P", "rating", "BBB", "outlook", "stable");
+            }
+            // Statutory identifier verifications at their registries (NSDL/MCA21/GLEIF/GSTN):
+            // VERIFIED when the captured identifier is format-valid per the
+            // VALIDATION_PARAMETER master, FAILED when malformed, NOT_AVAILABLE when absent.
+            case "PAN_VERIFY", "CIN_VERIFY", "LEI_VERIFY", "GSTIN_VERIFY" -> {
+                String field = c.getCheckType().substring(0, c.getCheckType().indexOf("_VERIFY")).toLowerCase();
+                String value = switch (field) {
+                    case "pan" -> cp.getPan();
+                    case "cin" -> cp.getCin();
+                    case "lei" -> cp.getLei();
+                    default -> cp.getGstin();
+                };
+                if (value == null || value.isBlank()) {
+                    status = "NOT_AVAILABLE";
+                    result = Map.of("identifier", field, "reason", "not captured on the counterparty");
+                } else {
+                    boolean formatValid = validator
+                            .evaluate(CounterpartyService.IDENTIFIER_VALIDATION_DOMAIN, Map.of(field, value))
+                            .isEmpty();
+                    status = formatValid ? "VERIFIED" : "FAILED";
+                    result = Map.of("identifier", field, "value", value, "formatValid", formatValid);
+                }
             }
             default -> {
                 status = "CLEAR";

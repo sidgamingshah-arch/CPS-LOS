@@ -42,6 +42,20 @@ public class Counterparty {
 
     private String registrationNo;     // CIN / trade licence number
 
+    // ---- statutory identifiers (optional; format-validated via the VALIDATION_PARAMETER
+    // master when supplied — COUNTERPARTY_IDENTIFIERS domain). Feed dedup + hygiene RAG. ----
+    @Column(length = 10)
+    private String pan;                // India Permanent Account Number (AAAAA9999A)
+
+    @Column(length = 15)
+    private String gstin;              // India GST identification number (check-digited)
+
+    @Column(length = 20)
+    private String lei;                // ISO 17442 Legal Entity Identifier (mod-97)
+
+    @Column(length = 21)
+    private String cin;                // India Corporate Identification Number
+
     @Column(length = 20)
     private String jurisdiction;       // IN-RBI | AE-CBUAE — drives CDD rule pack
 
