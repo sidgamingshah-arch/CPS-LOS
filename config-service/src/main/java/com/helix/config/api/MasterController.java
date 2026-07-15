@@ -59,9 +59,13 @@ public class MasterController {
                                @RequestHeader(value = "X-Actor", defaultValue = "master.maker") String actor) {
         String key = String.valueOf(body.get("recordKey"));
         String jur = body.get("jurisdiction") == null ? null : String.valueOf(body.get("jurisdiction"));
+        // Optional maker rationale ("comment"/"rationale") for the change — persisted &
+        // audited, never merged into the payload.
+        Object rat = body.get("comment") != null ? body.get("comment") : body.get("rationale");
+        String comment = rat == null ? null : String.valueOf(rat);
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = body.get("payload") instanceof Map<?, ?> p ? (Map<String, Object>) p : Map.of();
-        return masters.submit(type, key, jur, payload, actor);
+        return masters.submit(type, key, jur, payload, actor, comment);
     }
 
     @PostMapping("/{type}/bulk")

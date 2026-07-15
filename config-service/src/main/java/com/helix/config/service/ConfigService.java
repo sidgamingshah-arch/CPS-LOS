@@ -69,6 +69,18 @@ public class ConfigService {
     @Transactional
     public RulePack createDraft(String jurisdiction, String type, String code,
                                 Map<String, Object> payload, LocalDate effectiveFrom, String author) {
+        return createDraft(jurisdiction, type, code, payload, effectiveFrom, author, null);
+    }
+
+    /**
+     * G6 (with rationale) — as above, plus an optional maker rationale for the change.
+     * The rationale is stamped into the audit trail; it never becomes part of the pack
+     * payload, so the governed figures the pack carries are untouched.
+     */
+    @Transactional
+    public RulePack createDraft(String jurisdiction, String type, String code,
+                                Map<String, Object> payload, LocalDate effectiveFrom, String author,
+                                String rationale) {
         if (jurisdiction == null || jurisdiction.isBlank()) throw ApiException.badRequest("jurisdiction is required");
         if (type == null || type.isBlank()) throw ApiException.badRequest("type is required");
         if (author == null || author.isBlank()) throw ApiException.badRequest("author (X-Actor) is required");
@@ -92,10 +104,13 @@ public class ConfigService {
         p.setPayload(payload == null ? Map.of() : payload);
         p.setCreatedBy(author);
         RulePack saved = rulePacks.save(p);
+        String rat = (rationale == null || rationale.isBlank()) ? "" : rationale.trim();
         audit.human(author, "RULEPACK_DRAFTED", "RulePack", String.valueOf(saved.getId()),
-                "Draft %s %s v%d authored (unsigned, inactive)".formatted(jurisdiction, type, nextVersion),
+                "Draft %s %s v%d authored (unsigned, inactive)%s".formatted(jurisdiction, type, nextVersion,
+                        rat.isEmpty() ? "" : " — " + rat),
                 Map.of("jurisdiction", jurisdiction, "type", type, "version", nextVersion,
-                        "effectiveFrom", String.valueOf(saved.getEffectiveFrom()), "code", packCode));
+                        "effectiveFrom", String.valueOf(saved.getEffectiveFrom()), "code", packCode,
+                        "rationale", rat));
         return saved;
     }
 

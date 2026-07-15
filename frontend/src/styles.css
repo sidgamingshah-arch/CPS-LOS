@@ -845,3 +845,14 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .dt-pagesize select { width: auto; padding: 5px 9px; font-size: 12.5px; border-radius: var(--r-sm); }
 .dt-footer-right { display: flex; align-items: center; gap: 10px; }
 .dt-range { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ================= Schema-aware config UX (config-forms.tsx) ==============
+   Shared styling for the Masters / RulePacks / ModelBuilder enhancements:
+   the Form <-> Raw JSON editor toggle, before/after diff cells, collapsible
+   payload view and bulk-upload preview. Reuses the existing tokens so the
+   config screens stay in the same design language. Appended section. */
+.cfg-cell { font-size: 11px; max-width: 280px; overflow-wrap: anywhere; word-break: break-word; }
+.cfg-note { font-size: 11.5px; color: var(--muted); }
+.cfg-editor-mode { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+/* the collapsible payload view sits inside dense table cells — keep it compact */
+.cfg-cell pre.trace, td pre.trace { margin-top: 6px; }

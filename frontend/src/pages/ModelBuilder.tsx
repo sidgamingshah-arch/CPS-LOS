@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { masters, models } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, DeterministicBadge, EmptyState, Field, GovFlow, HumanBadge, useAsync } from "../ui";
+import { JsonDiff, PayloadView, RationaleBox } from "../config-forms";
 
 const STARTER = {
   modelKey: "my-model-v1",
@@ -42,6 +43,8 @@ export default function ModelBuilder() {
   const [recordKey, setRecordKey] = useState("my-model-v1");
   const [jurisdiction, setJurisdiction] = useState("");
   const [json, setJson] = useState(JSON.stringify(STARTER, null, 2));
+  const [rationale, setRationale] = useState("");
+  const [attempted, setAttempted] = useState(false);
   const [tester, setTester] = useState({ jurisdiction: "IN-RBI", sector: "", segment: "MID_CORPORATE" });
   const [resolved, setResolved] = useState<any>(null);
 
@@ -52,19 +55,38 @@ export default function ModelBuilder() {
 
   const reload = () => { active.reload(); pending.reload(); };
 
+  // Parse the editor JSON for the live diff (skip diff while it is invalid).
+  const parsed = useMemo(() => {
+    try { return { value: JSON.parse(json), ok: true }; }
+    catch { return { value: null, ok: false }; }
+  }, [json]);
+
+  // The active definition this submission would supersede (same key + jurisdiction scope).
+  const activeMatch = useMemo(
+    () => (active.data || []).find((r: any) =>
+      r.recordKey === recordKey.trim() && (r.jurisdiction || "") === jurisdiction.trim()) || null,
+    [active.data, recordKey, jurisdiction],
+  );
+  const isEdit = !!activeMatch;
+
   function loadInto(rec: any) {
     setRecordKey(rec.recordKey);
     setJurisdiction(rec.jurisdiction || "");
     setJson(JSON.stringify(rec.payload, null, 2));
+    setRationale("");
+    setAttempted(false);
   }
 
   async function submit() {
+    setAttempted(true);
     let payload: any;
     try { payload = JSON.parse(json); }
     catch (e: any) { notify("Invalid JSON: " + e.message, true); return; }
+    if (isEdit && !rationale.trim()) { notify("A change rationale is required for an edit", true); return; }
     try {
       const body: any = { recordKey: recordKey.trim(), payload };
       if (jurisdiction.trim()) body.jurisdiction = jurisdiction.trim();
+      if (rationale.trim()) body.comment = rationale.trim();
       const m = await masters.submit("MODEL_DEFINITION", body, actor);
       notify(`Submitted ${recordKey} (PENDING_APPROVAL · id ${m.id}) — needs a checker`);
       reload();
@@ -101,7 +123,7 @@ export default function ModelBuilder() {
             ? <EmptyState title="No models yet" sub="Author one on the right." />
             : (
               <table className="table">
-                <thead><tr><th>Model</th><th>Selector</th><th>v</th><th /></tr></thead>
+                <thead><tr><th>Model</th><th>Selector</th><th>v</th><th>Payload</th><th /></tr></thead>
                 <tbody>
                   {(active.data || []).map((r: any) => (
                     <tr key={r.id}>
@@ -110,7 +132,8 @@ export default function ModelBuilder() {
                         {JSON.stringify(r.payload?.selector || {})}
                       </td>
                       <td className="mono">v{r.version}</td>
-                      <td><Button kind="ghost" onClick={() => loadInto(r)}>Edit</Button></td>
+                      <td><PayloadView payload={r.payload} /></td>
+                      <td><Button kind="ghost" onClick={() => loadInto(r)}>Clone / edit</Button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -155,17 +178,27 @@ export default function ModelBuilder() {
       </div>
 
       <Card title="Author / edit a model definition" sub="The definition is structured JSON; submit goes through maker-checker."
-        right={<HumanBadge label="MAKER-CHECKER" />}>
+        right={isEdit ? <Badge kind="warn">EDIT · supersedes v{activeMatch.version}</Badge> : <HumanBadge label="MAKER-CHECKER" />}>
         <div className="grid cols-2" style={{ alignItems: "end" }}>
-          <Field label="Record key"><input value={recordKey} onChange={(e) => setRecordKey(e.target.value)} /></Field>
+          <Field label="Record key" required><input value={recordKey} onChange={(e) => setRecordKey(e.target.value)} /></Field>
           <Field label="Jurisdiction (optional override)"><input value={jurisdiction} onChange={(e) => setJurisdiction(e.target.value)} placeholder="(default)" /></Field>
         </div>
-        <Field label="Definition (JSON)">
+        <Field label="Definition (JSON)" error={parsed.ok ? undefined : "Invalid JSON"}>
           <textarea rows={20} value={json} onChange={(e) => setJson(e.target.value)} style={{ fontFamily: "monospace", fontSize: 12 }} />
         </Field>
+
+        {isEdit && parsed.ok && (
+          <Card title="Diff vs active version" sub="What this submission changes on approval.">
+            <JsonDiff before={activeMatch.payload} after={parsed.value} />
+          </Card>
+        )}
+
+        <RationaleBox value={rationale} onChange={setRationale} show={attempted} required={isEdit}
+          label={isEdit ? "Change rationale (required)" : "Rationale (optional for a new definition)"} />
+
         <div className="btnrow">
           <Button kind="primary" onClick={submit}>Submit for approval</Button>
-          <Button kind="subtle" onClick={() => setJson(JSON.stringify(STARTER, null, 2))}>Reset to starter</Button>
+          <Button kind="subtle" onClick={() => { setJson(JSON.stringify(STARTER, null, 2)); setRationale(""); setAttempted(false); }}>Reset to starter</Button>
         </div>
       </Card>
     </div>

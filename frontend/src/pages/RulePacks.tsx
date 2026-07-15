@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { config, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Field, useAsync } from "../ui";
+import { JsonDiff, PayloadEditor, RationaleBox } from "../config-forms";
 
 const TYPES = [
   "CAPITAL_SA", "ECRA_MAPPING", "RATING_PD_MAP", "LGD_MAP",
@@ -81,7 +82,7 @@ export default function RulePacks() {
       </Card>
 
       {proposing && (
-        <ProposePack jurisdiction={active} actor={actor} notify={notify}
+        <ProposePack jurisdiction={active} actor={actor} notify={notify} packs={packs}
           onDone={() => { setProposing(false); reload(); }} />
       )}
 
@@ -134,44 +135,83 @@ export default function RulePacks() {
   );
 }
 
-function ProposePack({ jurisdiction, actor, notify, onDone }:
-                     { jurisdiction: string; actor: string; notify: (t: string, e?: boolean) => void; onDone: () => void }) {
+function ProposePack({ jurisdiction, actor, notify, packs, onDone }:
+                     { jurisdiction: string; actor: string; notify: (t: string, e?: boolean) => void;
+                       packs: Record<string, any>; onDone: () => void }) {
   const [type, setType] = useState(TYPES[0]);
   const [code, setCode] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState("");
-  const [payloadText, setPayloadText] = useState("{\n  \n}");
+  const [payload, setPayload] = useState<any>({});
+  const [payloadErrors, setPayloadErrors] = useState<Record<string, string>>({});
+  const [initial, setInitial] = useState<any>({});
+  const [resetKey, setResetKey] = useState(0);
+  const [rationale, setRationale] = useState("");
+  const [attempted, setAttempted] = useState(false);
+
+  // Rule-pack payloads are deeply nested and vary by type, so there is no curated
+  // schema — the raw-JSON editor (PayloadEditor with no schema) is the editor here.
+  // Superseding an existing active pack of this type is treated as an edit → the
+  // before/after diff + a rationale are shown.
+  const activePack = packs[type] || null;
+  const before = activePack?.payload || null;
+  const isEdit = !!activePack;
+
+  function cloneActive() {
+    if (!activePack) return;
+    setInitial(activePack.payload || {});
+    setResetKey((k) => k + 1);
+  }
+
   const submit = async () => {
+    setAttempted(true);
     if (!code.trim()) { notify("Pack code required", true); return; }
     if (!effectiveFrom) { notify("Effective-from date required", true); return; }
-    let payload: any;
-    try { payload = JSON.parse(payloadText); }
-    catch (e: any) { notify("Payload must be valid JSON: " + e.message, true); return; }
+    if (Object.keys(payloadErrors).length > 0) { notify("Payload must be valid JSON", true); return; }
+    if (isEdit && !rationale.trim()) { notify("A change rationale is required when superseding an active pack", true); return; }
     try {
-      await config.createRulePack({ code: code.trim(), type, jurisdiction, effectiveFrom, payload }, actor);
+      await config.createRulePack(
+        { code: code.trim(), type, jurisdiction, effectiveFrom, payload, rationale: rationale.trim() } as any, actor);
       notify(`Proposed ${jurisdiction}/${type} pack ${code} (draft — awaiting dual sign-off)`);
       onDone();
     } catch (e: any) { notify(e.message, true); }
   };
   return (
     <Card title={`Propose new pack version · ${jurisdiction}`}
-      sub="Created inactive & unsigned. Activates (superseding the prior version) only after policy AND model-risk sign off — the author cannot be a signer.">
+      sub="Created inactive & unsigned. Activates (superseding the prior version) only after policy AND model-risk sign off — the author cannot be a signer."
+      right={isEdit ? <Badge kind="warn">supersedes v{activePack.version}</Badge> : <Badge kind="ok">NEW TYPE</Badge>}>
       <div className="grid cols-3">
         <Field label="Pack type">
           <select value={type} onChange={(e) => setType(e.target.value)}>
             {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </Field>
-        <Field label="Pack code">
+        <Field label="Pack code" required>
           <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. rbi_pricing_v2" />
         </Field>
-        <Field label="Effective from">
+        <Field label="Effective from" required>
           <input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
         </Field>
       </div>
-      <Field label="Payload (JSON)">
-        <textarea value={payloadText} onChange={(e) => setPayloadText(e.target.value)}
-          rows={10} style={{ fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12 }} />
-      </Field>
+
+      {isEdit && (
+        <div className="btnrow" style={{ marginBottom: 8 }}>
+          <Button kind="subtle" onClick={cloneActive}>Clone from active v{activePack.version}</Button>
+          <span className="muted" style={{ fontSize: 11 }}>Prefill the payload from the currently-active pack, then edit.</span>
+        </div>
+      )}
+
+      <PayloadEditor schema={null} initial={initial} resetKey={resetKey}
+        onChange={(p, errs) => { setPayload(p); setPayloadErrors(errs); }} />
+
+      {isEdit && (
+        <Card title="Diff vs active version" sub="What this draft changes if it is signed off and activated.">
+          <JsonDiff before={before} after={payload} />
+        </Card>
+      )}
+
+      <RationaleBox value={rationale} onChange={setRationale} show={attempted} required={isEdit}
+        label={isEdit ? "Change rationale (required)" : "Rationale (optional for a brand-new pack type)"} />
+
       <Button onClick={submit}>Submit draft for sign-off</Button>
     </Card>
   );
