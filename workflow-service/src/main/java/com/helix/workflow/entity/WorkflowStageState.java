@@ -78,4 +78,24 @@ public class WorkflowStageState {
 
     @Column(length = 400)
     private String blockedReason;
+
+    /**
+     * OPTIONAL parallel-stage-group key (pack stage key {@code parallelGroup}). When
+     * null (all existing seeded packs) the engine behaves as a strict linear
+     * lifecycle. Stages sharing a group are co-entered and the group advances only
+     * when its {@link #joinPolicy} is satisfied.
+     */
+    @Column(name = "parallel_group", length = 40)
+    private String parallelGroup;
+
+    /** OPTIONAL join policy for the parallel group — ALL | ANY | QUORUM:n (default ALL). */
+    @Column(name = "join_policy", length = 20)
+    private String joinPolicy;
+
+    /**
+     * OPTIONAL queue key (pack stage key {@code queueKey}). When present, entering
+     * this stage auto-creates a case-management WorkItem (best-effort mirror).
+     */
+    @Column(name = "queue_key", length = 60)
+    private String queueKey;
 }

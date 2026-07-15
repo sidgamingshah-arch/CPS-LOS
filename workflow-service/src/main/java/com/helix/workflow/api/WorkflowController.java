@@ -35,6 +35,12 @@ public class WorkflowController {
     public record BlockRequest(String reason) {
     }
 
+    public record SendBackRequest(String toStageKey, String note) {
+    }
+
+    public record WithdrawRequest(String note) {
+    }
+
     @PostMapping("/instances")
     public WorkflowInstance materialise(@RequestBody MaterialiseRequest body,
                                          @RequestHeader(value = "X-Actor", required = false) String actor) {
@@ -92,6 +98,24 @@ public class WorkflowController {
                                        @PathVariable("key") String stageKey,
                                        @RequestHeader(value = "X-Actor", required = false) String actor) {
         return engine.unblock(applicationReference, stageKey, actor);
+    }
+
+    @PostMapping("/instances/{ref}/send-back")
+    public WorkflowInstance sendBack(@PathVariable("ref") String applicationReference,
+                                     @RequestBody SendBackRequest body,
+                                     @RequestHeader(value = "X-Actor", required = false) String actor) {
+        if (body == null || body.toStageKey() == null || body.toStageKey().isBlank()) {
+            throw ApiException.badRequest("toStageKey is required");
+        }
+        return engine.sendBack(applicationReference, body.toStageKey(), body.note(), actor);
+    }
+
+    @PostMapping("/instances/{ref}/withdraw")
+    public WorkflowInstance withdraw(@PathVariable("ref") String applicationReference,
+                                     @RequestBody(required = false) WithdrawRequest body,
+                                     @RequestHeader(value = "X-Actor", required = false) String actor) {
+        String note = body == null ? null : body.note();
+        return engine.withdraw(applicationReference, note, actor);
     }
 
     @GetMapping("/sla-breaches")

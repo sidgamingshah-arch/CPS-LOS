@@ -57,11 +57,21 @@ public class PricingExceptionService {
     private final FtpService ftpService;
     private final com.helix.common.governance.AiGovernanceClient governance;
 
+    /**
+     * Optional best-effort case-management mirror; bean absent when the workflow-service
+     * URL isn't configured. The domain concession approval (SoD, authority tiers, RAROC)
+     * is authoritative and completely unaffected by the mirror — a mirror failure is
+     * swallowed by the client and never reaches this transaction.
+     */
+    private final com.helix.common.workflow.TaskClient taskClient;
+
     public PricingExceptionService(PricingExceptionRepository exceptions, PricingResultRepository pricingResults,
                                    RiskService risk, ConfigClient config, OriginationClient origination,
                                    FtpService ftpService, AuditService audit,
                                    com.helix.common.governance.AiGovernanceClient governance,
-                                   ActorDirectory actorDirectory) {
+                                   ActorDirectory actorDirectory,
+                                   @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                   com.helix.common.workflow.TaskClient taskClient) {
         this.exceptions = exceptions;
         this.pricingResults = pricingResults;
         this.risk = risk;
@@ -71,6 +81,7 @@ public class PricingExceptionService {
         this.audit = audit;
         this.governance = governance;
         this.actorDirectory = actorDirectory;
+        this.taskClient = taskClient;
     }
 
     @Transactional
@@ -158,6 +169,19 @@ public class PricingExceptionService {
                         belowHurdle ? ", below hurdle" : "", saved.getRequiredAuthority(), saved.getRequiredLevels()),
                 Map.of("concessionBps", concessionBps, "belowHurdle", belowHurdle,
                         "authority", saved.getRequiredAuthority(), "status", saved.getStatus()));
+        // Best-effort case-management mirror to the approver's queue when the concession
+        // needs a human sign-off. Purely advisory task tracking — the authoritative
+        // PricingException / PricingResult above is unchanged by this call.
+        if (taskClient != null && "PENDING_L1".equals(saved.getStatus())) {
+            taskClient.createTask("PricingException", reference, "PRICING_EXCEPTION_APPROVAL",
+                    "PRICING_EXCEPTION_" + saved.getRequiredAuthority(), null,
+                    "PE:" + saved.getId(), null, actor,
+                    Map.of("pricingExceptionId", saved.getId(),
+                            "authority", saved.getRequiredAuthority(),
+                            "requiredLevels", saved.getRequiredLevels(),
+                            "concessionBps", concessionBps,
+                            "belowHurdle", belowHurdle));
+        }
         return saved;
     }
 
