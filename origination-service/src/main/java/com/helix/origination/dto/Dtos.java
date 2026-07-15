@@ -39,7 +39,12 @@ public final class Dtos {
             @NotNull List<PeriodInput> periods,
             /** Optional Level-1 presentation currency to normalise every period into.
              *  Defaults to the latest period's native currency when omitted. */
-            String presentationCurrency) {
+            String presentationCurrency,
+            /** Optional origin marker for the version timeline: MANUAL | DOC_INTEL |
+             *  RESUBMISSION. Derived when omitted (first spread MANUAL, later RESUBMISSION). */
+            String source,
+            /** Optional analyst note recorded on the version-timeline entry. */
+            String note) {
 
         public record PeriodInput(
                 @NotBlank String label,
@@ -126,6 +131,19 @@ public final class Dtos {
                                  String presentationCurrency, boolean currencyConsistent,
                                  /** The resolved FINANCIAL_TEMPLATE (chart-of-accounts augmentation) key. */
                                  String financialTemplate) {
+    }
+
+    /** One row of the append-only spread version timeline (metadata only, no snapshot payload). */
+    public record SpreadVersionView(int versionNo, String createdBy, java.time.Instant createdAt,
+                                    String source, boolean confirmed, String confirmedBy,
+                                    java.time.Instant confirmedAt, String note) {
+    }
+
+    /** A single archived spread version including the full analysis snapshot as recorded. */
+    public record SpreadVersionDetail(int versionNo, String createdBy, java.time.Instant createdAt,
+                                      String source, boolean confirmed, String confirmedBy,
+                                      java.time.Instant confirmedAt, String note,
+                                      com.fasterxml.jackson.databind.JsonNode snapshot) {
     }
 
     /** Snapshot consumed by risk-service to rate, capitalise and price the deal. */

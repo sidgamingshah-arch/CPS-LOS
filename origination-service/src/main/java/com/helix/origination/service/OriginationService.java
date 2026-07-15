@@ -21,6 +21,8 @@ import com.helix.origination.dto.Dtos.SublimitView;
 import com.helix.origination.dto.Dtos.PeriodAnalysis;
 import com.helix.origination.dto.Dtos.SpreadAnalysis;
 import com.helix.origination.dto.Dtos.SpreadRequest;
+import com.helix.origination.dto.Dtos.SpreadVersionDetail;
+import com.helix.origination.dto.Dtos.SpreadVersionView;
 import com.helix.origination.dto.Dtos.UploadDocumentRequest;
 import com.helix.origination.entity.Collateral;
 import com.helix.origination.entity.Document;
@@ -28,6 +30,7 @@ import com.helix.origination.entity.FinancialPeriod;
 import com.helix.origination.entity.LoanApplication;
 import com.helix.origination.entity.ProposedFacility;
 import com.helix.origination.entity.SpreadCell;
+import com.helix.origination.entity.SpreadVersion;
 import com.helix.origination.entity.Sublimit;
 import com.helix.origination.repo.CollateralRepository;
 import com.helix.origination.repo.DocumentRepository;
@@ -35,10 +38,18 @@ import com.helix.origination.repo.FinancialPeriodRepository;
 import com.helix.origination.repo.LoanApplicationRepository;
 import com.helix.origination.repo.ProposedFacilityRepository;
 import com.helix.origination.repo.SpreadCellRepository;
+import com.helix.origination.repo.SpreadVersionRepository;
 import com.helix.origination.repo.SublimitRepository;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.stream.Collectors;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,12 +58,18 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class OriginationService {
 
+    private static final Logger log = LoggerFactory.getLogger(OriginationService.class);
+
     /** Override beyond this fraction of the extracted value is "material" (PRD §4, US-4.1). */
     private static final double MATERIAL_THRESHOLD = 0.10;
+
+    /** Allowed origin markers on the spread version timeline. */
+    private static final Set<String> SPREAD_VERSION_SOURCES = Set.of("MANUAL", "DOC_INTEL", "RESUBMISSION");
 
     private final LoanApplicationRepository applications;
     private final DocumentRepository documents;
@@ -61,8 +78,11 @@ public class OriginationService {
     private final ProposedFacilityRepository facilities;
     private final CollateralRepository collaterals;
     private final SublimitRepository sublimits;
+    private final SpreadVersionRepository spreadVersions;
     private final DocumentClassifier classifier;
     private final AuditService audit;
+    /** The app's Jackson mapper — serialises the append-only spread version snapshots. */
+    private final ObjectMapper json;
     /** Optional best-effort hook into workflow-service; bean is absent when the URL isn't configured. */
     private final WorkflowClient workflow;
     /** Level-1 financial-analysis currency normalisation source (shared FX table with limit-service). */
@@ -75,8 +95,8 @@ public class OriginationService {
     public OriginationService(LoanApplicationRepository applications, DocumentRepository documents,
                               FinancialPeriodRepository periods, SpreadCellRepository cells,
                               ProposedFacilityRepository facilities, CollateralRepository collaterals,
-                              SublimitRepository sublimits,
-                              DocumentClassifier classifier, AuditService audit,
+                              SublimitRepository sublimits, SpreadVersionRepository spreadVersions,
+                              DocumentClassifier classifier, AuditService audit, ObjectMapper json,
                               com.helix.origination.client.FxRatesClient fx,
                               com.helix.origination.client.FinancialTemplateClient financialTemplates,
                               com.helix.origination.client.CounterpartyClient counterparties,
@@ -89,9 +109,11 @@ public class OriginationService {
         this.facilities = facilities;
         this.collaterals = collaterals;
         this.sublimits = sublimits;
+        this.spreadVersions = spreadVersions;
         this.classifier = classifier;
         this.financialTemplates = financialTemplates;
         this.audit = audit;
+        this.json = json;
         this.fx = fx;
         this.workflow = workflow;
     }
@@ -388,7 +410,81 @@ public class OriginationService {
                 Map.of("periods", req.periods().size(), "sourceLines", lineCount,
                         "presentationCurrency", presentationCurrency == null ? "" : presentationCurrency,
                         "multiCurrency", multiCurrency));
-        return analysis(reference);
+        SpreadAnalysis result = analysis(reference);
+        recordSpreadVersion(app, reference, req, result, actor);
+        return result;
+    }
+
+    // ------------------------------------------------- spread version timeline
+
+    /**
+     * Appends an immutable {@link SpreadVersion} carrying the freshly built analysis
+     * snapshot. Pure history: the live spread tables, the confirm-gate and the rating
+     * read path never read these rows, so the authoritative figure path is untouched.
+     */
+    private void recordSpreadVersion(LoanApplication app, String reference, SpreadRequest req,
+                                     SpreadAnalysis result, String actor) {
+        int versionNo = spreadVersions.findTopByApplicationIdOrderByVersionNoDesc(app.getId())
+                .map(v -> v.getVersionNo() + 1).orElse(1);
+        String source;
+        if (req.source() != null && !req.source().isBlank()) {
+            source = req.source().trim().toUpperCase();
+            if (!SPREAD_VERSION_SOURCES.contains(source)) {
+                throw ApiException.badRequest("Unknown spread source: " + req.source()
+                        + " (expected MANUAL | DOC_INTEL | RESUBMISSION)");
+            }
+        } else {
+            source = versionNo == 1 ? "MANUAL" : "RESUBMISSION";
+        }
+
+        String snapshot;
+        try {
+            snapshot = json.writeValueAsString(result);
+        } catch (JsonProcessingException e) {
+            // Version history is auxiliary — a snapshot failure must never fail the spread.
+            log.warn("Could not serialise spread snapshot for {} v{}: {}", reference, versionNo, e.getMessage());
+            snapshot = "{\"error\":\"snapshot-serialization-failed\"}";
+        }
+
+        SpreadVersion version = new SpreadVersion();
+        version.setApplicationId(app.getId());
+        version.setVersionNo(versionNo);
+        version.setCreatedBy(actor);
+        version.setSource(source);
+        version.setNote(req.note());
+        version.setSnapshot(snapshot);
+        spreadVersions.save(version);
+
+        audit.human(actor, "SPREAD_VERSION_RECORDED", "Application", reference,
+                "Spread version %d recorded (%s, %d period(s))".formatted(
+                        versionNo, source, result.periods().size()),
+                Map.of("versionNo", versionNo, "source", source, "periods", result.periods().size()));
+    }
+
+    @Transactional(readOnly = true)
+    public List<SpreadVersionView> spreadVersionsFor(String reference) {
+        LoanApplication app = get(reference);
+        return spreadVersions.findByApplicationIdOrderByVersionNoAsc(app.getId()).stream()
+                .map(v -> new SpreadVersionView(v.getVersionNo(), v.getCreatedBy(), v.getCreatedAt(),
+                        v.getSource(), v.isConfirmed(), v.getConfirmedBy(), v.getConfirmedAt(), v.getNote()))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public SpreadVersionDetail spreadVersionDetail(String reference, int versionNo) {
+        LoanApplication app = get(reference);
+        SpreadVersion v = spreadVersions.findByApplicationIdAndVersionNo(app.getId(), versionNo)
+                .orElseThrow(() -> ApiException.notFound(
+                        "No spread version %d for %s".formatted(versionNo, reference)));
+        JsonNode snapshot;
+        try {
+            snapshot = json.readTree(v.getSnapshot() == null ? "null" : v.getSnapshot());
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(
+                    "Corrupt spread-version snapshot for %s v%d".formatted(reference, versionNo), e);
+        }
+        return new SpreadVersionDetail(v.getVersionNo(), v.getCreatedBy(), v.getCreatedAt(), v.getSource(),
+                v.isConfirmed(), v.getConfirmedBy(), v.getConfirmedAt(), v.getNote(), snapshot);
     }
 
     @Transactional
@@ -453,6 +549,14 @@ public class OriginationService {
         }
         app.setSpreadConfirmed(true);
         applications.save(app);
+        // Stamp the confirmation onto the latest version-timeline entry (history only —
+        // the gate itself remains the spreadConfirmed flag above, unchanged).
+        spreadVersions.findTopByApplicationIdOrderByVersionNoDesc(app.getId()).ifPresent(v -> {
+            v.setConfirmed(true);
+            v.setConfirmedBy(actor);
+            v.setConfirmedAt(Instant.now());
+            spreadVersions.save(v);
+        });
         audit.human(actor, "SPREAD_CONFIRMED", "Application", reference,
                 "Analyst confirmed the spread; it may now feed rating, capital and pricing", Map.of());
         return app;
