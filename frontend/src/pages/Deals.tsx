@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { counterparty, origination, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, EmptyState, Field, statusTone, useAsync } from "../ui";
+import { Badge, Button, Card, type Col, DataTable, EmptyState, Field, statusTone, useAsync } from "../ui";
 import { useCodes } from "../code-values";
 
 export default function Deals() {
@@ -12,32 +12,38 @@ export default function Deals() {
   const collaterals = useCodes("COLLATERAL_TYPE");
   const [creating, setCreating] = useState(false);
 
+  const cols: Col<any>[] = [
+    { key: "reference", header: "Reference", render: (a) => <span className="mono">{a.reference}</span> },
+    { key: "counterpartyName", header: "Counterparty" },
+    { key: "facilityType", header: "Facility" },
+    {
+      key: "requestedAmount", header: "Amount", align: "right",
+      render: (a) => fmt.money(a.requestedAmount, a.currency), value: (a) => a.requestedAmount ?? 0,
+    },
+    {
+      key: "status", header: "Status",
+      render: (a) => <Badge kind={statusTone(a.status)}>{a.status}</Badge>, value: (a) => a.status ?? "",
+    },
+  ];
+
   return (
     <div className="grid">
-      <Card title="Origination pipeline" sub="Intake → spread → rate → capital → price → approve → book."
-        right={<Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New deal"}</Button>}>
-        {apps.loading ? <div className="loading">Loading…</div> : (apps.data || []).length === 0 ? (
-          <EmptyState
-            glyph="✦"
-            title="No deals on the pipeline yet"
-            sub="Click + New deal to start an application — facility, sublimits and collateral. The lifecycle takes it from intake through spreading, rating, pricing, approval and booking."
-          />
-        ) : (
-          <table>
-            <thead><tr><th>Reference</th><th>Counterparty</th><th>Facility</th><th className="num">Amount</th><th>Status</th></tr></thead>
-            <tbody>
-              {(apps.data || []).map((a: any) => (
-                <tr key={a.reference} className="rowlink" onClick={() => nav("workspace", a.reference)}>
-                  <td className="mono">{a.reference}</td>
-                  <td>{a.counterpartyName}</td>
-                  <td>{a.facilityType}</td>
-                  <td className="num">{fmt.money(a.requestedAmount, a.currency)}</td>
-                  <td><Badge kind={statusTone(a.status)}>{a.status}</Badge></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+      <Card title="Origination pipeline" sub="Intake → spread → rate → capital → price → approve → book.">
+        <DataTable
+          id="deals"
+          columns={cols}
+          rows={apps.data || []}
+          rowKey={(a) => a.reference}
+          onRowClick={(a) => nav("workspace", a.reference)}
+          toolbarRight={<Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New deal"}</Button>}
+          empty={apps.loading ? <div className="loading">Loading…</div> : (
+            <EmptyState
+              glyph="✦"
+              title="No deals on the pipeline yet"
+              sub="Click + New deal to start an application — facility, sublimits and collateral. The lifecycle takes it from intake through spreading, rating, pricing, approval and booking."
+            />
+          )}
+        />
       </Card>
 
       {creating && (

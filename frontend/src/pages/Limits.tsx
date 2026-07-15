@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { counterparty, fmt, limits as L, origination } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, EmptyState, Field, Stat, statusTone, useAsync } from "../ui";
+import { Badge, Button, Card, type Col, DataTable, EmptyState, Field, Stat, statusTone, useAsync } from "../ui";
 
 /**
  * Limit management: build limit tree from a deal, view per-CIF tree with
@@ -13,9 +13,30 @@ export default function Limits() {
   const cps = useAsync(() => counterparty.list(), []);
   const apps = useAsync(() => origination.list(), []);
   const [cif, setCif] = useState<string>("");
-  const [showAllLedger, setShowAllLedger] = useState(false);
   const tree = useAsync(() => (cif ? L.view(cif) : Promise.resolve(null)), [cif]);
   const ledger = useAsync(() => (cif ? L.ledger(cif) : Promise.resolve([])), [cif]);
+
+  const ledgerCols: Col<any>[] = [
+    {
+      key: "createdAt", header: "When", width: "160px",
+      render: (u) => <span className="mono">{fmt.dateTime(u.createdAt)}</span>, value: (u) => u.createdAt ?? "",
+    },
+    { key: "limitNodeId", header: "Line", render: (u) => <span className="mono">{u.limitNodeId}</span> },
+    { key: "action", header: "Action", render: (u) => <Badge>{u.action}</Badge>, value: (u) => u.action ?? "" },
+    {
+      key: "amount", header: "Amount", align: "right",
+      render: (u) => fmt.money(u.amount, u.currency), value: (u) => u.amount ?? 0,
+    },
+    {
+      key: "status", header: "Status",
+      render: (u) => <><Badge kind={u.status === "CONFIRMED" ? "ok" : "bad"}>{u.status}</Badge>{u.overrideApplied && " · override"}</>,
+      value: (u) => u.status ?? "",
+    },
+    {
+      key: "message", header: "Note",
+      render: (u) => <small className="prov">{u.message || ""}</small>, value: (u) => u.message ?? "",
+    },
+  ];
 
   return (
     <div className="grid">
@@ -23,7 +44,7 @@ export default function Limits() {
         sub="Multi-level tree, fungibility pools, View / Validation / Utilisation APIs. Build the tree from an approved deal once.">
         <div className="grid cols-3" style={{ alignItems: "end" }}>
           <Field label="Counterparty (CIF)">
-            <select value={cif} onChange={(e) => { setCif(e.target.value); setShowAllLedger(false); }}>
+            <select value={cif} onChange={(e) => { setCif(e.target.value); }}>
               <option value="">— select —</option>
               {(cps.data || []).map((c: any) => <option key={c.id} value={c.reference}>{c.legalName} · {c.reference}</option>)}
             </select>
@@ -49,29 +70,12 @@ export default function Limits() {
 
       {(ledger.data || []).length > 0 && (
         <Card title="Utilisation ledger" sub="Append-only — every UTILISE / RELEASE / RESERVE / REVERSAL recorded.">
-          <div className="table-scroll">
-          <table>
-            <thead><tr><th>When</th><th>Line</th><th>Action</th><th className="num">Amount</th><th>Status</th><th>Note</th></tr></thead>
-            <tbody>
-              {(showAllLedger ? ledger.data! : ledger.data!.slice(0, 25)).map((u: any) => (
-                <tr key={u.id}>
-                  <td className="mono">{fmt.dateTime(u.createdAt)}</td>
-                  <td className="mono">{u.limitNodeId}</td>
-                  <td><Badge>{u.action}</Badge></td>
-                  <td className="num">{fmt.money(u.amount, u.currency)}</td>
-                  <td><Badge kind={u.status === "CONFIRMED" ? "ok" : "bad"}>{u.status}</Badge>{u.overrideApplied && " · override"}</td>
-                  <td><small className="prov">{u.message || ""}</small></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-          {ledger.data!.length > 25 && (
-            <div className="table-more">
-              <span>showing {showAllLedger ? ledger.data!.length : 25} of {ledger.data!.length}</span>
-              <button onClick={() => setShowAllLedger((s) => !s)}>{showAllLedger ? "show less" : "show all"}</button>
-            </div>
-          )}
+          <DataTable
+            id="limits-ledger"
+            columns={ledgerCols}
+            rows={ledger.data || []}
+            rowKey={(u) => String(u.id)}
+          />
         </Card>
       )}
 

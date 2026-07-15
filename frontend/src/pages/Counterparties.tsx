@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { config, counterparty, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, EmptyState, Field, statusTone, useAsync } from "../ui";
+import { Badge, Button, Card, type Col, DataTable, EmptyState, Field, statusTone, useAsync } from "../ui";
 import { useCodes } from "../code-values";
 
 const SAMPLE_UBO = JSON.stringify({
@@ -28,33 +28,46 @@ export default function Counterparties() {
   const [selId, setSelId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
 
+  const cols: Col<any>[] = [
+    {
+      key: "legalName", header: "Name",
+      render: (c) => <>{c.legalName}<br /><small className="prov">{c.reference}</small></>,
+      value: (c) => `${c.legalName ?? ""} ${c.reference ?? ""}`,
+    },
+    { key: "segment", header: "Segment" },
+    {
+      key: "cddTier", header: "CDD",
+      render: (c) => <Badge kind={c.cddTier === "ENHANCED" ? "warn" : "info"}>{c.cddTier}</Badge>,
+      value: (c) => c.cddTier ?? "",
+    },
+    {
+      key: "kycStatus", header: "KYC",
+      render: (c) => <Badge kind={statusTone(c.kycStatus)}>{c.kycStatus}</Badge>,
+      value: (c) => c.kycStatus ?? "",
+    },
+  ];
+
   return (
     <div className="grid cols-2">
       <div className="grid">
-        <Card title="Counterparties" right={
-          <div className="btnrow">
-            <Button kind="subtle" onClick={async () => {
-              try { const r = await counterparty.reKycSweep(undefined, actor); notify(`Re-KYC sweep: ${r.flagged} of ${r.scanned} flagged`); list.reload(); }
-              catch (e: any) { notify(e.message, true); }
-            }}>Run re-KYC sweep</Button>
-            <Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New"}</Button>
-          </div>}>
-          {list.loading ? <div className="loading">Loading…</div> : (
-            <table>
-              <thead><tr><th>Name</th><th>Segment</th><th>CDD</th><th>KYC</th></tr></thead>
-              <tbody>
-                {(list.data || []).map((c: any) => (
-                  <tr key={c.id} className="rowlink" onClick={() => setSelId(c.id)}>
-                    <td>{c.legalName}<br /><small className="prov">{c.reference}</small></td>
-                    <td>{c.segment}</td>
-                    <td><Badge kind={c.cddTier === "ENHANCED" ? "warn" : "info"}>{c.cddTier}</Badge></td>
-                    <td><Badge kind={statusTone(c.kycStatus)}>{c.kycStatus}</Badge></td>
-                  </tr>
-                ))}
-                {(list.data || []).length === 0 && <tr><td colSpan={4} className="muted">None yet — create one.</td></tr>}
-              </tbody>
-            </table>
-          )}
+        <Card title="Counterparties">
+          <DataTable
+            id="counterparties"
+            columns={cols}
+            rows={list.data || []}
+            rowKey={(c) => String(c.id)}
+            onRowClick={(c) => setSelId(c.id)}
+            toolbarRight={
+              <div className="btnrow">
+                <Button kind="subtle" onClick={async () => {
+                  try { const r = await counterparty.reKycSweep(undefined, actor); notify(`Re-KYC sweep: ${r.flagged} of ${r.scanned} flagged`); list.reload(); }
+                  catch (e: any) { notify(e.message, true); }
+                }}>Run re-KYC sweep</Button>
+                <Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New"}</Button>
+              </div>
+            }
+            empty={list.loading ? <div className="loading">Loading…</div> : <div className="muted">None yet — create one.</div>}
+          />
         </Card>
         {creating && <CreateForm onDone={(id) => { setCreating(false); list.reload(); setSelId(id); }} />}
       </div>

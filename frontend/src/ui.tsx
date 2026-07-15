@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export function Card({ title, sub, right, children }: {
   title?: string; sub?: string; right?: React.ReactNode; children: React.ReactNode;
@@ -181,6 +181,356 @@ export function GovSplit({ advisoryLabel, advisory, authLabel, auth }: {
           {auth}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   DataTable — one reusable, dependency-free list surface. Client-side keyword
+   search, per-column filters, single-column sort, a column chooser, pagination,
+   CSV export and named saved views. Column-chooser hidden set, page size and
+   saved views persist to localStorage under `helix.dt.<id>.*`. Every table in
+   the app should adopt this instead of hand-rolling a <table>.
+   ============================================================================ */
+
+export type Col<T> = {
+  key: string;
+  header: string;
+  /** Cell renderer; defaults to String(row[key]). */
+  render?: (row: T) => React.ReactNode;
+  /** Sort/filter/CSV basis; defaults to row[key]. */
+  value?: (row: T) => string | number;
+  /** Sortable header (default true). */
+  sortable?: boolean;
+  /** Included in keyword search + per-column filter (default true). */
+  filterable?: boolean;
+  /** Included in CSV export (default true). */
+  csv?: boolean;
+  width?: string;
+  /** Cell/header alignment; "right" reuses the numeric (tabular) column style. */
+  align?: "left" | "right" | "center";
+};
+
+export type DataTableProps<T> = {
+  /** Stable id → localStorage key for the column chooser, page size + saved views. */
+  id: string;
+  columns: Col<T>[];
+  rows: T[];
+  rowKey: (row: T) => string;
+  onRowClick?: (row: T) => void;
+  initialPageSize?: number;
+  empty?: React.ReactNode;
+  /** Slot for page-specific actions, right of the toolbar. */
+  toolbarRight?: React.ReactNode;
+};
+
+type DtSort = { key: string; dir: "asc" | "desc" } | null;
+type DtView = {
+  name: string;
+  keyword: string;
+  colFilters: Record<string, string>;
+  sort: DtSort;
+  hidden: string[];
+  pageSize: number;
+};
+
+function dtLoad<V>(key: string, fallback: V): V {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as V) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function dtStore(key: string, val: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+  } catch {
+    /* localStorage unavailable — feature degrades to session-only */
+  }
+}
+
+export function DataTable<T>({
+  id, columns, rows, rowKey, onRowClick, initialPageSize = 25, empty, toolbarRight,
+}: DataTableProps<T>) {
+  const colsKey = `helix.dt.${id}.cols`;
+  const sizeKey = `helix.dt.${id}.size`;
+  const viewsKey = `helix.dt.${id}.views`;
+
+  const [keyword, setKeyword] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [colFilters, setColFilters] = useState<Record<string, string>>({});
+  const [sort, setSort] = useState<DtSort>(null);
+  const [hidden, setHidden] = useState<string[]>(() => dtLoad<string[]>(colsKey, []));
+  const [pageSize, setPageSize] = useState<number>(() => dtLoad<number>(sizeKey, initialPageSize));
+  const [page, setPage] = useState(0);
+  const [views, setViews] = useState<DtView[]>(() => dtLoad<DtView[]>(viewsKey, []));
+  const [menu, setMenu] = useState<null | "cols" | "views">(null);
+  const [viewName, setViewName] = useState("");
+  const toolbarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { dtStore(colsKey, hidden); }, [colsKey, hidden]);
+  useEffect(() => { dtStore(sizeKey, pageSize); }, [sizeKey, pageSize]);
+  useEffect(() => { dtStore(viewsKey, views); }, [viewsKey, views]);
+
+  const colFiltersKey = JSON.stringify(colFilters);
+  // Any change to the filtered/sorted shape returns to the first page.
+  useEffect(() => { setPage(0); }, [keyword, colFiltersKey, pageSize, sort]);
+
+  // Close an open menu on an outside click.
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (e: MouseEvent) => {
+      if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) setMenu(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menu]);
+
+  const basis = useCallback((col: Col<T>, row: T): string | number => {
+    if (col.value) return col.value(row);
+    const v = (row as any)[col.key];
+    if (v == null) return "";
+    return typeof v === "number" ? v : String(v);
+  }, []);
+  const basisStr = useCallback((col: Col<T>, row: T) => String(basis(col, row)), [basis]);
+
+  const visibleCols = columns.filter((c) => !hidden.includes(c.key));
+
+  const filtered = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    const active = Object.entries(colFilters).filter(([, v]) => v.trim() !== "");
+    if (!kw && active.length === 0) return rows;
+    return rows.filter((row) => {
+      if (kw) {
+        const hit = columns.some((c) => c.filterable !== false && basisStr(c, row).toLowerCase().includes(kw));
+        if (!hit) return false;
+      }
+      for (const [key, val] of active) {
+        const col = columns.find((c) => c.key === key);
+        if (col && !basisStr(col, row).toLowerCase().includes(val.trim().toLowerCase())) return false;
+      }
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, columns, keyword, colFiltersKey, basisStr]);
+
+  const sorted = useMemo(() => {
+    if (!sort) return filtered;
+    const col = columns.find((c) => c.key === sort.key);
+    if (!col) return filtered;
+    const dir = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const av = basis(col, a), bv = basis(col, b);
+      let cmp: number;
+      if (typeof av === "number" && typeof bv === "number") cmp = av - bv;
+      else cmp = String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: "base" });
+      return cmp * dir;
+    });
+  }, [filtered, sort, columns, basis]);
+
+  const total = sorted.length;
+  const eff = pageSize === 0 ? (total || 1) : pageSize;
+  const pageCount = Math.max(1, Math.ceil(total / eff));
+  const safePage = Math.min(page, pageCount - 1);
+  const start = safePage * eff;
+  const visible = sorted.slice(start, start + eff);
+
+  const toggleSort = (col: Col<T>) => {
+    if (col.sortable === false) return;
+    setSort((s) => {
+      if (!s || s.key !== col.key) return { key: col.key, dir: "asc" };
+      if (s.dir === "asc") return { key: col.key, dir: "desc" };
+      return null;
+    });
+  };
+
+  const toggleColumn = (key: string) =>
+    setHidden((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+
+  const exportCsv = () => {
+    const cols = visibleCols.filter((c) => c.csv !== false);
+    const esc = (s: string) => (/[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s);
+    const lines = [cols.map((c) => esc(c.header)).join(",")];
+    for (const row of sorted) lines.push(cols.map((c) => esc(basisStr(c, row))).join(","));
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${id}-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const saveView = () => {
+    const name = viewName.trim();
+    if (!name) return;
+    const v: DtView = { name, keyword, colFilters, sort, hidden, pageSize };
+    setViews((prev) => [...prev.filter((x) => x.name !== name), v]);
+    setViewName("");
+  };
+  const applyView = (v: DtView) => {
+    setKeyword(v.keyword || "");
+    setColFilters(v.colFilters || {});
+    setSort(v.sort ?? null);
+    setHidden(v.hidden || []);
+    setPageSize(v.pageSize ?? initialPageSize);
+    setMenu(null);
+  };
+  const deleteView = (name: string) => setViews((prev) => prev.filter((x) => x.name !== name));
+
+  const alignCls = (c: Col<T>) => (c.align === "right" ? "num" : c.align === "center" ? "dt-center" : "");
+
+  return (
+    <div className="dt">
+      <div className="dt-toolbar" ref={toolbarRef}>
+        <div className="dt-toolbar-left">
+          <div className="dt-search">
+            <span className="dt-search-ico" aria-hidden="true">⌕</span>
+            <input
+              className="dt-search-input" type="search" value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="Search…" aria-label="Search table"
+            />
+          </div>
+          <button className={`btn subtle dt-btn${showFilters ? " active" : ""}`}
+            aria-pressed={showFilters} onClick={() => setShowFilters((s) => !s)}>Filters</button>
+
+          <div className="dt-menu-wrap">
+            <button className="btn subtle dt-btn" aria-haspopup="true" aria-expanded={menu === "cols"}
+              onClick={() => setMenu(menu === "cols" ? null : "cols")}>Columns</button>
+            {menu === "cols" && (
+              <div className="dt-menu" role="menu">
+                <div className="dt-menu-title">Show columns</div>
+                {columns.map((c) => (
+                  <label key={c.key} className="dt-menu-check">
+                    <input type="checkbox" checked={!hidden.includes(c.key)}
+                      onChange={() => toggleColumn(c.key)} aria-label={`Toggle column ${c.header || c.key}`} />
+                    <span>{c.header || c.key}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="dt-menu-wrap">
+            <button className="btn subtle dt-btn" aria-haspopup="true" aria-expanded={menu === "views"}
+              onClick={() => setMenu(menu === "views" ? null : "views")}>Views</button>
+            {menu === "views" && (
+              <div className="dt-menu" role="menu">
+                <div className="dt-menu-title">Saved views</div>
+                {views.length === 0 && <div className="dt-menu-empty">No saved views yet.</div>}
+                {views.map((v) => (
+                  <div key={v.name} className="dt-view-row">
+                    <button className="dt-view-apply" onClick={() => applyView(v)}>{v.name}</button>
+                    <button className="dt-view-del" aria-label={`Delete view ${v.name}`}
+                      onClick={() => deleteView(v.name)}>×</button>
+                  </div>
+                ))}
+                <div className="dt-view-save">
+                  <input value={viewName} onChange={(e) => setViewName(e.target.value)}
+                    placeholder="Name this view" aria-label="New view name"
+                    onKeyDown={(e) => { if (e.key === "Enter") saveView(); }} />
+                  <button className="btn subtle dt-btn" disabled={!viewName.trim()} onClick={saveView}>Save</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button className="btn subtle dt-btn" onClick={exportCsv}>Export CSV</button>
+        </div>
+        {toolbarRight && <div className="dt-toolbar-right">{toolbarRight}</div>}
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="dt-empty">{empty ?? <div className="muted">No rows.</div>}</div>
+      ) : (
+        <>
+          <div className="dt-table-wrap">
+            <table className="dt-table">
+              <thead>
+                <tr>
+                  {visibleCols.map((c) => {
+                    const sortable = c.sortable !== false;
+                    const active = sort?.key === c.key;
+                    const arrow = active ? (sort!.dir === "asc" ? "▲" : "▼") : "";
+                    return (
+                      <th key={c.key} className={alignCls(c)} style={c.width ? { width: c.width } : undefined}>
+                        {sortable ? (
+                          <button className={`dt-sort${active ? " active" : ""}`}
+                            onClick={() => toggleSort(c)} aria-label={`Sort by ${c.header}`}>
+                            <span>{c.header}</span>
+                            {arrow && <span className="dt-sort-arrow" aria-hidden="true">{arrow}</span>}
+                          </button>
+                        ) : <span>{c.header}</span>}
+                      </th>
+                    );
+                  })}
+                </tr>
+                {showFilters && (
+                  <tr className="dt-filter-row">
+                    {visibleCols.map((c) => (
+                      <th key={c.key} className={alignCls(c)}>
+                        {c.filterable !== false && (
+                          <input className="dt-filter-input" value={colFilters[c.key] || ""}
+                            onChange={(e) => setColFilters((f) => ({ ...f, [c.key]: e.target.value }))}
+                            placeholder="Filter" aria-label={`Filter ${c.header}`} />
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                )}
+              </thead>
+              <tbody>
+                {visible.map((row) => {
+                  const k = rowKey(row);
+                  return (
+                    <tr key={k} className={onRowClick ? "rowlink" : undefined}
+                      onClick={onRowClick ? () => onRowClick(row) : undefined}>
+                      {visibleCols.map((c) => (
+                        <td key={c.key} className={alignCls(c)}>
+                          {c.render ? c.render(row) : String((row as any)[c.key] ?? "")}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+                {visible.length === 0 && (
+                  <tr><td colSpan={Math.max(1, visibleCols.length)} className="muted dt-no-match">
+                    No rows match the current filters.
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="dt-footer">
+            <label className="dt-pagesize">
+              <span>Rows</span>
+              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} aria-label="Rows per page">
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={0}>All</option>
+              </select>
+            </label>
+            <div className="dt-footer-right">
+              <span className="dt-range">
+                {total === 0 ? "0" : `${start + 1}–${Math.min(start + eff, total)}`} of {total}
+              </span>
+              <button className="btn subtle dt-btn" aria-label="Previous page"
+                disabled={safePage <= 0} onClick={() => setPage(Math.max(0, safePage - 1))}>Prev</button>
+              <button className="btn subtle dt-btn" aria-label="Next page"
+                disabled={safePage >= pageCount - 1} onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}>Next</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

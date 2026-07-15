@@ -736,3 +736,112 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .ws-workflow-strip .wsw-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
 .ws-workflow-strip .wsw-stage { color: var(--body); }
 .ws-workflow-strip .wsw-sla { font-size: 11.5px; color: var(--muted); }
+
+/* ============================================================================
+   DataTable — the shared list surface (search · sort · per-column filters ·
+   column chooser · pagination · CSV · saved views). Reuses the existing table,
+   pill-button, badge and surface tokens so an adopted list reads as before,
+   just with the toolbar + footer chrome added around it.
+   ============================================================================ */
+.dt { display: flex; flex-direction: column; gap: 12px; }
+
+/* toolbar */
+.dt-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+.dt-toolbar-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dt-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* compact toolbar buttons (share .btn.subtle geometry, but smaller) */
+.dt-btn { padding: 6px 12px; font-size: 12.5px; }
+.dt-btn.active { background: var(--ocean-8); color: #fff; border-color: var(--ocean-8); }
+
+/* pill search box (mirrors the topbar search language) */
+.dt-search {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: var(--r-pill);
+  background: var(--surface-strong); border: 1px solid transparent; cursor: text;
+  min-width: 200px; max-width: 320px; flex: 1 1 220px;
+  transition: background .12s ease, border-color .12s ease;
+}
+.dt-search:focus-within { background: var(--canvas); border-color: var(--hairline); }
+.dt-search .dt-search-ico { color: var(--muted); font-size: 14px; flex: 0 0 auto; }
+.dt-search .dt-search-input {
+  flex: 1; min-width: 0; width: auto; border: 0; padding: 0; background: transparent;
+  font-size: 12.5px; color: var(--ink); box-shadow: none !important;
+}
+.dt-search .dt-search-input:focus { border: 0; outline: none; box-shadow: none !important; }
+.dt-search .dt-search-input::placeholder { color: var(--muted); }
+/* strip the native search "clear" affordance so it matches the pill */
+.dt-search .dt-search-input::-webkit-search-decoration,
+.dt-search .dt-search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
+
+/* dropdown menus (columns + views) */
+.dt-menu-wrap { position: relative; }
+.dt-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
+  min-width: 200px; max-height: 320px; overflow-y: auto;
+  background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-md);
+  box-shadow: var(--shadow-hover); padding: 8px;
+}
+.dt-menu-title {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); font-weight: 600; padding: 4px 8px 8px;
+}
+.dt-menu-empty { font-size: 12px; color: var(--muted); padding: 4px 8px 8px; }
+.dt-menu-check {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--r-sm);
+  font-size: 13px; color: var(--ink); cursor: pointer;
+}
+.dt-menu-check:hover { background: var(--surface-soft); }
+.dt-menu-check input { width: auto; }
+
+/* saved-view rows */
+.dt-view-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.dt-view-apply {
+  flex: 1; text-align: left; border: 0; background: transparent; cursor: pointer;
+  padding: 6px 8px; border-radius: var(--r-sm); font-size: 13px; color: var(--ocean-8); font-weight: 500;
+  font-family: var(--font-sans);
+}
+.dt-view-apply:hover { background: var(--light-blue-soft); }
+.dt-view-del {
+  flex: 0 0 auto; width: 24px; height: 24px; border: 1px solid var(--hairline); background: var(--canvas);
+  color: var(--muted); border-radius: var(--r-sm); cursor: pointer; font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.dt-view-del:hover { border-color: var(--down); color: var(--down); }
+.dt-view-save { display: flex; gap: 6px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hairline-soft); }
+.dt-view-save input { padding: 6px 10px; font-size: 12.5px; }
+
+/* table (horizontal-scroll wrapper — page never scrolls sideways) */
+.dt-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.dt-table-wrap > .dt-table { min-width: 100%; }
+.dt-table th.dt-center, .dt-table td.dt-center { text-align: center; }
+
+/* sortable header button */
+.dt-sort {
+  display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; cursor: pointer;
+  padding: 0; color: inherit; font: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .05em; font-family: var(--font-sans);
+}
+.dt-sort:hover { color: var(--ocean-8); }
+.dt-sort.active { color: var(--ocean-8); }
+.dt-sort-arrow { font-size: 9px; }
+.dt-table th.num .dt-sort { justify-content: flex-end; width: 100%; }
+
+/* per-column filter row */
+.dt-filter-row th { padding-top: 0; padding-bottom: 8px; border-bottom: 1px solid var(--hairline); }
+.dt-filter-input { padding: 5px 9px; font-size: 12px; border-radius: var(--r-sm); }
+
+.dt-no-match { text-align: center; padding: 22px 10px; }
+.dt-empty { padding: 4px 0; }
+
+/* footer: page-size + range + prev/next */
+.dt-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding-top: 4px;
+}
+.dt-pagesize { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 0; }
+.dt-pagesize select { width: auto; padding: 5px 9px; font-size: 12.5px; border-radius: var(--r-sm); }
+.dt-footer-right { display: flex; align-items: center; gap: 10px; }
+.dt-range { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
