@@ -2,8 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Helix — Governed AI for Wholesale Credit</title>
+    <meta name="description" content="Governed AI for wholesale credit: AI-first loan origination & lifecycle with deterministic figures and human-gated decisions." />
+
+    <!-- Installable PWA: web app manifest + platform chrome. Assets are hand-written
+         and served from the build's public root — nothing is fetched remotely. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#005b72" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <!-- iOS standalone (add-to-home-screen) -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Helix" />
     <!-- Coinbase typeface substitutes (per design system): Inter for display/body,
          JetBrains Mono for tabular numerals. Loaded best-effort; the CSS font stack
          falls back to the system UI fonts when offline. -->

@@ -1058,6 +1058,7 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
   outline: 2px solid var(--on-primary);
   outline-offset: 2px;
   text-decoration: none;
+}
 /* ---- print / PDF rendering affordance (Wave-3: DocGen · Cad proposal · Committee sanction) ---- */
 /* The downloaded page itself is a self-contained standalone HTML document with its own
    inlined print CSS (served by decision-service /api/docs/{id}/print and
@@ -1071,3 +1072,103 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .print-actions .btn.ghost {
   border-style: dashed;
 }
+
+/* ============================================================================
+   Mobile / responsive pass (APPENDED at EOF — additive only).
+
+   Goal: the page body never scrolls horizontally on small screens, dense chrome
+   (topbar, cards, tables, forms) condenses gracefully, and tap targets are
+   comfortable. Everything here is scoped inside min-/max-width media queries, so
+   the desktop layout (≥ 981px) is byte-for-byte unchanged. The two existing
+   breakpoints are reused: 980px (tablet — the sidebar becomes a drawer here) and
+   a new 640px (phone). Nothing above 980px is touched.
+   ============================================================================ */
+
+/* ---- Tablet & phone (≤ 980px): the sidebar is already a drawer at this width - */
+@media (max-width: 980px) {
+  /* Safety net so the body can never scroll sideways even if a child overflows.
+     `clip` (not `hidden`) does NOT create a scroll container, so it leaves the
+     drawer's fixed positioning and any sticky elements (e.g. the deal-workspace
+     jump bar) working exactly as before. */
+  html, body { overflow-x: clip; }
+  img, video { max-width: 100%; height: auto; }
+
+  /* Topbar wraps: the chip/search/actor cluster drops below the title instead of
+     being crushed against it. */
+  .topbar { padding: 12px 16px; flex-wrap: wrap; }
+  .topbar-right { width: 100%; justify-content: flex-start; gap: 10px; row-gap: 8px; }
+  .content { padding: 20px 16px; }
+  .gov-strip { padding: 9px 16px; gap: 10px 12px; }
+
+  /* Cap the drawer so a scrim always remains tappable on narrow phones. */
+  .sidebar { max-width: 84vw; }
+
+  /* Any wide table that is NOT already inside a managed scroll wrapper becomes a
+     horizontally-scrollable block, so it scrolls within its own box instead of
+     widening the page. The DataTable (.dt-table-wrap) and hand-wrapped
+     (.table-scroll) tables already scroll, so restore those inner elements to a
+     real table box and let their existing wrapper do the scrolling. */
+  .content table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  .content .dt-table-wrap > table,
+  .content .table-scroll > table {
+    display: table;
+    overflow: visible;
+  }
+
+  /* Grids collapse to a single, viewport-constrained column. minmax(0,1fr) — NOT
+     plain 1fr — sets a ZERO minimum, and min-width:0 on the items lets a wide child
+     (a nested grid, a DataTable, a long value) shrink and scroll inside its own box
+     instead of forcing the grid track — and therefore the page — wider than the
+     screen. Plain `.grid` (gap-only, no cols class) is included because its default
+     `auto` column otherwise sizes to content max-content and overflows. */
+  .grid,
+  .grid.cols-2,
+  .grid.cols-3,
+  .grid.cols-4 { grid-template-columns: minmax(0, 1fr); }
+  .grid > * { min-width: 0; }
+
+  /* Fixed-column inline stat grids (rendered with an inline style, so a class-based
+     media query can't reach them) — collapse the repeat(N,1fr) rows to 2-up. Only
+     matches inline grids that use repeat(), i.e. the compact Stat tile rows. */
+  .content div[style*="grid-template-columns"][style*="repeat"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* Comfortable tap targets (~40px min) for the smaller controls. Text inputs and
+     full-size selects already clear 40px via their padding. */
+  button.btn { min-height: 40px; }
+  .cmdk-btn { min-height: 40px; }
+  .hamburger { width: 40px; height: 40px; }
+  .notif-bell-btn { width: 40px; height: 40px; }
+  .nav button.nav-item { min-height: 42px; }
+  .topbar-actor select { min-height: 40px; }
+  .notif-item { padding-top: 13px; padding-bottom: 13px; }
+}
+
+/* ---- Phone (≤ 640px): tighter chrome, full-width search, stacked form rows ---- */
+@media (max-width: 640px) {
+  .topbar { padding: 10px 12px; gap: 10px; }
+  .topbar h2 { font-size: 18px; }
+  .topbar .crumb { font-size: 11px; }
+  .content { padding: 16px 12px; }
+  .gov-strip { font-size: 11px; padding: 8px 12px; gap: 6px 10px; }
+
+  /* Search takes its own full-width row within the wrapped topbar cluster; the
+     ⌘K hint is redundant on touch, so hide it. */
+  .topbar-right .topsearch { flex: 1 1 100%; max-width: none; min-width: 0; }
+  .topsearch kbd { display: none; }
+
+  /* Stack the remaining multi-column rows that rely on flex without wrapping. */
+  .inline { flex-wrap: wrap; }
+  .flexbetween { flex-wrap: wrap; }
+
+  /* Slightly calmer heroes / banners on a phone. */
+  .gov-banner { padding: 18px 16px; }
+  .rolehome-hero { padding: 14px 14px; }
+}
+
