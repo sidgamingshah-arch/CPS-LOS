@@ -424,41 +424,49 @@ public class OriginationService {
      */
     private void recordSpreadVersion(LoanApplication app, String reference, SpreadRequest req,
                                      SpreadAnalysis result, String actor) {
-        int versionNo = spreadVersions.findTopByApplicationIdOrderByVersionNoDesc(app.getId())
-                .map(v -> v.getVersionNo() + 1).orElse(1);
-        String source;
-        if (req.source() != null && !req.source().isBlank()) {
-            source = req.source().trim().toUpperCase();
-            if (!SPREAD_VERSION_SOURCES.contains(source)) {
-                throw ApiException.badRequest("Unknown spread source: " + req.source()
-                        + " (expected MANUAL | DOC_INTEL | RESUBMISSION)");
-            }
-        } else {
-            source = versionNo == 1 ? "MANUAL" : "RESUBMISSION";
-        }
-
-        String snapshot;
+        // Version history is STRICTLY auxiliary. Nothing here — an unrecognised source
+        // marker, a snapshot serialisation error, or a persistence failure — may fail the
+        // authoritative spread that already committed above. So the source is tolerant
+        // (unknown falls back rather than throwing) and the whole body is non-fatal.
         try {
-            snapshot = json.writeValueAsString(result);
-        } catch (JsonProcessingException e) {
-            // Version history is auxiliary — a snapshot failure must never fail the spread.
-            log.warn("Could not serialise spread snapshot for {} v{}: {}", reference, versionNo, e.getMessage());
-            snapshot = "{\"error\":\"snapshot-serialization-failed\"}";
+            int versionNo = spreadVersions.findTopByApplicationIdOrderByVersionNoDesc(app.getId())
+                    .map(v -> v.getVersionNo() + 1).orElse(1);
+            String source;
+            if (req.source() != null && !req.source().isBlank()) {
+                String s = req.source().trim().toUpperCase();
+                source = SPREAD_VERSION_SOURCES.contains(s) ? s
+                        : (versionNo == 1 ? "MANUAL" : "RESUBMISSION");
+            } else {
+                source = versionNo == 1 ? "MANUAL" : "RESUBMISSION";
+            }
+
+            // A resubmission supersedes any prior confirmation (spread() already reset the
+            // gate to false) — clear stale confirmed stamps so the timeline stays truthful.
+            if (versionNo > 1) {
+                for (SpreadVersion prev : spreadVersions.findByApplicationIdOrderByVersionNoAsc(app.getId())) {
+                    if (prev.isConfirmed()) {
+                        prev.setConfirmed(false); prev.setConfirmedBy(null); prev.setConfirmedAt(null);
+                        spreadVersions.save(prev);
+                    }
+                }
+            }
+            SpreadVersion version = new SpreadVersion();
+            version.setApplicationId(app.getId());
+            version.setVersionNo(versionNo);
+            version.setCreatedBy(actor);
+            version.setSource(source);
+            version.setNote(req.note());
+            version.setSnapshot(json.writeValueAsString(result));
+            spreadVersions.save(version);
+
+            audit.human(actor, "SPREAD_VERSION_RECORDED", "Application", reference,
+                    "Spread version %d recorded (%s, %d period(s))".formatted(
+                            versionNo, source, result.periods().size()),
+                    Map.of("versionNo", versionNo, "source", source, "periods", result.periods().size()));
+        } catch (Exception e) {
+            // Never propagate: the spread is committed; the timeline is best-effort.
+            log.warn("Spread version timeline write failed for {} (non-fatal): {}", reference, e.getMessage());
         }
-
-        SpreadVersion version = new SpreadVersion();
-        version.setApplicationId(app.getId());
-        version.setVersionNo(versionNo);
-        version.setCreatedBy(actor);
-        version.setSource(source);
-        version.setNote(req.note());
-        version.setSnapshot(snapshot);
-        spreadVersions.save(version);
-
-        audit.human(actor, "SPREAD_VERSION_RECORDED", "Application", reference,
-                "Spread version %d recorded (%s, %d period(s))".formatted(
-                        versionNo, source, result.periods().size()),
-                Map.of("versionNo", versionNo, "source", source, "periods", result.periods().size()));
     }
 
     @Transactional(readOnly = true)
@@ -549,14 +557,21 @@ public class OriginationService {
         }
         app.setSpreadConfirmed(true);
         applications.save(app);
-        // Stamp the confirmation onto the latest version-timeline entry (history only —
-        // the gate itself remains the spreadConfirmed flag above, unchanged).
-        spreadVersions.findTopByApplicationIdOrderByVersionNoDesc(app.getId()).ifPresent(v -> {
-            v.setConfirmed(true);
-            v.setConfirmedBy(actor);
-            v.setConfirmedAt(Instant.now());
-            spreadVersions.save(v);
-        });
+        // Confirmation is a SINGLE authoritative pointer: clear it on every prior version,
+        // then stamp only the latest — so the timeline never shows two "confirmed" versions
+        // after a re-confirm. History only; the gate itself is the spreadConfirmed flag above.
+        List<SpreadVersion> all = spreadVersions.findByApplicationIdOrderByVersionNoAsc(app.getId());
+        SpreadVersion latest = null;
+        for (SpreadVersion v : all) {
+            if (v.isConfirmed()) { v.setConfirmed(false); v.setConfirmedBy(null); v.setConfirmedAt(null); }
+            latest = v;
+        }
+        if (latest != null) {
+            latest.setConfirmed(true);
+            latest.setConfirmedBy(actor);
+            latest.setConfirmedAt(Instant.now());
+        }
+        spreadVersions.saveAll(all);
         audit.human(actor, "SPREAD_CONFIRMED", "Application", reference,
                 "Analyst confirmed the spread; it may now feed rating, capital and pricing", Map.of());
         return app;

@@ -776,7 +776,15 @@ export const fmt = {
   /** Date-only, unambiguous "12 Mar 2026" (locale-stable; accepts ISO strings/epoch/Date). */
   date: (v: string | number | Date | null | undefined) => {
     if (v == null || v === "") return "—";
-    const d = new Date(v);
+    // Parse a bare YYYY-MM-DD as LOCAL midnight, not UTC — otherwise new Date("2026-03-15")
+    // is UTC and renders as the 14th in any negative-offset timezone.
+    let d: Date;
+    if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
+      const [y, m, day] = v.split("-").map(Number);
+      d = new Date(y, m - 1, day);
+    } else {
+      d = new Date(v);
+    }
     if (isNaN(d.getTime())) return String(v);
     return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
   },

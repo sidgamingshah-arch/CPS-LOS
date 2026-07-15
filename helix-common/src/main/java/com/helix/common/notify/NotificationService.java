@@ -254,7 +254,11 @@ public class NotificationService {
             Integer max = parent.getMaxReminders();
             if (every == null || max == null) continue;
             int sent = parent.getRemindersSent() == null ? 0 : parent.getRemindersSent();
-            if (sent >= max) continue;                       // capped
+            if (sent >= max) {                               // capped — retire from future scans
+                parent.setReminderEveryHours(null);
+                repo.save(parent);
+                continue;
+            }
             Instant baseline = parent.getLastReminderAt() != null ? parent.getLastReminderAt()
                     : (parent.getSentAt() != null ? parent.getSentAt() : parent.getCreatedAt());
             if (baseline == null || baseline.plusSeconds(every * 3600L).isAfter(now)) continue; // not due
@@ -270,6 +274,7 @@ public class NotificationService {
             enqueueInternal(reminder, "system", null, null, null, false);
             parent.setRemindersSent(seq);
             parent.setLastReminderAt(now);
+            if (seq >= max) parent.setReminderEveryHours(null);   // reached cap — retire from future scans
             repo.save(parent);
             created++;
         }

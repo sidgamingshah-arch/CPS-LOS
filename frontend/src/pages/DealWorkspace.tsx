@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { decision, origination, portfolio, risk, tracking as covTracking, workflow, WorkflowView, fmt } from "../api";
-import { useApp } from "../app-context";
+import { useApp, isNavEnabled } from "../app-context";
 import { AiBadge, Badge, Button, Card, Field, GovFlow, GradeBadge, statusTone, useAsync } from "../ui";
 import { useCodes } from "../code-values";
 import CopilotPanel from "../CopilotPanel";
@@ -75,7 +75,7 @@ const scrollToSection = (id: string) =>
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
 export default function DealWorkspace({ reference }: { reference: string }) {
-  const { actor, notify, nav } = useApp();
+  const { actor, notify, nav, aiEnabled } = useApp();
   // CODE_VALUE dropdowns shared across the nested forms below.
   const grades = useCodes("GRADE_SCALE");
   const overrideReasons = useCodes("OVERRIDE_REASON");
@@ -164,7 +164,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
         </div>
         <div className="ws-links">
           <span className="ws-links-label">Open in</span>
-          {OPEN_IN.map((l) => (
+          {OPEN_IN.filter((l) => isNavEnabled(l.view, aiEnabled)).map((l) => (
             <button key={l.view} className="ws-link-chip" onClick={() => nav(l.view, reference)}>{l.label}</button>
           ))}
         </div>

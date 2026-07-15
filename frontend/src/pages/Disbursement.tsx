@@ -47,8 +47,18 @@ function InlinePanel({ title, danger, busy, disabled, submitLabel, onSubmit, onC
       role="group"
       aria-label={title}
       onKeyDown={(e) => {
-        if (e.key === "Escape") { e.stopPropagation(); onCancel(); }
-        if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") {
+        const tag = (e.target as HTMLElement).tagName;
+        if (e.key === "Escape") {
+          // Let native controls consume Escape first (close a <select> popup,
+          // abandon in-progress textarea editing) rather than tearing the panel down.
+          if (tag !== "TEXTAREA" && tag !== "SELECT") { e.stopPropagation(); onCancel(); }
+          return;
+        }
+        // Enter submits ONLY from a single-line text input — never from a button
+        // (so Enter-on-Cancel can't submit), a <select> (so it can't fire before an
+        // option is picked), a <textarea>, or a field-less confirmation panel (so an
+        // irreversible Release/Reverse needs a deliberate click). Guard IME composition.
+        if (e.key === "Enter" && tag === "INPUT" && !(e.nativeEvent as any).isComposing) {
           e.preventDefault();
           if (!disabled && !busy) onSubmit();
         }
