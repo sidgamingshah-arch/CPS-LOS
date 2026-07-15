@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppContext, AI_BY_NAV, isNavEnabled } from "./app-context";
-import { governance, setAuthToken } from "./api";
+import { governance, masters, setAuthToken } from "./api";
+import {
+  resolveWorkspace, parseRoleWorkspaceMaster, isNavItemInScope,
+  type RoleWorkspaceMap,
+} from "./role-scope";
 import { Toast, AiBadge, HumanBadge, DeterministicBadge, GovernanceStrip } from "./ui";
 import CommandPalette from "./CommandPalette";
 import CopilotDock from "./CopilotDock";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import RoleDashboard from "./pages/RoleDashboard";
 import RulePacks from "./pages/RulePacks";
 import Governance from "./pages/Governance";
 import Disbursement from "./pages/Disbursement";
@@ -63,6 +68,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Overview",
     items: [
+      { key: "home", label: "My Workspace" },
       { key: "dashboard", label: "Portfolio Dashboard" },
       { key: "copilot", label: "Copilot" },
     ],
@@ -137,6 +143,7 @@ const SCREENS = NAV_GROUPS.flatMap((g) =>
 );
 
 const CRUMB: Record<string, string> = {
+  home: "Role-scoped workspace — my tasks, queries, approvals & pipeline",
   dashboard: "Portfolio & book-level intelligence",
   deals: "Origination pipeline",
   spreading: "SpreadJS-style grid · multi-period · cell provenance · override-with-reason gate · ratios",
@@ -192,6 +199,11 @@ export default function App() {
   // boot; without one the app renders the Login screen.
   const [token, setToken] = useState<string | null>(() => lsGet("helix.token", "") || null);
   const [actor, setActor] = useState(() => lsGet("helix.actor", "demo.user"));
+  // The acting identity's roles (from the ACTOR_ROLE master, echoed at login).
+  // Restored from localStorage on reload so role-scope survives a refresh.
+  const [roles, setRoles] = useState<string[]>(() => {
+    try { return JSON.parse(lsGet("helix.roles", "[]")) as string[]; } catch { return []; }
+  });
   if (token) setAuthToken(token);
   const [msg, setMsg] = useState<{ text: string; err?: boolean } | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
@@ -205,6 +217,10 @@ export default function App() {
   const [navOpen, setNavOpen] = useState(false);   // mobile drawer
   const [cmdkOpen, setCmdkOpen] = useState(false); // ⌘K palette
   const [aiEnabled, setAiEnabled] = useState<Record<string, boolean>>({});
+  // Config-driven role→workspace overrides from the ROLE_WORKSPACE master (generic
+  // master engine). Empty until fetched; role-scope.ts falls back to its baked-in
+  // conservative map when this is empty, so the nav works even if the master is absent.
+  const [roleWorkspace, setRoleWorkspace] = useState<RoleWorkspaceMap>({});
 
   // Pull the resolved AI-governance map on boot. Conservative fallback: if the
   // call fails we treat every capability as enabled (matches the server's TTL'd
@@ -221,6 +237,14 @@ export default function App() {
       .catch(() => setAiEnabled({}));
   }, []);
 
+  // Pull the config-driven role→workspace map (ROLE_WORKSPACE master) on boot.
+  // Best-effort: any failure/empty simply leaves the baked-in fallback map in force.
+  useEffect(() => {
+    masters.list("ROLE_WORKSPACE")
+      .then((recs) => setRoleWorkspace(parseRoleWorkspaceMaster(recs)))
+      .catch(() => setRoleWorkspace({}));
+  }, []);
+
   const notify = useCallback((text: string, err?: boolean) => setMsg({ text, err }), []);
   const nav = useCallback((v: string, r?: string) => {
     setView(v);
@@ -228,11 +252,18 @@ export default function App() {
     setNavOpen(false); // close the mobile drawer on navigation
   }, []);
 
-  const onLogin = useCallback((tok: string, who: string) => {
+  const onLogin = useCallback((tok: string, who: string, _displayName?: string, rolesArg: string[] = []) => {
     setAuthToken(tok);
     setToken(tok);
     setActor(who);
-  }, []);
+    setRoles(rolesArg);
+    lsSet("helix.roles", JSON.stringify(rolesArg));
+    // Route a role-scoped (non-see-all) identity to its landing view. See-all
+    // identities (demo / admin / CRO) are left exactly where they were, so the
+    // existing demo UX is unchanged.
+    const ws = resolveWorkspace(who, rolesArg, roleWorkspace);
+    if (!ws.seeAll) setView(ws.landing);
+  }, [roleWorkspace]);
   const onLogout = useCallback(() => {
     setAuthToken(null);
     setToken(null);
@@ -250,6 +281,7 @@ export default function App() {
   useEffect(() => { lsSet("helix.view", view); }, [view]);
   useEffect(() => { lsSet("helix.ref", ref ?? ""); }, [ref]);
   useEffect(() => { lsSet("helix.actor", actor); }, [actor]);
+  useEffect(() => { lsSet("helix.roles", JSON.stringify(roles)); }, [roles]);
   useEffect(() => { if (token) lsSet("helix.token", token); }, [token]);
   useEffect(() => { lsSet("helix.nav.collapsed", JSON.stringify(collapsed)); }, [collapsed]);
   useEffect(() => { lsSet("helix.nav.rail", railCollapsed ? "1" : "0"); }, [railCollapsed]);
@@ -266,8 +298,26 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const ctx = useMemo(() => ({ actor, notify, nav, aiEnabled, ref }),
-                       [actor, notify, nav, aiEnabled, ref]);
+  // Resolve the effective role workspace (nav scope + landing). Default-permissive:
+  // see-all identities (demo / admin / CRO / unmapped) resolve to "show everything".
+  const workspace = useMemo(
+    () => resolveWorkspace(actor, roles, roleWorkspace),
+    [actor, roles, roleWorkspace],
+  );
+
+  // Guard: if a role-scoped user lands on a nav screen outside their scope (e.g. a
+  // persisted view after login as a narrower role), bounce them to their landing.
+  // Never fires for see-all identities, and Overview screens are always in scope,
+  // so the deal workspace + dashboards stay reachable for everyone.
+  useEffect(() => {
+    if (workspace.seeAll) return;
+    const group = NAV_GROUPS.find((g) => g.items.some((n) => n.key === view));
+    if (!group) return; // non-nav views (e.g. "workspace") are always allowed
+    if (!isNavItemInScope(workspace, group.title, view)) setView(workspace.landing);
+  }, [workspace, view]);
+
+  const ctx = useMemo(() => ({ actor, roles, notify, nav, aiEnabled, ref }),
+                       [actor, roles, notify, nav, aiEnabled, ref]);
 
   const title = NAV.find((n) => n.key === view)?.label || "Deal Workspace";
   // The active-deal context chip: show whenever a deal is selected but we're not
@@ -300,8 +350,12 @@ export default function App() {
               const isCollapsed = !!collapsed[g.title];
               // Hide AI-disabled screens from the nav. The server-side enforcement
               // (403 forbiddenAutonomy) is the real gate; this just stops users
-              // landing on a screen whose primary action wouldn't work.
-              const items = g.items.filter((n) => isNavEnabled(n.key, aiEnabled));
+              // landing on a screen whose primary action wouldn't work. On top of
+              // that, layer the ROLE scope (default-permissive: see-all identities
+              // pass every item — see role-scope.ts).
+              const items = g.items.filter(
+                (n) => isNavEnabled(n.key, aiEnabled) && isNavItemInScope(workspace, g.title, n.key),
+              );
               if (items.length === 0) return null;
               return (
                 <div key={g.title} className={`nav-group${isCollapsed ? " collapsed" : ""}`}>
@@ -375,6 +429,7 @@ export default function App() {
           </div>
           <GovernanceStrip />
           <div className="content">
+            {view === "home" && <RoleDashboard />}
             {view === "dashboard" && <Dashboard />}
             {view === "deals" && <Deals />}
             {view === "ipnotes" && <IpNotes />}

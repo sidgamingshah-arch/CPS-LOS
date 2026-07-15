@@ -981,3 +981,33 @@ export const tatMis = {
   // Query / RFI SLA rollup for a given service (auto-exposed per service by helix-common).
   querySla: (svc: string) => call<any>(`/${svc}/api/queries/sla-rollup`, "GET"),
 };
+
+// ---- case-management tasks (WorkItem inbox; workflow-service /api/tasks) ----
+// Read-only surfaces used by the role-scoped landing dashboards ("my tasks").
+export const tasks = {
+  inbox: (assignee: string) =>
+    call<any[]>(`/workflow/api/tasks/inbox?assignee=${encodeURIComponent(assignee)}`, "GET"),
+  queue: (key: string) =>
+    call<any[]>(`/workflow/api/tasks/queue/${encodeURIComponent(key)}`, "GET"),
+  subject: (ref: string, type?: string) =>
+    call<any[]>(`/workflow/api/tasks/subject?ref=${encodeURIComponent(ref)}${type ? `&type=${encodeURIComponent(type)}` : ""}`, "GET"),
+  get: (ref: string) => call<any>(`/workflow/api/tasks/${ref}`, "GET"),
+  claim: (ref: string, actor: string) =>
+    call<any>(`/workflow/api/tasks/${ref}/claim`, "POST", undefined, actor),
+  complete: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/workflow/api/tasks/${ref}/complete`, "POST", { note }, actor),
+};
+
+// ---- query / RFI collaboration (helix-common surface on every service) ----
+// The inbox for a role dashboard reads the decision-service shared surface (the
+// primary collaboration lane); `svc` overridable for other services if needed.
+export const queries = {
+  list: (q?: { subjectRef?: string; addressee?: string }, svc = "decision") => {
+    const p = new URLSearchParams();
+    if (q?.subjectRef) p.set("subjectRef", q.subjectRef);
+    if (q?.addressee) p.set("addressee", q.addressee);
+    const qs = p.toString();
+    return call<any[]>(`/${svc}/api/queries` + (qs ? `?${qs}` : ""), "GET");
+  },
+  get: (ref: string, svc = "decision") => call<any>(`/${svc}/api/queries/${ref}`, "GET"),
+};
