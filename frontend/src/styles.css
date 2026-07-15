@@ -941,3 +941,17 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .ipnote-converted {
   font-size: 13px; color: var(--human); font-weight: 600; align-self: center;
 }
+/* ---- SCF (Supply-Chain Finance) product paper ---- */
+.scf-note {
+  margin: 4px 0 12px; padding: 8px 12px; font-size: 12px; line-height: 1.5;
+  border-left: 3px solid var(--det); border-radius: 6px;
+  background: var(--det-soft); color: var(--ink-2, inherit);
+}
+.scf-rollup {
+  display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px;
+  padding-top: 10px; border-top: 1px solid var(--hairline-soft);
+  font-size: 13px; color: var(--muted);
+}
+.scf-rollup b { color: var(--ink, inherit); font-variant-numeric: tabular-nums; }
+.scf-reasons { margin: 0; padding-left: 16px; }
+.scf-reasons li { margin-bottom: 2px; color: var(--muted); }

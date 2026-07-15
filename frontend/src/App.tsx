@@ -22,6 +22,7 @@ import MonitoringArtifacts from "./pages/MonitoringArtifacts";
 import Limits from "./pages/Limits";
 import Masters from "./pages/Masters";
 import Structuring from "./pages/Structuring";
+import Scf from "./pages/Scf";
 import Syndication from "./pages/Syndication";
 import DocIntel from "./pages/DocIntel";
 import RiskLab from "./pages/RiskLab";
@@ -70,6 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "ipnotes", label: "IP Notes" },
       { key: "deals", label: "Deals" },
       { key: "structuring", label: "Deal Structuring" },
+      { key: "scf", label: "Supply-Chain Finance" },
       { key: "syndication", label: "Syndication" },
       { key: "spreading", label: "Financial Spreading" },
       { key: "docintel", label: "Doc Intelligence" },
@@ -129,6 +131,7 @@ const CRUMB: Record<string, string> = {
   deals: "Origination pipeline",
   spreading: "SpreadJS-style grid · multi-period · cell provenance · override-with-reason gate · ratios",
   structuring: "Specialised CP variants · group · joint/dual-obligor · syndication · FI ICR · renewal copy",
+  scf: "Supply-chain finance · anchor programme · deterministic spoke eligibility · PRODUCT_PAPER noting · limit via limit-service",
   syndication: "Syndicate book · fee waterfall · agency reconciliation · participant feed",
   docintel: "GenAI document intelligence · extraction (human-confirmed) · language · translation · checks",
   counterparties: "Onboarding · KYC/KYB · UBO",
@@ -362,6 +365,7 @@ export default function App() {
             {view === "ipnotes" && <IpNotes />}
             {view === "spreading" && <Spreading />}
             {view === "structuring" && <Structuring />}
+            {view === "scf" && <Scf />}
             {view === "syndication" && <Syndication />}
             {view === "docintel" && <DocIntel />}
             {view === "counterparties" && <Counterparties />}

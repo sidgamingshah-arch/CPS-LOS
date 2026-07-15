@@ -215,6 +215,24 @@ export const structure = {
     call<any>(`/origination/api/applications/${ref}/structure/copy-from/${sourceRef}`, "POST", undefined, actor),
 };
 
+// ---- Supply-Chain Finance (SCF) product paper (anchor programme + spokes) ----
+export const scf = {
+  list: (anchorRef?: string) =>
+    call<any[]>(`/origination/api/scf/programs${anchorRef ? `?anchorRef=${encodeURIComponent(anchorRef)}` : ""}`, "GET"),
+  get: (scfRef: string) => call<any>(`/origination/api/scf/programs/${scfRef}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/origination/api/scf/programs", "POST", body, actor),
+  addSpoke: (scfRef: string, body: any, actor: string) =>
+    call<any>(`/origination/api/scf/programs/${scfRef}/spokes`, "POST", body, actor),
+  submit: (scfRef: string, actor: string) =>
+    call<any>(`/origination/api/scf/programs/${scfRef}/submit`, "POST", undefined, actor),
+  approve: (scfRef: string, body: any, actor: string) =>
+    call<any>(`/origination/api/scf/programs/${scfRef}/approve`, "POST", body, actor),
+  reject: (scfRef: string, body: any, actor: string) =>
+    call<any>(`/origination/api/scf/programs/${scfRef}/reject`, "POST", body, actor),
+  withdraw: (scfRef: string, actor: string) =>
+    call<any>(`/origination/api/scf/programs/${scfRef}/withdraw`, "POST", undefined, actor),
+};
+
 // ---- document generation (templates · clause surgery · confirm) ----
 export const docs = {
   templates: () => call<any[]>("/decision/api/docs/templates", "GET"),
