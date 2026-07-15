@@ -986,3 +986,16 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
   border-left: 3px solid var(--human); border-radius: 6px;
   background: var(--human-soft); color: var(--ink-2, inherit);
 }
+/* ---- TAT / MIS reporting (deterministic case & query rollups) ---- */
+.tat-filters {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+}
+.tat-filters .field { min-width: 150px; }
+.tat-statgrid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;
+}
+.tat-note {
+  margin-top: 4px; padding: 8px 12px; font-size: 12px; line-height: 1.5;
+  border-left: 3px solid var(--det); border-radius: 6px;
+  background: var(--det-soft); color: var(--ink-2, inherit);
+}

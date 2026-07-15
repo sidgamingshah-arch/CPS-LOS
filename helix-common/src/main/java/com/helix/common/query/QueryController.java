@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Query / RFI collaboration endpoints, automatically present in every service that includes
@@ -59,6 +60,15 @@ public class QueryController {
     public List<QueryThread> list(@RequestParam(required = false) String subjectRef,
                                   @RequestParam(required = false) String addressee) {
         return queries.list(subjectRef, addressee);
+    }
+
+    /**
+     * Deterministic query / RFI SLA rollup for this service's own threads — open / scheduled /
+     * responded / resolved / cancelled + overdue, broken down by channel. Read-only report.
+     */
+    @GetMapping("/sla-rollup")
+    public Map<String, Object> slaRollup() {
+        return queries.slaRollup();
     }
 
     @GetMapping("/{ref}")

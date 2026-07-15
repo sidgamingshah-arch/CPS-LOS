@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -124,6 +125,66 @@ public class QueryService {
     @Transactional(readOnly = true)
     public View get(String ref) {
         return view(require(ref));
+    }
+
+    /**
+     * Deterministic query / RFI SLA rollup for THIS service's own {@code query_threads} table
+     * (open / scheduled / responded / resolved / cancelled + overdue), broken down by channel.
+     * A read-only report surface — no writes, no cross-service fan-out (each service exposes its
+     * own auto-wired rollup). "Overdue" = a due date in the past on a still-outstanding thread
+     * (anything not yet RESOLVED / CANCELLED).
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> slaRollup() {
+        Instant now = Instant.now();
+        // Per-channel counters, slots: 0 total · 1 open · 2 scheduled · 3 responded · 4 resolved
+        // · 5 cancelled · 6 overdue. Insertion order follows the enum for stable output.
+        Map<QueryChannel, long[]> perChannel = new LinkedHashMap<>();
+        for (QueryChannel c : QueryChannel.values()) perChannel.put(c, new long[7]);
+        long[] all = new long[7];
+
+        for (QueryThread t : threads.findAll()) {
+            QueryStatus st = t.getStatus();
+            long[] slot = perChannel.computeIfAbsent(t.getChannel(), k -> new long[7]);
+            slot[0]++; all[0]++;
+            int idx = switch (st) {
+                case OPEN -> 1;
+                case SCHEDULED -> 2;
+                case RESPONDED -> 3;
+                case RESOLVED -> 4;
+                case CANCELLED -> 5;
+            };
+            slot[idx]++; all[idx]++;
+            boolean outstanding = st != QueryStatus.RESOLVED && st != QueryStatus.CANCELLED;
+            if (outstanding && t.getDueAt() != null && now.isAfter(t.getDueAt())) {
+                slot[6]++; all[6]++;
+            }
+        }
+
+        List<Map<String, Object>> byChannel = new ArrayList<>();
+        for (Map.Entry<QueryChannel, long[]> e : perChannel.entrySet()) {
+            long[] s = e.getValue();
+            if (s[0] == 0) continue;
+            byChannel.add(rollupRow(e.getKey().name(), s));
+        }
+
+        Map<String, Object> out = rollupRow(null, all);
+        out.put("generatedAt", now);
+        out.put("byChannel", byChannel);
+        return out;
+    }
+
+    private static Map<String, Object> rollupRow(String channel, long[] s) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        if (channel != null) row.put("channel", channel);
+        row.put("total", s[0]);
+        row.put("open", s[1]);
+        row.put("scheduled", s[2]);
+        row.put("responded", s[3]);
+        row.put("resolved", s[4]);
+        row.put("cancelled", s[5]);
+        row.put("overdue", s[6]);
+        return row;
     }
 
     @Transactional

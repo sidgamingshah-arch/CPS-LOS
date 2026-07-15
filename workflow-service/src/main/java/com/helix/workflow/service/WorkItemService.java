@@ -25,12 +25,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -419,6 +421,179 @@ public class WorkItemService {
         out.put("avgTatMinutes", completed == 0 ? null : totalMinutes / completed);
         out.put("tasks", rows);
         return out;
+    }
+
+    // =============================================================== TAT / MIS aggregations
+
+    /**
+     * Deterministic TAT / MIS report over the whole case book (optionally scoped by
+     * {@code queueKey} / {@code taskType} and a created-at window {@code [from,to]}).
+     *
+     * <p>This is a pure <b>read/report</b> surface: it computes cycle-time, SLA, rework and
+     * throughput aggregations from the {@link WorkItem} rows and their {@link WorkItemEvent}
+     * bookends — it never writes, never touches an authoritative domain figure, and involves no
+     * AI. Cycle time is the span between the task's {@code CREATED} and {@code COMPLETED} events;
+     * for a completed item these coincide with the row's {@code createdAt} and {@code updatedAt}
+     * (the final save is the completion), so the derivation stays O(n) rather than N+1.</p>
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> mis(String queueKey, String taskType, String fromRaw, String toRaw) {
+        Instant from = parseInstant(fromRaw);
+        Instant to = parseInstant(toRaw);
+        Instant now = Instant.now();
+
+        List<WorkItem> scope = new ArrayList<>();
+        for (WorkItem wi : items.findAll()) {
+            if (!blank(queueKey) && !queueKey.equals(wi.getQueueKey())) continue;
+            if (!blank(taskType) && !taskType.equals(wi.getTaskType())) continue;
+            Instant created = wi.getCreatedAt();
+            if (from != null && (created == null || created.isBefore(from))) continue;
+            if (to != null && (created == null || created.isAfter(to))) continue;
+            scope.add(wi);
+        }
+
+        // Group by queueKey (nulls → "UNQUEUED") and by taskType, in stable key order.
+        Map<String, List<WorkItem>> byQueue = new TreeMap<>();
+        Map<String, List<WorkItem>> byType = new TreeMap<>();
+        Map<String, Integer> reworkDist = new TreeMap<>();
+        Map<String, Long> assigneeLoad = new TreeMap<>();
+        for (WorkItem wi : scope) {
+            byQueue.computeIfAbsent(blank(wi.getQueueKey()) ? "UNQUEUED" : wi.getQueueKey(),
+                    k -> new ArrayList<>()).add(wi);
+            byType.computeIfAbsent(blank(wi.getTaskType()) ? "UNKNOWN" : wi.getTaskType(),
+                    k -> new ArrayList<>()).add(wi);
+            reworkDist.merge(String.valueOf(wi.getReworkCycle()), 1, Integer::sum);
+            if (isOpen(wi) && !blank(wi.getAssignee())) {
+                assigneeLoad.merge(wi.getAssignee(), 1L, Long::sum);
+            }
+        }
+
+        Map<String, Object> totals = aggregate(scope, now, from, to);
+
+        List<Map<String, Object>> queueRows = new ArrayList<>();
+        for (Map.Entry<String, List<WorkItem>> e : byQueue.entrySet()) {
+            Map<String, Object> row = aggregate(e.getValue(), now, from, to);
+            row.put("queueKey", e.getKey());
+            queueRows.add(row);
+        }
+        List<Map<String, Object>> typeRows = new ArrayList<>();
+        for (Map.Entry<String, List<WorkItem>> e : byType.entrySet()) {
+            Map<String, Object> row = aggregate(e.getValue(), now, from, to);
+            row.put("taskType", e.getKey());
+            typeRows.add(row);
+        }
+        List<Map<String, Object>> reworkRows = new ArrayList<>();
+        for (Map.Entry<String, Integer> e : reworkDist.entrySet()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("reworkCycle", Integer.parseInt(e.getKey()));
+            row.put("count", e.getValue());
+            reworkRows.add(row);
+        }
+        // Order the rework distribution numerically (TreeMap keys are strings, so "10" < "2").
+        reworkRows.sort((a, b) -> Integer.compare((int) a.get("reworkCycle"), (int) b.get("reworkCycle")));
+        List<Map<String, Object>> loadRows = new ArrayList<>();
+        for (Map.Entry<String, Long> e : assigneeLoad.entrySet()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("assignee", e.getKey());
+            row.put("openCount", e.getValue());
+            loadRows.add(row);
+        }
+        loadRows.sort((a, b) -> Long.compare((long) b.get("openCount"), (long) a.get("openCount")));
+
+        Map<String, Object> throughput = new LinkedHashMap<>();
+        throughput.put("createdInWindow", totals.get("createdInWindow"));
+        throughput.put("completedInWindow", totals.get("completedInWindow"));
+        throughput.put("openBacklog", totals.get("openCount"));
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("generatedAt", now);
+        Map<String, Object> filter = new LinkedHashMap<>();
+        filter.put("queueKey", blank(queueKey) ? null : queueKey);
+        filter.put("taskType", blank(taskType) ? null : taskType);
+        filter.put("from", from);
+        filter.put("to", to);
+        out.put("filter", filter);
+        out.put("totals", totals);
+        out.put("byQueue", queueRows);
+        out.put("byTaskType", typeRows);
+        out.put("reworkDistribution", reworkRows);
+        out.put("throughput", throughput);
+        out.put("assigneeLoad", loadRows);
+        return out;
+    }
+
+    /** Deterministic metric block for a set of work-items (reused for totals + each grouping row). */
+    private Map<String, Object> aggregate(List<WorkItem> group, Instant now, Instant from, Instant to) {
+        int count = group.size();
+        int completed = 0, open = 0, sentBack = 0, withdrawn = 0, breached = 0, openOverdue = 0, reworkTasks = 0;
+        List<Double> cycleHours = new ArrayList<>();
+        int createdInWindow = 0, completedInWindow = 0;
+        for (WorkItem wi : group) {
+            String st = wi.getStatus();
+            boolean isOpen = isOpen(wi);
+            if ("COMPLETED".equals(st)) completed++;
+            if (isOpen) open++;
+            if ("SENT_BACK".equals(st)) sentBack++;
+            if ("WITHDRAWN".equals(st) || "CANCELLED".equals(st)) withdrawn++;
+            if (wi.getReworkCycle() > 0) reworkTasks++;
+
+            boolean overdueOpen = wi.getDueAt() != null && isOpen && now.isAfter(wi.getDueAt());
+            if (wi.isSlaBreached() || overdueOpen) breached++;
+            if (overdueOpen) openOverdue++;
+
+            if ("COMPLETED".equals(st) && wi.getCreatedAt() != null && wi.getUpdatedAt() != null) {
+                double hours = (wi.getUpdatedAt().getEpochSecond() - wi.getCreatedAt().getEpochSecond()) / 3600.0;
+                if (hours < 0) hours = 0;
+                cycleHours.add(hours);
+                if (inWindow(wi.getUpdatedAt(), from, to)) completedInWindow++;
+            }
+            if (inWindow(wi.getCreatedAt(), from, to)) createdInWindow++;
+        }
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("count", count);
+        m.put("completedCount", completed);
+        m.put("openCount", open);
+        m.put("sentBackCount", sentBack);
+        m.put("withdrawnCount", withdrawn);
+        m.put("reworkTaskCount", reworkTasks);
+        m.put("breachedCount", breached);
+        m.put("breachRate", count == 0 ? null : round((double) breached / count, 4));
+        m.put("openOverdueCount", openOverdue);
+        m.put("sendBackRate", count == 0 ? null : round((double) sentBack / count, 4));
+        m.put("avgCycleHours", cycleHours.isEmpty() ? null
+                : round(cycleHours.stream().mapToDouble(Double::doubleValue).sum() / cycleHours.size(), 4));
+        m.put("medianCycleHours", median(cycleHours));
+        m.put("maxCycleHours", cycleHours.isEmpty() ? null
+                : round(cycleHours.stream().mapToDouble(Double::doubleValue).max().orElse(0), 4));
+        m.put("createdInWindow", createdInWindow);
+        m.put("completedInWindow", completedInWindow);
+        return m;
+    }
+
+    private boolean isOpen(WorkItem wi) {
+        return OPEN_STATES.contains(wi.getStatus());
+    }
+
+    private static boolean inWindow(Instant at, Instant from, Instant to) {
+        if (at == null) return false;
+        if (from != null && at.isBefore(from)) return false;
+        if (to != null && at.isAfter(to)) return false;
+        return true;
+    }
+
+    private static Double median(List<Double> xs) {
+        if (xs.isEmpty()) return null;
+        List<Double> s = new ArrayList<>(xs);
+        Collections.sort(s);
+        int n = s.size();
+        double m = (n % 2 == 1) ? s.get(n / 2) : (s.get(n / 2 - 1) + s.get(n / 2)) / 2.0;
+        return round(m, 4);
+    }
+
+    private static double round(double v, int dp) {
+        double f = Math.pow(10, dp);
+        return Math.round(v * f) / f;
     }
 
     // =============================================================== assignment internals

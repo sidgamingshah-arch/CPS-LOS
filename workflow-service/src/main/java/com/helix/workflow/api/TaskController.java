@@ -70,6 +70,19 @@ public class TaskController {
         return tasks.tat(subjectRef);
     }
 
+    /**
+     * Deterministic TAT / MIS aggregations across the case book — cycle time, SLA, rework and
+     * throughput, optionally scoped by {@code queueKey} / {@code taskType} and a created-at
+     * window ({@code from} / {@code to} as ISO-8601 instants). Read-only report surface.
+     */
+    @GetMapping("/mis")
+    public Map<String, Object> mis(@RequestParam(value = "queueKey", required = false) String queueKey,
+                                   @RequestParam(value = "taskType", required = false) String taskType,
+                                   @RequestParam(value = "from", required = false) String from,
+                                   @RequestParam(value = "to", required = false) String to) {
+        return tasks.mis(queueKey, taskType, from, to);
+    }
+
     @GetMapping("/{ref}")
     public WorkItem view(@PathVariable("ref") String taskRef) {
         return tasks.require(taskRef);

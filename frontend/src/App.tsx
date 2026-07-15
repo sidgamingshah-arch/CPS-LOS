@@ -37,6 +37,7 @@ import Exports from "./pages/Exports";
 import Groups from "./pages/Groups";
 import Cpt from "./pages/Cpt";
 import WorkflowTracker from "./pages/WorkflowTracker";
+import TatReports from "./pages/TatReports";
 import ReportBuilder from "./pages/ReportBuilder";
 import ModelBuilder from "./pages/ModelBuilder";
 import Projections from "./pages/Projections";
@@ -110,6 +111,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "mis", label: "MIS · Reports" },
       { key: "reportbuilder", label: "Ad-hoc Reports" },
       { key: "workflowtracker", label: "Workflow Tracker" },
+      { key: "tatreports", label: "TAT · MIS Reports" },
       { key: "exports", label: "Downstream Exports" },
     ],
   },
@@ -162,6 +164,7 @@ const CRUMB: Record<string, string> = {
   mis: "Composition · RAROC variance · ECL · ageing · watchlist",
   reportbuilder: "Self-service · whitelisted datasets · maker-checker on saved defs · deterministic figures",
   workflowtracker: "Lifecycle from WORKFLOW_DEFINITION pack · humanGate / autonomy guard · SLA",
+  tatreports: "TAT / MIS over the case & query layer · cycle time · SLA breach · rework · throughput · deterministic",
   exports: "Canonical outbound feeds · ERM · Finance/GL · CPR · idempotent batches",
   copilot: "Scoped, grounded, non-binding assistant",
   rulepacks: "Regulatory abstraction layer",
@@ -405,6 +408,7 @@ export default function App() {
             {view === "mis" && <Mis />}
             {view === "reportbuilder" && <ReportBuilder />}
             {view === "workflowtracker" && <WorkflowTracker />}
+            {view === "tatreports" && <TatReports />}
             {view === "exports" && <Exports />}
             {view === "copilot" && <Copilot />}
             {view === "rulepacks" && <RulePacks />}

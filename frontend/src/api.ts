@@ -962,3 +962,22 @@ export const ipNotes = {
   convert: (ref: string, actor: string) =>
     call<any>(`/origination/api/ip-notes/${ref}/convert`, "POST", undefined, actor),
 };
+
+// ---- TAT / MIS reporting over the case & query operational data (deterministic, read-only) ----
+export const tatMis = {
+  // Cycle-time / SLA / rework / throughput aggregations over WorkItem + WorkItemEvent.
+  mis: (q?: { queueKey?: string; taskType?: string; from?: string; to?: string }) => {
+    const p = new URLSearchParams();
+    if (q?.queueKey) p.set("queueKey", q.queueKey);
+    if (q?.taskType) p.set("taskType", q.taskType);
+    if (q?.from) p.set("from", q.from);
+    if (q?.to) p.set("to", q.to);
+    const qs = p.toString();
+    return call<any>("/workflow/api/tasks/mis" + (qs ? `?${qs}` : ""), "GET");
+  },
+  // Per-subject TAT (derived from the event timeline).
+  tat: (subjectRef: string) =>
+    call<any>(`/workflow/api/tasks/tat?subjectRef=${encodeURIComponent(subjectRef)}`, "GET"),
+  // Query / RFI SLA rollup for a given service (auto-exposed per service by helix-common).
+  querySla: (svc: string) => call<any>(`/${svc}/api/queries/sla-rollup`, "GET"),
+};
