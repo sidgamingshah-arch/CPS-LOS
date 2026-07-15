@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { decision, origination, portfolio, risk, tracking as covTracking, workflow, WorkflowView, fmt } from "../api";
 import { useApp, isNavEnabled } from "../app-context";
 import { AiBadge, Badge, Button, Card, Field, GovFlow, GradeBadge, statusTone, useAsync } from "../ui";
@@ -272,7 +272,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
                 </div>
                 {an.trends && Object.keys(an.trends).length > 0 && (
                   <><h4 style={{ marginTop: 12 }}>YoY</h4><div className="kv">
-                    {Object.entries(an.trends).map(([k, v]: any) => (<><div className="k" key={k}>{k}</div><div className="v" key={k + "v"}>{fmt.pct(v as number, 1)}</div></>))}
+                    {Object.entries(an.trends).map(([k, v]: any) => (<Fragment key={k}><div className="k">{k}</div><div className="v">{fmt.pct(v as number, 1)}</div></Fragment>))}
                   </div></>
                 )}
               </div>
