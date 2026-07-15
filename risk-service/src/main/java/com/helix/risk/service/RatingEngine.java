@@ -1,9 +1,14 @@
 package com.helix.risk.service;
 
+import com.helix.risk.client.DefaultRulePacks;
 import com.helix.risk.dto.CreditInputsDto;
 import com.helix.risk.dto.RulePackDto;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,9 +17,20 @@ import java.util.Map;
  * Statistical scorecard (PRD §5/§6 — governed, not generative). Produces a 0-100
  * score from weighted financial factors, maps it to the master scale, and shows
  * each factor's contribution. PD/LGD come from the active rule packs.
+ *
+ * <p>Factor keys/weights/bands and the score→grade cut-points come from the versioned,
+ * dual-signed SCORECARD rule pack (config-service). If the pack is unavailable or
+ * malformed, the engine degrades to the built-in constants it originally shipped with
+ * ({@link DefaultRulePacks}) — the seeded pack is a verbatim copy of those constants,
+ * so the move from code to config never moves a grade.
  */
 @Component
 public class RatingEngine {
+
+    private static final Logger log = LoggerFactory.getLogger(RatingEngine.class);
+
+    /** Marker stamped into the breakdown when the built-in constants (not a pack) scored the deal. */
+    static final String BUILT_IN_SOURCE = "BUILT_IN";
 
     public record Factor(String key, double value, double score, double weight) {
         double contribution() {
@@ -26,18 +42,31 @@ public class RatingEngine {
                               Map<String, Object> breakdown) {
     }
 
-    public Computation rate(CreditInputsDto in, RulePackDto pdPack, RulePackDto lgdPack) {
-        List<Factor> factors = List.of(
-                factor("NET_LEVERAGE", in.ratio("NET_LEVERAGE"), band(in.ratio("NET_LEVERAGE"), 1.0, 6.0, true), 0.22),
-                factor("INTEREST_COVERAGE", in.ratio("INTEREST_COVERAGE"), band(in.ratio("INTEREST_COVERAGE"), 1.0, 6.0, false), 0.18),
-                factor("DSCR", in.ratio("DSCR"), band(in.ratio("DSCR"), 1.0, 2.0, false), 0.18),
-                factor("EBITDA_MARGIN", in.ratio("EBITDA_MARGIN"), band(in.ratio("EBITDA_MARGIN"), 0.02, 0.25, false), 0.15),
-                factor("CURRENT_RATIO", in.ratio("CURRENT_RATIO"), band(in.ratio("CURRENT_RATIO"), 0.8, 2.0, false), 0.10),
-                factor("GEARING", in.ratio("GEARING"), band(in.ratio("GEARING"), 0.5, 3.0, true), 0.10),
-                factor("REVENUE_GROWTH", growth(in), band(growth(in), -0.10, 0.15, false), 0.07));
+    /** One scorecard factor definition from the SCORECARD pack payload. */
+    private record FactorDef(String key, double weight, double worst, double best,
+                             boolean inverse, String source) {
+    }
+
+    private record GradeCutoff(double minScore, String grade) {
+    }
+
+    /** Parsed scorecard: factor definitions + descending grade cut-points + provenance label. */
+    private record Scorecard(List<FactorDef> factors, List<GradeCutoff> cutoffs, String source) {
+    }
+
+    public Computation rate(CreditInputsDto in, RulePackDto pdPack, RulePackDto lgdPack,
+                            RulePackDto scorecardPack) {
+        Scorecard card = resolveScorecard(scorecardPack, in.jurisdiction());
+
+        List<Factor> factors = card.factors().stream()
+                .map(d -> {
+                    double value = factorValue(in, d);
+                    return new Factor(d.key(), value, band(value, d.worst(), d.best(), d.inverse()), d.weight());
+                })
+                .toList();
 
         double score = factors.stream().mapToDouble(Factor::contribution).sum();
-        String grade = MasterScale.fromScore(score);
+        String grade = gradeFor(score, card.cutoffs());
 
         double pd = pdPack.number(grade, defaultPd(grade));
         double lgd = lgd(in, lgdPack);
@@ -56,6 +85,7 @@ public class RatingEngine {
         breakdown.put("totalScore", round(score));
         breakdown.put("pdSource", pdPack.code() + " v" + pdPack.version());
         breakdown.put("lgdSource", lgdPack.code() + " v" + lgdPack.version());
+        breakdown.put("scorecardSource", card.source());   // provenance: "<pack> vN" | BUILT_IN
         breakdown.put("philosophy", "TTC");   // through-the-cycle (declared per model, PRD open Q3)
 
         // Quantitative provenance: every factor value is a ratio computed from the
@@ -73,8 +103,99 @@ public class RatingEngine {
         return new Computation(round(score), grade, pd, lgd, ead, breakdown);
     }
 
-    private Factor factor(String key, double value, double score, double weight) {
-        return new Factor(key, value, score, weight);
+    // -------------------------------------------------------- scorecard resolution
+
+    /**
+     * Parse the SCORECARD pack defensively; any structural problem (missing/empty lists,
+     * non-numeric weights, unknown shapes) rejects the WHOLE pack and falls back to the
+     * built-in constants — a half-applied scorecard must never score a deal. Version 0
+     * marks the ConfigClient's own outage fallback, which is also stamped BUILT_IN.
+     */
+    private Scorecard resolveScorecard(RulePackDto pack, String jurisdiction) {
+        if (pack != null && pack.version() > 0) {
+            Scorecard parsed = parseScorecard(pack, pack.code() + " v" + pack.version());
+            if (parsed != null) {
+                return parsed;
+            }
+            log.warn("SCORECARD pack {} v{} for {} is malformed; using built-in scorecard constants",
+                    pack.code(), pack.version(), jurisdiction);
+        }
+        Scorecard builtIn = parseScorecard(DefaultRulePacks.fallback(jurisdiction, "SCORECARD"), BUILT_IN_SOURCE);
+        if (builtIn == null) {
+            throw new IllegalStateException("Built-in SCORECARD fallback failed to parse — engine defect");
+        }
+        return builtIn;
+    }
+
+    private Scorecard parseScorecard(RulePackDto pack, String source) {
+        try {
+            Map<String, Object> payload = pack.payload();
+            if (payload == null
+                    || !(payload.get("factors") instanceof List<?> rawFactors) || rawFactors.isEmpty()
+                    || !(payload.get("gradeCutoffs") instanceof List<?> rawCutoffs) || rawCutoffs.isEmpty()) {
+                return null;
+            }
+            List<FactorDef> factors = new ArrayList<>();
+            for (Object o : rawFactors) {
+                if (!(o instanceof Map<?, ?> m)) {
+                    return null;
+                }
+                String key = asString(m.get("key"));
+                Double weight = asDouble(m.get("weight"));
+                Double worst = asDouble(m.get("worst"));
+                Double best = asDouble(m.get("best"));
+                if (key == null || weight == null || worst == null || best == null
+                        || worst.doubleValue() == best.doubleValue()) {
+                    return null;
+                }
+                boolean inverse = m.get("inverse") instanceof Boolean b && b;
+                String src = asString(m.get("source"));
+                factors.add(new FactorDef(key, weight, worst, best, inverse, src == null ? "RATIO" : src));
+            }
+            List<GradeCutoff> cutoffs = new ArrayList<>();
+            for (Object o : rawCutoffs) {
+                if (!(o instanceof Map<?, ?> m)) {
+                    return null;
+                }
+                Double minScore = asDouble(m.get("minScore"));
+                String grade = asString(m.get("grade"));
+                if (minScore == null || grade == null) {
+                    return null;
+                }
+                cutoffs.add(new GradeCutoff(minScore, grade));
+            }
+            cutoffs.sort(Comparator.comparingDouble(GradeCutoff::minScore).reversed());
+            return new Scorecard(List.copyOf(factors), List.copyOf(cutoffs), source);
+        } catch (Exception e) {
+            log.warn("SCORECARD payload parse failed ({}); using built-in scorecard constants", e.getMessage());
+            return null;
+        }
+    }
+
+    /** RATIO factors read the spread's ratio map; TREND factors read the trend map (e.g. REVENUE_GROWTH). */
+    private double factorValue(CreditInputsDto in, FactorDef def) {
+        if ("TREND".equalsIgnoreCase(def.source())) {
+            return in.trends() == null ? 0.0 : in.trends().getOrDefault(def.key(), 0.0);
+        }
+        return in.ratio(def.key());
+    }
+
+    /** Highest cut-point at or below the score wins; scores below every cut-point take the worst grade. */
+    private String gradeFor(double score, List<GradeCutoff> cutoffs) {
+        for (GradeCutoff c : cutoffs) {
+            if (score >= c.minScore()) {
+                return c.grade();
+            }
+        }
+        return cutoffs.get(cutoffs.size() - 1).grade();
+    }
+
+    private static String asString(Object v) {
+        return v instanceof String s && !s.isBlank() ? s : null;
+    }
+
+    private static Double asDouble(Object v) {
+        return v instanceof Number n ? n.doubleValue() : null;
     }
 
     /**
@@ -88,10 +209,6 @@ public class RatingEngine {
         double pct = (clamped - lo) / (hi - lo);
         double oriented = inverse ? (1 - pct) : pct;
         return oriented * 100.0;
-    }
-
-    private double growth(CreditInputsDto in) {
-        return in.trends() == null ? 0.0 : in.trends().getOrDefault("REVENUE_GROWTH", 0.0);
     }
 
     private double lgd(CreditInputsDto in, RulePackDto lgdPack) {

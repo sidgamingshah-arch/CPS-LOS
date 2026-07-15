@@ -64,6 +64,7 @@ public class RulePackSeeder implements CommandLineRunner {
         pack("rbi_sa_directions_2026", "CAPITAL_SA", "IN-RBI", capitalSa(0.0, 1.0));
         pack("rbi_ecra_2026", "ECRA_MAPPING", "IN-RBI", ecraMapping());
         pack("rbi_rating_pd_v3", "RATING_PD_MAP", "IN-RBI", ratingPdMap());
+        pack("rbi_scorecard_v1", "SCORECARD", "IN-RBI", scorecard());
         pack("rbi_lgd_foundation", "LGD_MAP", "IN-RBI", lgdMap());
         pack("ind_as_109_sicr_v2", "PROVISIONING", "IN-RBI", provisioningIn());
         pack("rbi_doa_matrix", "DOA_MATRIX", "IN-RBI", doaMatrix(50_000_000d, 250_000_000d, 1_000_000_000d));
@@ -105,6 +106,7 @@ public class RulePackSeeder implements CommandLineRunner {
         pack("cbuae_sa_basel3", "CAPITAL_SA", "AE-CBUAE", capitalSa(0.0, 1.0));
         pack("cbuae_ecra", "ECRA_MAPPING", "AE-CBUAE", ecraMapping());
         pack("cbuae_rating_pd", "RATING_PD_MAP", "AE-CBUAE", ratingPdMap());
+        pack("cbuae_scorecard", "SCORECARD", "AE-CBUAE", scorecard());
         pack("cbuae_lgd", "LGD_MAP", "AE-CBUAE", lgdMap());
         pack("ifrs_9_sicr_v1", "PROVISIONING", "AE-CBUAE", provisioningAe());
         pack("cbuae_doa_matrix", "DOA_MATRIX", "AE-CBUAE", doaMatrix(20_000_000d, 100_000_000d, 500_000_000d));
@@ -190,6 +192,43 @@ public class RulePackSeeder implements CommandLineRunner {
                 "BBB", 0.0030, "BB", 0.0100, "B", 0.0350,
                 "CCC", 0.1200, "CC", 0.2500, "C", 0.4000, "D", 1.0000
         );
+    }
+
+    /**
+     * Statistical scorecard: weighted financial factors (linear band score in [0,100],
+     * inverse = lower-is-better) + score→grade cut-points on the master scale. Values are
+     * a verbatim lift of the constants the RatingEngine shipped with — the pack MUST
+     * reproduce today's grades exactly (behaviour-preserving move from code to config).
+     * source: RATIO reads the spread's ratio map; TREND reads the trends map.
+     */
+    private Map<String, Object> scorecard() {
+        return map(
+                "factors", List.of(
+                        map("key", "NET_LEVERAGE", "weight", 0.22, "worst", 1.0, "best", 6.0,
+                                "inverse", true, "source", "RATIO"),
+                        map("key", "INTEREST_COVERAGE", "weight", 0.18, "worst", 1.0, "best", 6.0,
+                                "inverse", false, "source", "RATIO"),
+                        map("key", "DSCR", "weight", 0.18, "worst", 1.0, "best", 2.0,
+                                "inverse", false, "source", "RATIO"),
+                        map("key", "EBITDA_MARGIN", "weight", 0.15, "worst", 0.02, "best", 0.25,
+                                "inverse", false, "source", "RATIO"),
+                        map("key", "CURRENT_RATIO", "weight", 0.10, "worst", 0.8, "best", 2.0,
+                                "inverse", false, "source", "RATIO"),
+                        map("key", "GEARING", "weight", 0.10, "worst", 0.5, "best", 3.0,
+                                "inverse", true, "source", "RATIO"),
+                        map("key", "REVENUE_GROWTH", "weight", 0.07, "worst", -0.10, "best", 0.15,
+                                "inverse", false, "source", "TREND")),
+                "gradeCutoffs", List.of(
+                        map("minScore", 90.0, "grade", "AAA"),
+                        map("minScore", 82.0, "grade", "AA"),
+                        map("minScore", 74.0, "grade", "A"),
+                        map("minScore", 66.0, "grade", "BBB"),
+                        map("minScore", 56.0, "grade", "BB"),
+                        map("minScore", 46.0, "grade", "B"),
+                        map("minScore", 36.0, "grade", "CCC"),
+                        map("minScore", 26.0, "grade", "CC"),
+                        map("minScore", 16.0, "grade", "C"),
+                        map("minScore", 0.0, "grade", "D")));
     }
 
     /** Foundation LGD by seniority/collateralisation. */
