@@ -339,6 +339,17 @@ export const decision = {
     call<any>(`/decision/api/decisions/${ref}/sanction-letter`, "POST", undefined, actor),
 };
 
+// ---- conflict-of-interest (COI) attestations ----
+export const coi = {
+  list: (subjectRef: string) =>
+    call<any[]>(`/decision/api/coi?subjectRef=${encodeURIComponent(subjectRef)}`, "GET"),
+  get: (coiRef: string) => call<any>(`/decision/api/coi/${coiRef}`, "GET"),
+  attest: (
+    body: { subjectType: string; subjectRef: string; role?: string; declaration: string; note?: string },
+    actor: string,
+  ) => call<any>("/decision/api/coi", "POST", body, actor),
+};
+
 // ---- notings (governed decision records: TOD, CAM note, product paper, deferrals, …) ----
 export const notings = {
   list: (params?: { subjectRef?: string; status?: string; type?: string }) => {

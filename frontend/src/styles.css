@@ -976,3 +976,13 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
   background: var(--human-soft); font-size: 12.5px; line-height: 1.45; }
 .perf-gate > span { color: var(--muted); }
 .perf-btn { font-size: 11px; padding: 3px 8px; }
+/* ---- Conflict of Interest (COI) attestations — named-human self-declaration ---- */
+.coi-form {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+}
+.coi-form .field { min-width: 160px; }
+.coi-hint {
+  margin-top: 12px; padding: 8px 12px; font-size: 12px; line-height: 1.5;
+  border-left: 3px solid var(--human); border-radius: 6px;
+  background: var(--human-soft); color: var(--ink-2, inherit);
+}

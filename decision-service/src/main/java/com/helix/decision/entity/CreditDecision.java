@@ -68,6 +68,15 @@ public class CreditDecision {
     @Column(length = 80)
     private String routedBy;
 
+    /**
+     * COI gate flag captured at routing time from the DOA_MATRIX pack key
+     * {@code require_coi_attestation}. Default {@code false} — when the key is absent
+     * (every existing pack) the decision path is byte-identical to today. When true,
+     * the acting approver/voter must hold an ATTESTED, non-CONFLICTED COI attestation
+     * for this application before a decision/vote is accepted (see {@code DecisionService}).
+     */
+    private boolean requireCoiAttestation = false;
+
     // ---- the decision itself ----
     private String outcome;                 // Enums.DecisionOutcome name
     private String decidedBy;

@@ -41,6 +41,7 @@ import ReportBuilder from "./pages/ReportBuilder";
 import ModelBuilder from "./pages/ModelBuilder";
 import Projections from "./pages/Projections";
 import Committee from "./pages/Committee";
+import Coi from "./pages/Coi";
 import DrawingPower from "./pages/DrawingPower";
 import Notifications from "./pages/Notifications";
 import Notings from "./pages/Notings";
@@ -91,6 +92,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "docgen", label: "Doc Generation" },
       { key: "commentary", label: "AI Commentary" },
       { key: "committee", label: "Committee Room" },
+      { key: "coi", label: "Conflict of Interest" },
       { key: "notings", label: "Notings" },
     ],
   },
@@ -167,6 +169,7 @@ const CRUMB: Record<string, string> = {
   modelbuilder: "Configure scoring models · sections · typed questions · visibility rules · master-driven options · maker-checker",
   governance: "AI off-switch · capability-level · per-jurisdiction override · 403 enforced",
   committee: "Committee/quorum voting · SoD (router can't vote · no double-vote) · sanction letter (AI draft → human confirm)",
+  coi: "Conflict-of-interest attestations · named-human self-declaration · gates the decision/vote only where the DOA pack requires it (default-off)",
   drawingpower: "Working-capital drawing power · borrowing base · deterministic + advisory · ledger unchanged",
   notifications: "Outbound notification outbox · EMAIL_TEMPLATE-rendered · SYSTEM · idempotent",
   audit: "Immutable, examiner-ready trail",
@@ -387,6 +390,7 @@ export default function App() {
             {view === "docgen" && <DocGen />}
             {view === "commentary" && <Commentary />}
             {view === "committee" && <Committee />}
+            {view === "coi" && <Coi />}
             {view === "notings" && <Notings />}
             {view === "drawingpower" && <DrawingPower />}
             {view === "notifications" && <Notifications />}
