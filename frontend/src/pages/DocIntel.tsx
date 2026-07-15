@@ -89,11 +89,11 @@ function findingBadge(level: CheckFinding["level"]) {
 }
 
 export default function DocIntel() {
-  const { actor, notify } = useApp();
+  const { actor, notify, ref: ctxRef } = useApp();
 
   // Deal + doc selection
   const deals = useAsync(() => origination.list(), []);
-  const [selectedRef, setSelectedRef] = useState<string>("");
+  const [selectedRef, setSelectedRef] = useState<string>(ctxRef ?? "");
   const docs = useAsync(
     () => (selectedRef ? origination.docs(selectedRef) : Promise.resolve([])),
     [selectedRef],

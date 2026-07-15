@@ -42,10 +42,10 @@ function directionKind(dir: string): string {
 }
 
 export default function RiskLab() {
-  const { actor, notify } = useApp();
+  const { actor, notify, ref: ctxRef } = useApp();
   const apps = useAsync(() => origination.list(), []);
   const sectorOutlooks = useCodes("SECTOR_OUTLOOK");
-  const [ref, setRef] = useState<string>("");
+  const [ref, setRef] = useState<string>(ctxRef ?? "");
 
   // Authoritative rating summary
   const ratingAsync = useAsync(

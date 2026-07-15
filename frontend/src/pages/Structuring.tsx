@@ -27,14 +27,14 @@ function findingKind(level: string): string {
 }
 
 export default function Structuring() {
-  const { actor, notify } = useApp();
+  const { actor, notify, ref: ctxRef } = useApp();
   const structureTypes = useCodes("STRUCTURE_TYPE");
   const participantRoles = useCodes("PARTICIPANT_ROLE");
   const liabilityTypes = useCodes("LIABILITY_TYPE");
 
   // ── Deal selector ──────────────────────────────────────────────────────────
   const deals = useAsync(() => origination.list(), []);
-  const [ref, setRef] = useState("");
+  const [ref, setRef] = useState(ctxRef ?? "");
 
   // ── Structure fetch (rejects with Error when none set) ────────────────────
   const sv = useAsync(

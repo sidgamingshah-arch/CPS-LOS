@@ -240,8 +240,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const ctx = useMemo(() => ({ actor, notify, nav, aiEnabled }),
-                       [actor, notify, nav, aiEnabled]);
+  const ctx = useMemo(() => ({ actor, notify, nav, aiEnabled, ref }),
+                       [actor, notify, nav, aiEnabled, ref]);
 
   const title = NAV.find((n) => n.key === view)?.label || "Deal Workspace";
   // The active-deal context chip: show whenever a deal is selected but we're not
