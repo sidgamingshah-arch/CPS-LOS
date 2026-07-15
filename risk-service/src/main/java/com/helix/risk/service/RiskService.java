@@ -87,7 +87,10 @@ public class RiskService {
         }
         RulePackDto pdPack = config.activePack(in.jurisdiction(), "RATING_PD_MAP");
         RulePackDto lgdPack = config.activePack(in.jurisdiction(), "LGD_MAP");
-        RatingEngine.Computation c = ratingEngine.rate(in, pdPack, lgdPack);
+        // Scorecard weights/bands/cut-points are pack-driven (versioned, dual-signed);
+        // ConfigClient + RatingEngine degrade to the identical built-in constants.
+        RulePackDto scorecardPack = config.activePack(in.jurisdiction(), "SCORECARD");
+        RatingEngine.Computation c = ratingEngine.rate(in, pdPack, lgdPack, scorecardPack);
 
         // Default: the deterministic scorecard is authoritative (behaviour-preserving).
         double score = c.score();
