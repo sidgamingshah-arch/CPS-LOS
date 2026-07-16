@@ -43,7 +43,7 @@ public class QueryController {
     public record CancelRequest(String reason) {
     }
 
-    public record ExternalResponseRequest(String body, String from) {
+    public record ExternalResponseRequest(String body, String from, String token) {
     }
 
     @PostMapping
@@ -56,10 +56,18 @@ public class QueryController {
         return queries.raise(cmd, actor);
     }
 
+    /**
+     * Caller-scoped listing (Fix 2): the verified {@code X-Actor} sees only threads they raised,
+     * are the named addressee of, or are directed at by a role they hold — unless they hold a
+     * supervisor/admin role (then unrestricted). {@code subjectRef}/{@code addressee} narrow
+     * within that visible set. X-Actor is optional here so a read never hard-fails on a missing
+     * header (a blank actor simply scopes to nothing but their own — see the service).
+     */
     @GetMapping
     public List<QueryThread> list(@RequestParam(required = false) String subjectRef,
-                                  @RequestParam(required = false) String addressee) {
-        return queries.list(subjectRef, addressee);
+                                  @RequestParam(required = false) String addressee,
+                                  @RequestHeader(value = "X-Actor", required = false) String actor) {
+        return queries.list(subjectRef, addressee, actor);
     }
 
     /**
@@ -94,10 +102,19 @@ public class QueryController {
         return queries.cancel(ref, req == null ? null : req.reason(), actor);
     }
 
+    /**
+     * Inbound external reply through the tokenised callback (Fix 1). The one-time response token
+     * may arrive as {@code ?token=} (the callback link) or in the request body; the query param
+     * wins when both are present. A missing token is 401, an invalid/spent token 403.
+     */
     @PostMapping("/{ref}/external-response")
     public QueryService.View externalResponse(@PathVariable String ref,
                                               @RequestBody ExternalResponseRequest req,
+                                              @RequestParam(value = "token", required = false) String token,
                                               @RequestHeader("X-Actor") String actor) {
-        return queries.externalResponse(ref, req.body(), req.from(), actor);
+        String effectiveToken = (token != null && !token.isBlank()) ? token
+                : (req == null ? null : req.token());
+        return queries.externalResponse(ref, req == null ? null : req.body(),
+                req == null ? null : req.from(), effectiveToken, actor);
     }
 }

@@ -1019,14 +1019,18 @@ export const tasks = {
 // The inbox for a role dashboard reads the decision-service shared surface (the
 // primary collaboration lane); `svc` overridable for other services if needed.
 export const queries = {
-  list: (q?: { subjectRef?: string; addressee?: string }, svc = "decision") => {
+  // Pass `actor` so the server-side, caller-scoped listing (Fix 2) reflects the signed-in
+  // user (a token, when present, still wins at the gateway). subjectRef/addressee narrow
+  // WITHIN the caller's visible set; they never widen it.
+  list: (q?: { subjectRef?: string; addressee?: string }, svc = "decision", actor?: string) => {
     const p = new URLSearchParams();
     if (q?.subjectRef) p.set("subjectRef", q.subjectRef);
     if (q?.addressee) p.set("addressee", q.addressee);
     const qs = p.toString();
-    return call<any[]>(`/${svc}/api/queries` + (qs ? `?${qs}` : ""), "GET");
+    return call<any[]>(`/${svc}/api/queries` + (qs ? `?${qs}` : ""), "GET", undefined, actor);
   },
-  get: (ref: string, svc = "decision") => call<any>(`/${svc}/api/queries/${ref}`, "GET"),
+  get: (ref: string, svc = "decision", actor?: string) =>
+    call<any>(`/${svc}/api/queries/${ref}`, "GET", undefined, actor),
 };
 
 // ---- print / PDF rendering (dependency-free print pipeline) ----

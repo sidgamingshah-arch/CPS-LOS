@@ -10,6 +10,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -91,6 +93,26 @@ public class QueryThread {
     /** How many reminders have been configured/spawned (the notification lane owns the real count). */
     private Integer remindersSent = 0;
 
+    /**
+     * SHA-256 hash of the one-time response token issued for an EXTERNAL_CUSTOMER /
+     * EXTERNAL_VENDOR thread (Fix 1). Only the hash is stored — the raw token is embedded
+     * in the outbound RFI notification (the tokenised callback link) and surfaced once on
+     * the raise response. {@code external-response} requires a token that hashes to this
+     * value; it is cleared after a successful response (single-use). Never serialised.
+     */
+    @Column(length = 100)
+    @JsonIgnore
+    private String responseTokenHash;
+
+    /**
+     * Transient, raise-only carrier for the raw one-time response token. Populated the moment
+     * an EXTERNAL RFI is dispatched (never persisted — {@code @Transient}), so the raiser /
+     * originating flow can read it from the raise response. A freshly-loaded thread (any GET)
+     * always has this null, so the token can never be replayed off a read.
+     */
+    @Transient
+    private String responseToken;
+
     @Column(length = 120)
     private String resolvedBy;
 
@@ -157,6 +179,13 @@ public class QueryThread {
 
     public Integer getRemindersSent() { return remindersSent; }
     public void setRemindersSent(Integer remindersSent) { this.remindersSent = remindersSent; }
+
+    @JsonIgnore
+    public String getResponseTokenHash() { return responseTokenHash; }
+    public void setResponseTokenHash(String responseTokenHash) { this.responseTokenHash = responseTokenHash; }
+
+    public String getResponseToken() { return responseToken; }
+    public void setResponseToken(String responseToken) { this.responseToken = responseToken; }
 
     public String getResolvedBy() { return resolvedBy; }
     public void setResolvedBy(String resolvedBy) { this.resolvedBy = resolvedBy; }

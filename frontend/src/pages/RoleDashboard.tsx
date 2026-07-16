@@ -33,8 +33,13 @@ export default function RoleDashboard() {
   const none = Promise.resolve([] as any[]);
 
   // ---- always-on "my work" lanes ----
+  // Request only what THIS actor is authorised for: their OWN task inbox (assignee = actor)
+  // and their own query threads (server-side caller-scoping, driven by the actor we pass).
+  // Both are soft() so a 403 (non-owning viewer) or an unreachable service degrades the card
+  // to an empty "nothing here" state — it never surfaces the error or blanks the page. We do
+  // not fetch any shared queue the actor may not be a member of.
   const myTasks = useAsync(() => soft(tasks.inbox(actor)), [actor]);
-  const myQueries = useAsync(() => soft(queries.list({ addressee: actor })), [actor]);
+  const myQueries = useAsync(() => soft(queries.list({ addressee: actor }, "decision", actor)), [actor]);
 
   // ---- persona-scoped surfaces (fetched only for the active persona) ----
   const cps = useAsync(() => (isRel ? soft(counterparty.list()) : none), [actor, persona]);

@@ -2,6 +2,7 @@ package com.helix.common.query;
 
 import com.helix.common.audit.AuditService;
 import com.helix.common.notify.NotificationService;
+import com.helix.common.rbac.ActorDirectory;
 import com.helix.common.web.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,11 +10,18 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -39,21 +47,34 @@ public class QueryService {
     private static final Logger log = LoggerFactory.getLogger(QueryService.class);
     private static final String RFI_TEMPLATE = "RFI_REQUEST";
     private static final String SUBJECT = "QueryThread";
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    /**
+     * Roles that grant unrestricted visibility over the query/RFI list (Fix 2). A supervisor /
+     * admin / compliance / audit identity sees every thread on the service; everyone else is
+     * scoped to threads they raised, are the named addressee of, or are directed at by role.
+     */
+    private static final Set<String> SUPERVISOR_ROLES = Set.of(
+            "ADMIN", "SUPER", "SUPERVISOR", "CRO", "BOARD_COMMITTEE", "CREDIT_COMMITTEE",
+            "CREDIT_HEAD", "RM_HEAD", "COLLECTIONS_HEAD", "COMPLIANCE", "AUDITOR");
 
     private final QueryThreadRepository threads;
     private final QueryMessageRepository messages;
     private final AuditService audit;
     private final NotificationService notifications;
     private final ObjectProvider<QueryResolutionListener> listeners;
+    private final ObjectProvider<ActorDirectory> actorDirectory;
 
     public QueryService(QueryThreadRepository threads, QueryMessageRepository messages,
                         AuditService audit, NotificationService notifications,
-                        ObjectProvider<QueryResolutionListener> listeners) {
+                        ObjectProvider<QueryResolutionListener> listeners,
+                        ObjectProvider<ActorDirectory> actorDirectory) {
         this.threads = threads;
         this.messages = messages;
         this.audit = audit;
         this.notifications = notifications;
         this.listeners = listeners;
+        this.actorDirectory = actorDirectory;
     }
 
     /** Command to raise a thread; {@code scheduleInSeconds} wins over {@code scheduleAt} when both set. */
@@ -110,16 +131,72 @@ public class QueryService {
                         "topic", safe(req.topic()), "scheduled", scheduled));
 
         if (!scheduled && channel != QueryChannel.INTERNAL) {
-            dispatchExternal(saved, actor, req.recipientRoles(), req.jurisdiction());
+            // dispatchExternal issues the one-time response token (stores its hash, embeds the
+            // raw token in the RFI notification). Surface the raw token ONCE on the raise
+            // response so the raiser / originating flow can build the tokenised callback.
+            String rawToken = dispatchExternal(saved, actor, req.recipientRoles(), req.jurisdiction());
+            saved.setResponseToken(rawToken);
+            threads.save(saved);
         }
         return view(saved);
     }
 
+    /**
+     * Caller-scoped listing (Fix 2). The {@code actor} (verified X-Actor / token identity) sees
+     * only threads they raised, are the named addressee of, or are directed at by a role they
+     * hold — UNLESS they hold a supervisor/admin role, in which case the listing is unrestricted.
+     * The optional {@code subjectRef} / {@code addressee} params are narrowing filters applied
+     * WITHIN the caller's visible set, never a way to widen it.
+     */
     @Transactional(readOnly = true)
-    public List<QueryThread> list(String subjectRef, String addressee) {
-        if (addressee != null && !addressee.isBlank()) return threads.findByAddresseeOrderByIdDesc(addressee);
-        if (subjectRef != null && !subjectRef.isBlank()) return threads.findBySubjectRefOrderByIdDesc(subjectRef);
-        return threads.findTop200ByOrderByIdDesc();
+    public List<QueryThread> list(String subjectRef, String addressee, String actor) {
+        List<QueryThread> out = new ArrayList<>();
+        for (QueryThread t : visibleTo(actor)) {
+            if (addressee != null && !addressee.isBlank() && !addressee.equals(t.getAddressee())) continue;
+            if (subjectRef != null && !subjectRef.isBlank() && !subjectRef.equals(t.getSubjectRef())) continue;
+            out.add(t);
+        }
+        return out;
+    }
+
+    /**
+     * The caller-scoped visibility set. A supervisor/admin sees every thread; everyone else sees
+     * only threads they raised, are the named addressee of, or are directed at by a role they
+     * hold. Roles resolve via the optional {@link ActorDirectory} (config-service ACTOR_ROLE
+     * master); when it is absent/unreachable the caller is treated as a non-supervisor with no
+     * roles — never over-exposing, while their own raised/addressed threads stay visible.
+     */
+    private List<QueryThread> visibleTo(String actor) {
+        Set<String> roles = rolesFor(actor);
+        if (roles.stream().anyMatch(SUPERVISOR_ROLES::contains)) {
+            return threads.findTop200ByOrderByIdDesc();
+        }
+        // Merge the three legs (raiser / named addressee / addressee-role); dedup by id, id-desc.
+        TreeMap<Long, QueryThread> merged = new TreeMap<>(java.util.Comparator.reverseOrder());
+        if (actor != null && !actor.isBlank()) {
+            for (QueryThread t : threads.findByRaisedByOrderByIdDesc(actor)) merged.putIfAbsent(t.getId(), t);
+            for (QueryThread t : threads.findByAddresseeOrderByIdDesc(actor)) merged.putIfAbsent(t.getId(), t);
+        }
+        if (!roles.isEmpty()) {
+            for (QueryThread t : threads.findByAddresseeRoleInOrderByIdDesc(roles)) merged.putIfAbsent(t.getId(), t);
+        }
+        return new ArrayList<>(merged.values());
+    }
+
+    /** Resolve the actor's roles via the optional ActorDirectory; empty set on outage/absence. */
+    private Set<String> rolesFor(String actor) {
+        if (actor == null || actor.isBlank()) return Set.of();
+        ActorDirectory dir = actorDirectory.getIfAvailable();
+        if (dir == null) return Set.of();
+        try {
+            Set<String> roles = dir.rolesFor(actor);   // null = directory outage (fail-open) -> no roles
+            return roles == null ? Set.of() : roles;
+        } catch (Exception e) {
+            // A fail-closed posture may throw on outage; for a read-only list we degrade to
+            // "no roles" (caller still sees their own threads) rather than 403 the whole listing.
+            log.warn("role resolution failed for '{}' while scoping queries ({})", actor, e.getMessage());
+            return Set.of();
+        }
     }
 
     @Transactional(readOnly = true)
@@ -247,12 +324,17 @@ public class QueryService {
      * {@code EXTERNAL_CUSTOMER}/{@code EXTERNAL_VENDOR} thread that is still expecting a response
      * (non-terminal). An INTERNAL thread is a {@code 400} and a terminal thread is a {@code 409}.
      * The appended message is stamped author type {@code EXTERNAL} (never {@code HUMAN}), so a
-     * forged/callback message is never recorded as a human action. A full per-thread inbound token
-     * is a noted residual — this hardening removes the trivial forgery (any INTERNAL thread flipped
-     * to RESPONDED with an arbitrary fake human author) without changing the legitimate flow.</p>
+     * forged/callback message is never recorded as a human action.</p>
+     *
+     * <p><b>Per-thread one-time token (Fix 1).</b> On top of the channel + non-terminal guards,
+     * the caller must present the one-time {@code responseToken} issued for THIS thread at raise
+     * time (embedded in the outbound RFI notification's tokenised callback link). A missing token
+     * is a {@code 401}; a token that does not hash to the thread's stored hash — including a token
+     * already spent — is a {@code 403}. On a successful response the hash is cleared, so the token
+     * is single-use: a replay of the same token is rejected.</p>
      */
     @Transactional
-    public View externalResponse(String ref, String body, String from, String actor) {
+    public View externalResponse(String ref, String body, String from, String token, String actor) {
         QueryThread t = require(ref);
         if (t.getChannel() == QueryChannel.INTERNAL) {
             throw ApiException.badRequest("external-response is only valid on an EXTERNAL_CUSTOMER/"
@@ -262,9 +344,18 @@ public class QueryService {
             throw ApiException.conflict("Query " + ref + " is " + t.getStatus()
                     + " — not expecting an inbound external response");
         }
+        if (token == null || token.isBlank()) {
+            throw ApiException.unauthorized("external-response to query " + ref
+                    + " requires the one-time response token from the RFI callback link");
+        }
+        if (!tokenMatches(token, t.getResponseTokenHash())) {
+            throw ApiException.forbiddenAutonomy("Invalid or already-used response token for query "
+                    + ref + " — the callback link is single-use");
+        }
         String author = (from != null && !from.isBlank()) ? from : "external";
         appendMessage(ref, author, "EXTERNAL", body, true);
         t.setStatus(QueryStatus.RESPONDED);
+        t.setResponseTokenHash(null);   // single-use — invalidate so a replay of the token is rejected
         threads.save(t);
         audit.human(actor, "QUERY_EXTERNAL_RESPONSE", SUBJECT, ref,
                 "Inbound external response received on " + ref + " from " + author,
@@ -290,7 +381,8 @@ public class QueryService {
                     "Scheduled %s query %s released to OPEN".formatted(t.getChannel(), t.getQueryRef()),
                     Map.of("channel", t.getChannel().name(), "scheduleAt", String.valueOf(t.getScheduleAt())));
             if (t.getChannel() != QueryChannel.INTERNAL) {
-                dispatchExternal(t, "system", null, null);
+                dispatchExternal(t, "system", null, null);   // issues the token hash on t
+                threads.save(t);                             // persist the issued token hash
             }
             released++;
         }
@@ -299,8 +391,17 @@ public class QueryService {
 
     // =============================================================== internals
 
-    /** Render + enqueue the RFI through the notification façade; never throws (best-effort). */
-    private void dispatchExternal(QueryThread t, String actor, List<String> roles, String jurisdiction) {
+    /**
+     * Issue the per-thread one-time response token, then render + enqueue the RFI through the
+     * notification façade. The token's hash is stored on the thread (the raw token is embedded
+     * in the notification as {@code responseToken} + a tokenised {@code callbackLink}, and
+     * returned so the raiser can surface it once). Token issuance happens BEFORE the best-effort
+     * enqueue so a notification-transport hiccup never leaves the thread without a usable token.
+     * Never throws (best-effort dispatch). Returns the raw token.
+     */
+    private String dispatchExternal(QueryThread t, String actor, List<String> roles, String jurisdiction) {
+        String rawToken = newResponseToken();
+        t.setResponseTokenHash(hashToken(rawToken));
         try {
             Map<String, Object> vars = new LinkedHashMap<>();
             vars.put("queryRef", t.getQueryRef());
@@ -312,6 +413,11 @@ public class QueryService {
             vars.put("raisedBy", safe(t.getRaisedBy()));
             if (t.getAddressee() != null) vars.put("addressee", t.getAddressee());
             if (t.getDueAt() != null) vars.put("dueAt", t.getDueAt().toString());
+            // The tokenised callback the external party replies through — the RFI EMAIL_TEMPLATE
+            // renders {{callbackLink}} / {{responseToken}}; a missing template still carries them
+            // in the fallback body + persisted vars.
+            vars.put("responseToken", rawToken);
+            vars.put("callbackLink", "/api/queries/" + t.getQueryRef() + "/external-response?token=" + rawToken);
 
             List<String> recipients = (roles != null && !roles.isEmpty())
                     ? roles
@@ -325,6 +431,7 @@ public class QueryService {
         } catch (Exception e) {
             log.warn("RFI dispatch failed for {} ({})", t.getQueryRef(), e.getMessage());
         }
+        return rawToken;
     }
 
     private void fireResolutionListeners(QueryThread t) {
@@ -389,6 +496,33 @@ public class QueryService {
             sb.append(alphabet.charAt(ThreadLocalRandom.current().nextInt(alphabet.length())));
         }
         return sb.toString();
+    }
+
+    /** A cryptographically-random, URL-safe one-time response token (256 bits of entropy). */
+    private static String newResponseToken() {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    /** SHA-256 (hex) of a raw token — only the hash is ever persisted on the thread. */
+    private static String hashToken(String raw) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(md.digest(raw.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);   // never on a standard JRE
+        }
+    }
+
+    /** Constant-time check that {@code provided} hashes to {@code storedHash} (null-safe -> false). */
+    private static boolean tokenMatches(String provided, String storedHash) {
+        if (provided == null || provided.isBlank() || storedHash == null || storedHash.isBlank()) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                hashToken(provided).getBytes(StandardCharsets.UTF_8),
+                storedHash.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String safe(String s) {

@@ -165,8 +165,14 @@ st, q = call("GET", f"/decision/api/queries/{q_ref}")
 q = must(st, q, "get vendor query")
 check("query is an EXTERNAL_VENDOR thread, OPEN", q["thread"]["channel"] == "EXTERNAL_VENDOR"
       and q["thread"]["status"] == "OPEN", q["thread"])
-# Vendor report returns via the existing external-response callback
-st, q = call("POST", f"/decision/api/queries/{q_ref}/external-response",
+# Fix 1: external-response now requires the one-time token from the RFI callback link. The
+# vendor RFQ raised the thread internally, so we read the token off the outbound RFI notification.
+st, notes = call("GET", f"/decision/api/notifications?eventType=RFI_REQUEST&subjectRef={q_ref}")
+notes = must(st, notes, "list vendor RFI notification")
+vtoken = (notes[0].get("vars") or {}).get("responseToken") if notes else None
+check("vendor RFI notification carries the one-time response token", bool(vtoken), notes)
+# Vendor report returns via the tokenised external-response callback
+st, q = call("POST", f"/decision/api/queries/{q_ref}/external-response?token={vtoken}",
              {"body": "Valuation INR 4.2cr, valid to 2027.", "from": "acme.valuers"}, actor="portal.callback")
 q = must(st, q, "external response")
 check("external-response flips the query to RESPONDED", q["thread"]["status"] == "RESPONDED", q["thread"]["status"])
