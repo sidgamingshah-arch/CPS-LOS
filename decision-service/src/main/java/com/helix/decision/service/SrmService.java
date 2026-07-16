@@ -3,6 +3,7 @@ package com.helix.decision.service;
 import com.helix.common.audit.AuditService;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
+import com.helix.decision.client.UpstreamClient.LoanApplicationRefDto;
 import com.helix.decision.client.UpstreamClient.MasterRecordDto;
 import com.helix.decision.dto.NotingDtos.CreateNotingRequest;
 import com.helix.decision.dto.SrmDtos.CreateSrmRequest;
@@ -72,6 +73,7 @@ public class SrmService {
         r.setSrmRef(generateRef());
         r.setSubjectType(req.subjectType() == null || req.subjectType().isBlank() ? "Counterparty" : req.subjectType());
         r.setSubjectRef(req.subjectRef());
+        r.setApplicationRef(blankToNull(req.applicationRef()));
         r.setCounterpartyName(req.counterpartyName());
         r.setTitle(req.title() == null || req.title().isBlank()
                 ? "Structured review / renewal — " + req.subjectRef() : req.title());
@@ -108,11 +110,18 @@ public class SrmService {
         r.setNotingStatus(noting.getStatus().name());
 
         SrmReview saved = reviews.save(r);
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("subjectRef", saved.getSubjectRef());
+        details.put("applicationRef", saved.getApplicationRef() == null ? "" : saved.getApplicationRef());
+        details.put("notingRef", saved.getNotingRef());
+        details.put("checklistKey", saved.getChecklistKey());
+        details.put("items", items.size());
         audit.human(actor, "SRM_CREATED", "SrmReview", saved.getSrmRef(),
-                "SRM review for %s — %d checklist item(s) from %s; noting %s".formatted(
-                        saved.getSubjectRef(), items.size(), saved.getChecklistKey(), saved.getNotingRef()),
-                Map.of("subjectRef", saved.getSubjectRef(), "notingRef", saved.getNotingRef(),
-                        "checklistKey", saved.getChecklistKey(), "items", items.size()));
+                "SRM review for %s%s — %d checklist item(s) from %s; noting %s".formatted(
+                        saved.getSubjectRef(),
+                        saved.getApplicationRef() == null ? "" : " (app " + saved.getApplicationRef() + ")",
+                        items.size(), saved.getChecklistKey(), saved.getNotingRef()),
+                details);
         return saved;
     }
 
@@ -203,16 +212,34 @@ public class SrmService {
         }
         r.setNotingStatus(n.getStatus().name());
         if (n.getStatus() == Noting.Status.AUTHORIZED && r.getStatus() != SrmReview.Status.COMPLETED) {
-            List<MerItem> advanced = mer.advanceReviewForSrm(r.getSubjectRef(), r.getNotingRef(), actor);
+            // Resolve the concrete MER application reference(s) to advance. This is the crux of the
+            // fix: for an obligor-level (Counterparty) review the subjectRef is a counterparty ref —
+            // a different ID namespace from MER's applicationReference — so driving the hook with it
+            // silently advances nothing. We drive by the explicit applicationRef when pinned, else
+            // resolve the obligor's application(s) from origination.
+            List<String> refs = resolveMerReferences(r);
+            List<MerItem> advanced = new ArrayList<>();
+            for (String ref : refs) {
+                advanced.addAll(mer.advanceReviewForSrm(ref, r.getNotingRef(), actor));
+            }
             if (!advanced.isEmpty()) {
                 r.setRenewalDueDate(advanced.get(0).getDueDate().toString());
             }
             r.setStatus(SrmReview.Status.COMPLETED);
-            audit.human(actor, "SRM_COMPLETED", "SrmReview", r.getSrmRef(),
-                    "SRM renewal %s AUTHORIZED — advanced %d MER review item(s) for %s".formatted(
-                            r.getNotingRef(), advanced.size(), r.getSubjectRef()),
-                    Map.of("notingRef", r.getNotingRef(), "advanced", advanced.size(),
-                            "subjectRef", r.getSubjectRef()));
+            // Surface the outcome clearly — never a misleading silent "advanced 0". When no
+            // application resolved for the subject, the summary says so (a discoverable trail).
+            String summary = refs.isEmpty()
+                    ? "SRM renewal %s AUTHORIZED — NO application resolvable for %s %s; 0 MER review item(s) advanced".formatted(
+                            r.getNotingRef(), r.getSubjectType(), r.getSubjectRef())
+                    : "SRM renewal %s AUTHORIZED — advanced %d MER review item(s) across %d application ref(s) %s".formatted(
+                            r.getNotingRef(), advanced.size(), refs.size(), refs);
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("notingRef", r.getNotingRef());
+            details.put("advanced", advanced.size());
+            details.put("subjectRef", r.getSubjectRef());
+            details.put("applicationRefs", refs);
+            details.put("applicationsResolved", refs.size());
+            audit.human(actor, "SRM_COMPLETED", "SrmReview", r.getSrmRef(), summary, details);
         }
         return reviews.save(r);
     }
@@ -257,6 +284,37 @@ public class SrmService {
             }
         }
         return out.isEmpty() ? DEFAULT_ITEMS : out;
+    }
+
+    /**
+     * Resolves the concrete MER application reference(s) the AUTHORIZED renewal should advance:
+     * <ol>
+     *   <li>an explicit {@code applicationRef} pinned at create is the authoritative MER key;</li>
+     *   <li>otherwise, for an obligor-level {@code Counterparty} review the {@code subjectRef} is a
+     *       counterparty ref — a different ID namespace from MER's applicationReference — so the
+     *       obligor's application(s) are resolved from origination;</li>
+     *   <li>otherwise (an Application / Facility subject) the {@code subjectRef} IS the MER key.</li>
+     * </ol>
+     * Returns an empty list when a counterparty has no resolvable applications, so the caller can
+     * surface that clearly rather than reporting a misleading "advanced 0".
+     */
+    private List<String> resolveMerReferences(SrmReview r) {
+        if (r.getApplicationRef() != null && !r.getApplicationRef().isBlank()) {
+            return List.of(r.getApplicationRef());
+        }
+        if ("Counterparty".equalsIgnoreCase(r.getSubjectType())) {
+            List<LoanApplicationRefDto> apps = upstream.applicationsForCounterparty(r.getSubjectRef());
+            return apps.stream()
+                    .map(LoanApplicationRefDto::reference)
+                    .filter(ref -> ref != null && !ref.isBlank())
+                    .distinct()
+                    .toList();
+        }
+        return List.of(r.getSubjectRef());
+    }
+
+    private static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s.trim();
     }
 
     private String generateRef() {
