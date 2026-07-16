@@ -1,6 +1,9 @@
 package com.helix.copilot.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.copilot.client.CopilotUpstreamClient;
 import com.helix.copilot.dto.Dtos.AskRequest;
 import com.helix.copilot.dto.Dtos.Citation;
@@ -9,6 +12,7 @@ import com.helix.copilot.service.PersonaScope.Role;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -45,12 +49,15 @@ public class CopilotService {
     private final CopilotUpstreamClient up;
     private final AuditService audit;
     private final com.helix.common.governance.AiGovernanceClient governance;
+    private final LlmClient llm;
 
     public CopilotService(CopilotUpstreamClient up, AuditService audit,
-                          com.helix.common.governance.AiGovernanceClient governance) {
+                          com.helix.common.governance.AiGovernanceClient governance,
+                          LlmClient llm) {
         this.up = up;
         this.audit = audit;
         this.governance = governance;
+        this.llm = llm;
     }
 
     public CopilotAnswer ask(String persona, AskRequest req) {
@@ -109,11 +116,73 @@ public class CopilotService {
             default -> Composed.of("I don't have an answer for that.", false, List.of());
         };
 
+        // Optional advisory rewrite: when a bank has configured an external LLM, the model
+        // rephrases the GROUNDED facts into prose. It never sees a refusal / out-of-scope /
+        // needRef reply (those returned above), never invents figures, and the grounding
+        // envelope (grounded flag + citations + suggestedAction) is preserved unchanged.
+        // Provider 'none' (default) → deterministic answer byte-identical to today.
+        Composed drafted = groundedRewrite(req, c);
+        boolean llmDrafted = drafted != c;
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("intent", intent.name());
+        detail.put("role", role.name());
+        detail.put("grounded", drafted.grounded());
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+        }
         audit.ai("copilot:" + persona, "COPILOT_ASK", "Application", ref,
-                "Answered %s (grounded=%s)".formatted(intent, c.grounded()),
-                Map.of("intent", intent.name(), "role", role.name(), "grounded", c.grounded()));
-        return new CopilotAnswer(persona, role.name(), intent.name(), c.text(), c.grounded(), false, null,
-                c.suggestedAction(), c.citations(), scope);
+                "Answered %s (grounded=%s)".formatted(intent, drafted.grounded()), detail);
+        return new CopilotAnswer(persona, role.name(), intent.name(), drafted.text(), drafted.grounded(), false, null,
+                drafted.suggestedAction(), drafted.citations(), scope);
+    }
+
+    /**
+     * Advisory prose rewrite of an already-grounded answer. Only fires when the platform is
+     * LLM-configured AND the answer was grounded in retrieved facts with citations. The model
+     * is instructed to reuse the supplied figures verbatim and never to act; the citations and
+     * grounded flag are carried through untouched. Any not-configured / failed / empty result
+     * returns the original deterministic {@code Composed} — fail-soft.
+     */
+    private Composed groundedRewrite(AskRequest req, Composed c) {
+        if (c == null || !c.grounded() || c.citations() == null || c.citations().isEmpty()
+                || c.text() == null || c.text().isBlank()) {
+            return c;
+        }
+        String system = "You are Helix Copilot, a NON-BINDING assistant for wholesale-credit staff. "
+                + "Rewrite the GROUNDED FACTS into a clear, concise answer to the user's question. "
+                + "Use ONLY the figures, grades, rates and dates present in the grounded facts — never "
+                + "invent, estimate or change any value. Do not approve, reject or instruct anyone to act. "
+                + "Reply in a few sentences of plain prose.";
+        String user = "Question: " + nz(req.question()) + "\n\n"
+                + "Grounded facts (source of truth — do not alter any value):\n" + c.text() + "\n\n"
+                + "Sources: " + citationsText(c.citations());
+        LlmResult r = safeComplete(LlmRequest.of("copilot", system, user));
+        if (!r.usable()) {
+            return c;
+        }
+        return new Composed(r.text().strip(), c.grounded(), c.citations(), c.suggestedAction());
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
+    }
+
+    private String citationsText(List<Citation> citations) {
+        List<String> parts = new ArrayList<>();
+        for (Citation c : citations) {
+            parts.add(c.source() + " " + c.endpoint());
+        }
+        return String.join("; ", parts);
+    }
+
+    private String nz(String s) {
+        return s == null ? "" : s;
     }
 
     // ----------------------------------------------------------- intent handlers
