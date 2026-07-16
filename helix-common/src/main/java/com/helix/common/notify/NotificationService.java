@@ -61,10 +61,24 @@ public class NotificationService {
         this.resolver = resolver;
     }
 
-    /** A notification to enqueue; {@code recipientRoles}/{@code jurisdiction} may be null. */
+    /**
+     * A notification to enqueue; {@code recipientRoles}/{@code jurisdiction}/{@code recipients}
+     * may be null. {@code recipients} are explicit addressees (an email/phone used verbatim, or an
+     * actor name resolved via the NOTIFICATION_CONTACT master) — additive over the role-based
+     * routing and only consulted by a real transport. The 8-arg constructor (no explicit
+     * recipients) preserves every existing caller unchanged.
+     */
     public record Enqueue(String eventType, String templateKey, String subjectType, String subjectRef,
                           String dedupeKey, String jurisdiction, Map<String, Object> vars,
-                          List<String> recipientRoles) {
+                          List<String> recipientRoles, List<String> recipients) {
+
+        /** Back-compat: enqueue with role-based routing only (no explicit recipient addresses). */
+        public Enqueue(String eventType, String templateKey, String subjectType, String subjectRef,
+                       String dedupeKey, String jurisdiction, Map<String, Object> vars,
+                       List<String> recipientRoles) {
+            this(eventType, templateKey, subjectType, subjectRef, dedupeKey, jurisdiction, vars,
+                    recipientRoles, null);
+        }
     }
 
     @Transactional
@@ -135,6 +149,7 @@ public class NotificationService {
         n.setIdempotencyKey(idem);
         n.setTemplateKey(cmd.templateKey());
         n.setRecipientRoles(roles);
+        n.setRecipients(cmd.recipients());   // explicit addressees (null for role-only callers — unchanged)
         n.setRenderedSubject(subject);
         n.setRenderedBody(body);
         n.setVars(new LinkedHashMap<>(vars));

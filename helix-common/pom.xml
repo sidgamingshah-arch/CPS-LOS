@@ -27,7 +27,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
-
         <!-- DMS/S3 : NO active dependency is required for the S3 document-store backend.
              The active S3DocumentStore uses Spring RestClient + a hand-rolled AWS SigV4 signer
              (JDK crypto only: HmacSHA256 + SHA-256), so the shared classpath and the default
@@ -40,5 +39,13 @@
             <version>2.28.16</version>
         </dependency>
         -->
+
+        <!-- notify transport: real SMTP email dispatch (JavaMail via Spring Mail). Config-gated;
+             the JavaMailSender bean only autoconfigures when spring.mail.host is set, so the
+             default (outbox) run is unaffected. SMS uses the existing RestClient (no extra dep). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
     </dependencies>
 </project>
