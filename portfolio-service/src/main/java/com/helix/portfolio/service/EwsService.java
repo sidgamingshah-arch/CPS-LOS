@@ -1,6 +1,9 @@
 package com.helix.portfolio.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.common.model.Enums.SignalSeverity;
 import com.helix.common.notify.NotificationService;
 import com.helix.common.web.ApiException;
@@ -15,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -30,13 +34,15 @@ public class EwsService {
     private final PortfolioUpstreamClient upstream;
     private final AuditService audit;
     private final NotificationService notifications;
+    private final LlmClient llm;
 
     public EwsService(EwsSignalRepository signals, PortfolioUpstreamClient upstream, AuditService audit,
-                      NotificationService notifications) {
+                      NotificationService notifications, LlmClient llm) {
         this.signals = signals;
         this.upstream = upstream;
         this.audit = audit;
         this.notifications = notifications;
+        this.llm = llm;
     }
 
     @Transactional
@@ -105,10 +111,36 @@ public class EwsService {
                     "Watchlist candidate; review remediation options"));
         }
 
+        // Optional advisory LLM narrative: when a bank has configured an external model, it redrafts each
+        // signal's rationale as a richer context summary grounded in the SAME deterministic facts (type,
+        // severity, source, score, deterministic rationale, proposed action). It only rewrites the advisory
+        // rationale TEXT — the deterministic trigger, severity, score and proposed action are untouched, and
+        // staging / reclassification stay human-decided. Provider 'none' (default) → no external call, the
+        // deterministic rationale is byte-identical to today.
+        boolean llmDrafted = false;
+        String llmModel = null;
+        for (EwsSignal s : raised) {
+            LlmNarrative d = llmEwsNarrative(exp, s);
+            if (d != null) {
+                s.setRationale(d.text());
+                llmDrafted = true;
+                llmModel = d.model();
+            }
+        }
+
         List<EwsSignal> saved = signals.saveAll(raised);
+        Map<String, Object> detail;
+        if (llmDrafted) {
+            detail = new LinkedHashMap<>();
+            detail.put("signalCount", saved.size());
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmModel);
+        } else {
+            detail = Map.of("signalCount", saved.size());
+        }
         audit.ai("ews-agent", "EWS_SCAN", "Application", exp.getApplicationReference(),
                 "Scan raised %d signal(s); flags only — no autonomous reclassification".formatted(saved.size()),
-                Map.of("signalCount", saved.size()));
+                detail);
         // A SEVERE/HIGH signal is worth notifying the desk about — deterministic, SYSTEM-actor
         // (the notification is not an AI decision; the advisory EWS flag it reports is unchanged).
         for (EwsSignal s : saved) {
@@ -186,5 +218,43 @@ public class EwsService {
             case "==" -> Math.abs(observed - threshold) < 1e-9;
             default -> true;
         };
+    }
+
+    // --------------------------------------------------- advisory LLM narrative (fail-soft)
+
+    /**
+     * Advisory early-warning narrative grounded in the deterministic signal facts. Prose only — reuses the
+     * supplied type / severity / score / threshold figures verbatim and never changes them; these remain
+     * flags only, with staging and remediation human-decided. Returns {@code null} when not configured /
+     * failed / empty so the caller keeps the deterministic rationale.
+     */
+    private LlmNarrative llmEwsNarrative(ExposureRecord exp, EwsSignal s) {
+        String borrower = exp.getCounterpartyName() == null ? exp.getApplicationReference() : exp.getCounterpartyName();
+        String system = "You are drafting an ADVISORY, non-binding early-warning signal narrative for a "
+                + "wholesale-credit exposure. capability=ews-narrative. Write a short context summary of the signal "
+                + "using ONLY the facts provided — the signal type, severity, source, score, the deterministic "
+                + "rationale and the proposed action. Reuse every figure and threshold verbatim; never invent or "
+                + "change any value. These are flags only: staging, reclassification and limit changes are "
+                + "human-decided. Reply with 1-3 sentences of plain prose.";
+        String user = "Borrower: " + borrower + "\nDeal: " + s.getApplicationReference()
+                + "\nSignal type: " + s.getSignalType() + "\nSeverity: " + s.getSeverity()
+                + "\nSource: " + s.getSource() + "\nScore (0-1): " + s.getScore()
+                + "\nDeterministic rationale (source of truth): " + s.getRationale()
+                + "\nProposed action: " + s.getProposedAction();
+        LlmResult r = safeComplete(LlmRequest.of("ews-narrative", system, user));
+        return r.usable() ? new LlmNarrative(r.text().strip(), r.model()) : null;
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
+    }
+
+    /** An advisory LLM-drafted narrative plus the model that produced it. */
+    private record LlmNarrative(String text, String model) {
     }
 }

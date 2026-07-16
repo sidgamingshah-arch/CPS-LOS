@@ -1,6 +1,9 @@
 package com.helix.risk.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.risk.client.ConfigClient;
 import com.helix.risk.client.OriginationClient;
 import com.helix.risk.dto.CreditInputsDto;
@@ -37,16 +40,18 @@ public class PricingOptimiser {
     private final FtpService ftpService;
     private final AuditService audit;
     private final com.helix.common.governance.AiGovernanceClient governance;
+    private final LlmClient llm;
 
     public PricingOptimiser(RiskService risk, ConfigClient config, OriginationClient origination,
                             FtpService ftpService, AuditService audit,
-                            com.helix.common.governance.AiGovernanceClient governance) {
+                            com.helix.common.governance.AiGovernanceClient governance, LlmClient llm) {
         this.risk = risk;
         this.config = config;
         this.origination = origination;
         this.ftpService = ftpService;
         this.audit = audit;
         this.governance = governance;
+        this.llm = llm;
     }
 
     @Transactional
@@ -110,16 +115,40 @@ public class PricingOptimiser {
         Scenario recommended = scenarios.stream().filter(Scenario::meetsTarget).findFirst()
                 .orElse(scenarios.stream().max((a, b) -> Double.compare(a.raroc(), b.raroc())).orElse(baseline));
 
+        // Optional advisory LLM rationale: when a bank has configured an external model, it drafts the
+        // recommendation narrative grounded in the SAME deterministic goal-seek numbers. It is attached as
+        // advisory prose on the recommended scenario's breakdown map and NEVER changes any rate, fee, LGD or
+        // RAROC — the numeric search and the PricingResult of record are untouched. Provider 'none' (default)
+        // → no narrative key added, byte-identical to today.
+        LlmNarrative rec = llmPricingNarrative(reference, target, hurdle, baseline, recommended);
+        boolean llmDrafted = rec != null;
+        if (llmDrafted) {
+            recommended.breakdown().put("recommendationNarrative", rec.text());
+            recommended.breakdown().put("llmModel", rec.model());
+        }
+
         OptimisationResult result = new OptimisationResult(reference, baseline.rate(), baseline.raroc(),
                 target, hurdle, recommended.meetsTarget(), recommended, scenarios, true);
 
+        Map<String, Object> detail;
+        if (llmDrafted) {
+            detail = new LinkedHashMap<>();
+            detail.put("target", target);
+            detail.put("achievable", recommended.meetsTarget());
+            detail.put("recommendedScenario", recommended.name());
+            detail.put("advisory", true);
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", rec.model());
+        } else {
+            detail = Map.of("target", target, "achievable", recommended.meetsTarget(),
+                    "recommendedScenario", recommended.name(), "advisory", true);
+        }
         audit.ai("pricing-optimiser", "PRICING_OPTIMISED", "Application", reference,
                 "Goal-seek target RAROC %.1f%% → %s (%s) (advisory)".formatted(
                         target * 100,
                         recommended.meetsTarget() ? "achievable" : "shortfall",
                         recommended.name()),
-                Map.of("target", target, "achievable", recommended.meetsTarget(),
-                        "recommendedScenario", recommended.name(), "advisory", true));
+                detail);
         return result;
     }
 
@@ -184,6 +213,47 @@ public class PricingOptimiser {
 
     private String pct(double v) { return String.format("%.2f%%", v * 100); }
     private String bps(double v) { return String.format("%.0fbps", v); }
+
+    // --------------------------------------------------- advisory LLM narrative (fail-soft)
+
+    /**
+     * Advisory pricing recommendation rationale grounded in the deterministic goal-seek numbers. Prose
+     * only — reuses the supplied rate / fee / LGD / RAROC figures verbatim and never changes them; the
+     * pricing of record is preserved. Returns {@code null} when not configured / failed / empty so the
+     * caller returns the deterministic result unchanged.
+     */
+    private LlmNarrative llmPricingNarrative(String reference, double target, double hurdle,
+                                             Scenario baseline, Scenario recommended) {
+        String system = "You are drafting an ADVISORY, non-binding pricing recommendation rationale for a "
+                + "wholesale-credit deal. capability=pricing-narrative. Explain the recommended goal-seek path using "
+                + "ONLY the figures provided — the target and hurdle RAROC, the baseline rate and RAROC, and the "
+                + "recommended scenario's rate, fee, LGD and RAROC. Reuse every figure verbatim; never invent, "
+                + "estimate or change any value. State that the pricing of record is preserved and this is advisory "
+                + "only — a named human decides the price. Reply with 2-4 sentences of plain prose.";
+        String user = "Deal: " + reference + "\nTarget RAROC: " + target + "\nHurdle RAROC: " + hurdle
+                + "\nBaseline rate: " + baseline.rate() + "\nBaseline RAROC: " + baseline.raroc()
+                + "\nRecommended scenario: " + recommended.name() + "\nRecommended rate: " + recommended.rate()
+                + "\nRecommended fee (bps): " + recommended.feeBps()
+                + "\nRecommended LGD after collateral: " + recommended.lgdAfterCollateral()
+                + "\nRecommended RAROC: " + recommended.raroc()
+                + "\nMeets target: " + recommended.meetsTarget()
+                + (recommended.constraintHit() == null ? "" : "\nBinding constraint: " + recommended.constraintHit());
+        LlmResult r = safeComplete(LlmRequest.of("pricing-narrative", system, user));
+        return r.usable() ? new LlmNarrative(r.text().strip(), r.model()) : null;
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
+    }
+
+    /** An advisory LLM-drafted narrative plus the model that produced it. */
+    private record LlmNarrative(String text, String model) {
+    }
 
     @SuppressWarnings("unused")
     private List<Scenario> toList(Scenario... s) { return new ArrayList<>(List.of(s)); }
