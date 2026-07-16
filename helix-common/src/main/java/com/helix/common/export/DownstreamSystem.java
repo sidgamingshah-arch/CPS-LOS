@@ -11,5 +11,6 @@ public enum DownstreamSystem {
     CPR,            // Credit Policy / Portfolio Reporting — composition & concentration
     REGULATORY,     // Regulatory reporting feeds
     CRILC,          // RBI Central Repository of Information on Large Credits — large-credit reporting
-    SYNDICATION     // Syndicate participant statements — per-lender share/funded/fees feed
+    SYNDICATION,    // Syndicate participant statements — per-lender share/funded/fees feed
+    CRM             // Customer Relationship Management — case/decision status write-back
 }

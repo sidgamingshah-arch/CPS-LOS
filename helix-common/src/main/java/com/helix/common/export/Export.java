@@ -57,4 +57,14 @@ public final class Export {
                                     double aggregateExposure, String assetClassification, String smaClass,
                                     int maxDaysPastDue, String currency, String asOf) {
     }
+
+    /**
+     * CRM write-back feed — one line per case/decision whose status is pushed back to the
+     * originating CRM/source system (PRD "back-updation to CRM"). Carries the deterministic,
+     * already-authoritative case status; the CRM connector never computes or alters a figure.
+     */
+    public record CrmCaseStatusRecord(String subjectType, String subjectRef, String caseRef, String stage,
+                                      String status, String decision, String decisionBy, String decisionAt,
+                                      String comments) {
+    }
 }

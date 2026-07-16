@@ -27,5 +27,18 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+
+        <!-- DMS/S3 : NO active dependency is required for the S3 document-store backend.
+             The active S3DocumentStore uses Spring RestClient + a hand-rolled AWS SigV4 signer
+             (JDK crypto only: HmacSHA256 + SHA-256), so the shared classpath and the default
+             (filesystem) build are unaffected. The AWS SDK v2 S3 client did NOT resolve in this
+             build (offline mirror). A bank that prefers the SDK can add it to its own repository
+             mirror and uncomment the block below (kept here for union-merge visibility):
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>2.28.16</version>
+        </dependency>
+        -->
     </dependencies>
 </project>
