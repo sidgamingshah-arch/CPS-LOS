@@ -24,7 +24,9 @@ public final class Dtos {
             @Positive int tenorMonths,
             String purpose,
             String collateralType,
-            double collateralValue,
+            /** Nullable so the create path can tell "not supplied" (null → blank, so a
+             *  FIELD_POLICY requiredWhen can fire) from an explicit 0 (present). */
+            Double collateralValue,
             boolean secured) {
     }
 
