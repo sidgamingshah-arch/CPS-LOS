@@ -1,6 +1,11 @@
 package com.helix.origination.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.common.web.ApiException;
 import com.helix.origination.dto.CollateralIntelDtos.ConfirmCollateralExtractionRequest;
 import com.helix.origination.dto.CollateralIntelDtos.RevalueRequest;
@@ -55,6 +60,8 @@ import java.util.regex.Pattern;
 @Service
 public class CollateralIntelligenceService {
 
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     private static final double DEFAULT_LTV_THRESHOLD = 0.80;
 
     // ------ per-type mandatory-field templates (PRD §5 "mandatory vs optional") ------
@@ -89,6 +96,8 @@ public class CollateralIntelligenceService {
     private final OriginationService origination;
     private final AuditService audit;
     private final com.helix.common.governance.AiGovernanceClient governance;
+    /** Governed LLM SPI (default {@code none} → deterministic fallback everywhere). */
+    private final LlmClient llm;
 
     public CollateralIntelligenceService(CollateralExtractionRepository extractions,
                                          CollateralRevaluationRepository revaluations,
@@ -97,7 +106,8 @@ public class CollateralIntelligenceService {
                                          LoanApplicationRepository applications,
                                          OriginationService origination,
                                          AuditService audit,
-                                         com.helix.common.governance.AiGovernanceClient governance) {
+                                         com.helix.common.governance.AiGovernanceClient governance,
+                                         LlmClient llm) {
         this.extractions = extractions;
         this.revaluations = revaluations;
         this.collaterals = collaterals;
@@ -106,6 +116,7 @@ public class CollateralIntelligenceService {
         this.origination = origination;
         this.audit = audit;
         this.governance = governance;
+        this.llm = llm;
     }
 
     // ================================================================ 1. extraction
@@ -131,6 +142,26 @@ public class CollateralIntelligenceService {
             default                 -> { /* unreachable */ }
         }
 
+        // Optional advisory LLM extraction: when an external model is configured it drafts the field
+        // map from the SAME document text. CRITICAL GOVERNANCE: this stays a SUGGESTED extraction that
+        // a named human confirms — confirm() materialises the real Collateral (with edit capability),
+        // so the model never auto-writes an authoritative figure. The missing-mandatory determination
+        // and the confidence math below run over the FINAL fields with the SAME deterministic logic,
+        // and the LTV / valuation math in revalue() is untouched. Provider 'none' (default) or an
+        // unusable reply → the deterministic regex extraction, byte-identical to today.
+        boolean llmDrafted = false;
+        String llmModel = null;
+        LlmResult lr = llmExtractCollateral(kind, text, MANDATORY.get(kind));
+        if (lr.usable()) {
+            Map<String, Object> aiFields = parseAiFields(lr.text());
+            if (aiFields != null && !aiFields.isEmpty()) {
+                fields = aiFields;
+                signals = new ArrayList<>(List.of("fields drafted by the configured external model (advisory)"));
+                llmDrafted = true;
+                llmModel = lr.model();
+            }
+        }
+
         List<String> missing = new ArrayList<>();
         for (String required : MANDATORY.get(kind)) {
             if (!fields.containsKey(required)) missing.add(required);
@@ -149,11 +180,19 @@ public class CollateralIntelligenceService {
         e.setOverallConfidence(Math.round(overall * 100.0) / 100.0);
         e.setExtractedBy("ai:collateral-extraction");
         CollateralExtraction saved = extractions.save(e);
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("documentKind", kind);
+        detail.put("fields", fields.size());
+        detail.put("missingMandatory", missing.size());
+        detail.put("advisory", true);
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmModel);
+        }
         audit.ai("collateral-extraction", "COLLATERAL_EXTRACTED", "Application", reference,
                 "Extracted %s from %s — %d field(s), %d missing-mandatory"
                         .formatted(KIND_TO_COLLATERAL_TYPE.get(kind), kind, fields.size(), missing.size()),
-                Map.of("documentKind", kind, "fields", fields.size(),
-                        "missingMandatory", missing.size(), "advisory", true));
+                detail);
         return saved;
     }
 
@@ -268,12 +307,33 @@ public class CollateralIntelligenceService {
         r.setNote(req.note());
         r.setTriggeredBy(actor);
         CollateralRevaluation saved = revaluations.save(r);
-        audit.ai("collateral-monitor", "COLLATERAL_REVALUED", "Application", app.getReference(),
-                "Collateral #%d revalued %.0f -> %.0f (LTV %.2f -> %.2f, threshold %.2f, %s)"
-                        .formatted(collateralId, prev, newMv, ltvBefore, ltvAfter, threshold, severity),
-                Map.of("collateralId", collateralId, "ltvAfter", r.getLtvAfter(),
-                        "threshold", threshold, "severity", severity,
-                        "breached", breached, "advisory", true));
+        // Advisory alert narrative. The LTV math, the breach TRIGGER (severity / breached) and the
+        // human apply-gate in review() are all deterministic and unchanged; when an external model is
+        // configured it only redrafts the human-readable alert narrative (the audit summary), grounded
+        // in the figures above. Provider 'none' (default) or an unusable reply → the deterministic summary.
+        String summary = "Collateral #%d revalued %.0f -> %.0f (LTV %.2f -> %.2f, threshold %.2f, %s)"
+                .formatted(collateralId, prev, newMv, ltvBefore, ltvAfter, threshold, severity);
+        boolean llmDrafted = false;
+        String llmModel = null;
+        LlmResult lr = llmRevalNarrative(collateralId, prev, newMv, drawn, ltvBefore, ltvAfter,
+                threshold, severity, breached);
+        if (lr.usable()) {
+            summary = lr.text().strip();
+            llmDrafted = true;
+            llmModel = lr.model();
+        }
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("collateralId", collateralId);
+        detail.put("ltvAfter", saved.getLtvAfter());
+        detail.put("threshold", threshold);
+        detail.put("severity", severity);
+        detail.put("breached", breached);
+        detail.put("advisory", true);
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmModel);
+        }
+        audit.ai("collateral-monitor", "COLLATERAL_REVALUED", "Application", app.getReference(), summary, detail);
         return saved;
     }
 
@@ -603,5 +663,96 @@ public class CollateralIntelligenceService {
 
     private static double round(double v) {
         return Math.round(v * 10000.0) / 10000.0;
+    }
+
+    // ================================================================ advisory LLM hooks
+
+    /**
+     * Advisory LLM extraction of collateral fields. Extraction capability: the prompt asks for a
+     * JSON object; the reply is parsed leniently. Fail-soft via {@link #safeComplete} — a non-usable
+     * result leaves the caller on its deterministic regex extraction.
+     */
+    private LlmResult llmExtractCollateral(String kind, String text, List<String> expected) {
+        String system = "You are an ADVISORY collateral-document extractor for wholesale credit. Extract the "
+                + "key fields from the collateral document as a flat JSON object of field -> value. This is a "
+                + "SUGGESTION only: a named human reviews and confirms it before any collateral value is "
+                + "recorded, and it never sets an authoritative figure. Reuse figures from the document "
+                + "verbatim and never invent values. Return ONLY a JSON object. capability=collateral-extract";
+        String user = "Document kind: " + kind + "\nExpected fields: " + expected + "\nDocument text:\n"
+                + (text.length() > 3500 ? text.substring(0, 3500) : text);
+        return safeComplete(LlmRequest.of("collateral-extract", system, user));
+    }
+
+    /** Map a parsed JSON object into the {@code field -> {value, confidence}} shape; null when empty. */
+    private Map<String, Object> parseAiFields(String text) {
+        Map<String, Object> parsed = parseJsonObject(text);
+        if (parsed == null || parsed.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> en : parsed.entrySet()) {
+            Object v = en.getValue();
+            if (v instanceof Map) {
+                out.put(en.getKey(), v);
+            } else {
+                out.put(en.getKey(), valueWithConfidence(v == null ? "" : v, 0.7));
+            }
+        }
+        return out;
+    }
+
+    /** Advisory LTV alert narrative. Prose (never a JSON object); reuses the deterministic figures verbatim. */
+    private LlmResult llmRevalNarrative(Long collateralId, double prev, double newMv, double drawn,
+                                        double ltvBefore, double ltvAfter, double threshold,
+                                        String severity, boolean breached) {
+        String system = "You are an ADVISORY collateral-monitoring assistant. Write a one- to two-sentence "
+                + "alert narrative describing this collateral revaluation and its loan-to-value impact. Reuse "
+                + "the supplied figures verbatim and never invent values; do not change the threshold, "
+                + "severity or any decision. The narrative is advisory and the human apply-gate is unchanged. "
+                + "capability=collateral-monitor";
+        String user = "Collateral id: " + collateralId + "\nPrevious market value: " + fmt(prev)
+                + "\nNew market value: " + fmt(newMv) + "\nDrawn exposure: " + fmt(drawn)
+                + "\nLTV before: " + ltvBefore + "\nLTV after: " + ltvAfter
+                + "\nLTV threshold: " + threshold + "\nSeverity: " + severity + "\nBreached: " + breached;
+        return safeComplete(LlmRequest.of("collateral-monitor", system, user));
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
+    }
+
+    /** Lenient JSON-object parse: strips code fences / prose wrapping; returns null on any failure. */
+    private Map<String, Object> parseJsonObject(String text) {
+        if (text == null) {
+            return null;
+        }
+        String t = text.strip();
+        if (t.startsWith("```")) {
+            int nl = t.indexOf('\n');
+            if (nl > 0) {
+                t = t.substring(nl + 1);
+            }
+            if (t.endsWith("```")) {
+                t = t.substring(0, t.length() - 3);
+            }
+            t = t.strip();
+        }
+        if (!t.startsWith("{")) {
+            return null;
+        }
+        try {
+            return JSON.readValue(t, new TypeReference<LinkedHashMap<String, Object>>() { });
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private static String fmt(double v) {
+        return String.format(Locale.UK, "%.2f", v);
     }
 }

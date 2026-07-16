@@ -184,6 +184,52 @@ public class DocIntelligenceService {
     private record LlmExtraction(Map<String, Object> fields, String model) {
     }
 
+    // ---------------------------------------- advisory LLM hooks (normalise / translate / checks)
+
+    /**
+     * Advisory LLM rewrite into the target register. Prose (never a JSON object). Reuses the
+     * deterministic rewrite as a reference; the model quotes figures verbatim. Fail-soft via
+     * {@link #safeComplete} — a non-usable result leaves the caller on its deterministic path.
+     */
+    private LlmResult llmNormalise(String original, String target, String deterministic) {
+        String register = "LEGAL".equals(target) ? "formal legal contract" : "plain business";
+        String system = "You are an ADVISORY language-normalisation assistant for wholesale-credit staff. "
+                + "Rewrite the user's text into " + register + " register, preserving its meaning. Reuse any "
+                + "figures, dates, names and defined terms verbatim and never invent facts. The rewrite is "
+                + "advisory and human-reviewed; it sets no figure or decision. Reply with only the rewritten "
+                + "text. capability=language-normalise";
+        String user = "Target register: " + target + "\nOriginal text:\n" + original
+                + "\n\nDeterministic reference rewrite (improve the wording, keep the meaning):\n" + deterministic;
+        return safeComplete(LlmRequest.of("language-normalise", system, user));
+    }
+
+    /** Advisory LLM translation — only invoked when the source and target languages differ. */
+    private LlmResult llmTranslate(String original, String src, String tgt) {
+        String system = "You are an ADVISORY translation assistant for wholesale-credit documents. Translate "
+                + "the user's text from " + src + " to " + tgt + ", preserving meaning. Reuse all figures, "
+                + "dates, names and account identifiers verbatim and never invent facts. The translation is "
+                + "advisory and human-reviewed; it sets no figure or decision. Reply with only the translated "
+                + "text. capability=translation";
+        String user = "Source language: " + src + "\nTarget language: " + tgt + "\nText:\n" + original;
+        return safeComplete(LlmRequest.of("translation", system, user));
+    }
+
+    /** Advisory LLM redraft of one document-check finding's explanation MESSAGE (severity/code fixed). */
+    private LlmResult llmExplainCheck(String fileName, String classifiedType, String level,
+                                      String code, String message) {
+        String system = "You are an ADVISORY document-check explainer for wholesale-credit staff. Rewrite the "
+                + "given finding into one clear sentence for a reviewer. Do NOT change the finding's severity "
+                + "or code, and reuse any figures and type names verbatim; invent nothing. The explanation is "
+                + "advisory and sets no figure or decision. Reply with only the sentence. capability=doc-checks";
+        String user = "Document: " + nz(fileName) + "\nClassified type: " + nz(classifiedType)
+                + "\nSeverity: " + level + "\nCode: " + code + "\nDeterministic finding: " + message;
+        return safeComplete(LlmRequest.of("doc-checks", system, user));
+    }
+
+    private static String nz(String s) {
+        return s == null ? "" : s;
+    }
+
     @Transactional
     public DocExtraction confirm(Long extractionId, String note, String actor) {
         DocExtraction e = get(extractionId);
@@ -228,9 +274,28 @@ public class DocIntelligenceService {
         String tgt = target == null ? "LEGAL" : target.toUpperCase();
         List<String> notes = new ArrayList<>();
         String out = "LEGAL".equals(tgt) ? toLegal(text, notes) : toPlain(text, notes);
+        // Optional advisory LLM rewrite: when an external model is configured it produces the
+        // normalised text grounded in the SAME original + target register. The output is advisory
+        // (no figure or decision). Provider 'none' (default) or an unusable reply → the deterministic
+        // rewrite, byte-identical to today.
+        boolean llmDrafted = false;
+        String llmModel = null;
+        LlmResult r = llmNormalise(text, tgt, out);
+        if (r.usable()) {
+            out = r.text().strip();
+            notes = new ArrayList<>(List.of("Normalised by the configured external model (advisory)"));
+            llmDrafted = true;
+            llmModel = r.model();
+        }
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("target", tgt);
+        detail.put("advisory", true);
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmModel);
+        }
         audit.ai("language-normalisation", "TEXT_NORMALISED", "Text", "n/a",
-                "Rewrote %d chars → %s register (advisory)".formatted(text.length(), tgt),
-                Map.of("target", tgt, "advisory", true));
+                "Rewrote %d chars → %s register (advisory)".formatted(text.length(), tgt), detail);
         return new NormaliseResponse(tgt, text, out, notes, true);
     }
 
@@ -243,9 +308,29 @@ public class DocIntelligenceService {
                 ? text
                 : "[" + tgt + "] " + glossaryTranslate(text, tgt);
         double conf = src.equals(tgt) ? 1.0 : 0.78;
+        // Optional advisory LLM translation, only when the languages differ. The confidence stays
+        // deterministic; the model only drafts the translated TEXT (advisory). Provider 'none'
+        // (default) or an unusable reply → the deterministic glossary passthrough, byte-identical.
+        boolean llmDrafted = false;
+        String llmModel = null;
+        if (!src.equals(tgt)) {
+            LlmResult r = llmTranslate(text, src, tgt);
+            if (r.usable()) {
+                translated = r.text().strip();
+                llmDrafted = true;
+                llmModel = r.model();
+            }
+        }
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("source", src);
+        detail.put("target", tgt);
+        detail.put("advisory", true);
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmModel);
+        }
         audit.ai("translation", "TEXT_TRANSLATED", "Text", "n/a",
-                "Translated %s→%s (advisory, %.2f)".formatted(src, tgt, conf),
-                Map.of("source", src, "target", tgt, "advisory", true));
+                "Translated %s→%s (advisory, %.2f)".formatted(src, tgt, conf), detail);
         return new TranslateResponse(src, tgt, text, translated, conf, true);
     }
 
@@ -279,10 +364,39 @@ public class DocIntelligenceService {
         if (findings.isEmpty()) {
             findings.add(new DocCheckFinding("OK", "CLEAN", "No issues detected"));
         }
+        // The passed verdict is derived from the DETERMINISTIC finding levels — computed here,
+        // before any advisory redraft, so it can never move.
         boolean passed = findings.stream().noneMatch(x -> "ERROR".equals(x.level()) || "WARN".equals(x.level()));
+
+        // Optional advisory LLM redraft of each finding's explanation MESSAGE only. The detection
+        // (which findings exist, their level + code) and the passed verdict stay deterministic; the
+        // model may only reword the human-readable explanation, quoting the figures verbatim.
+        // Provider 'none' (default) or an unusable reply → the deterministic messages, byte-identical.
+        boolean llmDrafted = false;
+        String llmModel = null;
+        List<DocCheckFinding> drafted = new ArrayList<>(findings.size());
+        for (DocCheckFinding f : findings) {
+            LlmResult r = llmExplainCheck(doc.getFileName(), doc.getClassifiedType(), f.level(), f.code(), f.message());
+            if (r.usable()) {
+                drafted.add(new DocCheckFinding(f.level(), f.code(), r.text().strip()));
+                llmDrafted = true;
+                llmModel = r.model();
+            } else {
+                drafted.add(f);
+            }
+        }
+        findings = drafted;
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("documentId", docId);
+        detail.put("passed", passed);
+        detail.put("advisory", true);
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmModel);
+        }
         audit.ai("document-checks", "DOC_CHECKED", "Application", ref,
-                "%d finding(s) on %s — advisory".formatted(findings.size(), doc.getFileName()),
-                Map.of("documentId", docId, "passed", passed, "advisory", true));
+                "%d finding(s) on %s — advisory".formatted(findings.size(), doc.getFileName()), detail);
         return new DocCheckResponse(docId, doc.getClassifiedType(), passed, findings, true);
     }
 
