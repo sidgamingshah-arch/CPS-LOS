@@ -119,7 +119,8 @@ public class DocGenService {
         for (String key : clauseKeys) {
             String body = renderTemplateClause(key, vars);
             order.add(key);
-            clauses.put(key, clauseRow(humanise(key), body, "template:" + templateKey));
+            // Template clauses are system-authored trusted HTML (see renderTemplateClause).
+            clauses.put(key, clauseRow(humanise(key), body, "template:" + templateKey, true));
         }
 
         GeneratedDocument d = new GeneratedDocument();
@@ -269,6 +270,8 @@ public class DocGenService {
         if (row == null) throw ApiException.notFound("No clause '" + clauseRef + "' on document");
         row.put("text", text);
         row.put("editedBy", actor);
+        // Edited text is human free text — never trust it as raw HTML (escape at render).
+        row.put("trustedHtml", false);
         row.put("source", row.getOrDefault("source", "template") + " · edited");
         d.setHtml(renderHtml(d));
         GeneratedDocument saved = docs.save(d);
@@ -341,10 +344,22 @@ public class DocGenService {
     }
 
     private Map<String, Object> clauseRow(String title, String text, String source) {
+        return clauseRow(title, text, source, false);
+    }
+
+    /**
+     * Builds a clause row. {@code trustedHtml=true} marks a system-authored template
+     * clause whose body is intentional HTML (bold, per-facility tables, ordered lists)
+     * and is emitted verbatim. Human/AI-authored free text (TNC clauses, custom text,
+     * edited clauses) leaves the flag off so {@link #renderHtml} HTML-escapes it — a
+     * {@code <script>} in clause text is rendered inert.
+     */
+    private Map<String, Object> clauseRow(String title, String text, String source, boolean trustedHtml) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("title", title);
         row.put("text", text);
         row.put("source", source);
+        row.put("trustedHtml", trustedHtml);
         return row;
     }
 
@@ -455,9 +470,14 @@ public class DocGenService {
         for (String key : d.getClauseOrder()) {
             Map<String, Object> row = (Map<String, Object>) d.getClauses().get(key);
             if (row == null) continue;
+            // System-authored template clauses carry intentional HTML (bold, tables) and are
+            // emitted verbatim; human/AI-authored free text is HTML-escaped so injected markup
+            // (e.g. a <script>) is rendered inert. Defense-in-depth at the source of the body.
+            String text = String.valueOf(row.getOrDefault("text", ""));
+            String body = Boolean.TRUE.equals(row.get("trustedHtml")) ? text : mdToHtml(text);
             sb.append("<section><h2>").append(i++).append(". ")
                     .append(escape(String.valueOf(row.getOrDefault("title", key)))).append("</h2>")
-                    .append("<p>").append(String.valueOf(row.getOrDefault("text", "")))
+                    .append("<p>").append(body)
                     .append("</p><p class=\"prov\"><small>source: ")
                     .append(escape(String.valueOf(row.getOrDefault("source", "template"))))
                     .append("</small></p></section>");
@@ -486,5 +506,15 @@ public class DocGenService {
 
     private String escape(String s) {
         return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /**
+     * Escape human/AI-authored free text, then re-enable a tiny, safe Markdown subset
+     * ({@code **bold**} / {@code _italic_}). Mirrors CreditProposalService's {@code mdToHtml}
+     * so a {@code <script>} in the text becomes {@code &lt;script&gt;} (inert) while ordinary
+     * emphasis still renders.
+     */
+    private String mdToHtml(String s) {
+        return escape(s).replaceAll("\\*\\*(.+?)\\*\\*", "<b>$1</b>").replaceAll("_(.+?)_", "<i>$1</i>");
     }
 }

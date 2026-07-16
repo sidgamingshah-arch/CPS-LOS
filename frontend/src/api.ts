@@ -1037,12 +1037,22 @@ export const printing = {
     fetchText(`/decision/api/decisions/${encodeURIComponent(ref)}/credit-proposal/print`, actor),
   // Open a loaded standalone-HTML string in a new window; the page auto-invokes the
   // browser print dialog so the user can "Save as PDF". Pop-up-blocker aware.
+  //
+  // Security: the HTML is served from a Blob URL opened with `noopener`, so the new
+  // window gets NO `window.opener` handle back to this app (no reverse-tabnabbing) and
+  // is NOT same-origin with us. We never `document.write` fetched HTML into a live,
+  // opener-retaining, same-origin window. The blob page still auto-prints via its own
+  // embedded <script>. The object URL is revoked after a short delay so the browser has
+  // time to load it.
   openHtmlWindow: (html: string, notify?: (m: string, err?: boolean) => void): boolean => {
-    const w = window.open("", "_blank");
-    if (!w) { notify?.("Enable pop-ups for this site to download the PDF.", true); return false; }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const w = window.open(blobUrl, "_blank", "noopener");
+    if (!w) {
+      URL.revokeObjectURL(blobUrl);
+      notify?.("Enable pop-ups for this site to download the PDF.", true);
+      return false;
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
     return true;
   },
   // Convenience: fetch + open in one call, surfacing errors through `notify`.
