@@ -3,6 +3,7 @@ import { counterparty, origination, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, type Col, DataTable, EmptyState, Field, statusTone, useAsync } from "../ui";
 import { useCodes } from "../code-values";
+import { evalPolicy, useFieldPolicy } from "../field-policy";
 
 export default function Deals() {
   const { actor, notify, nav } = useApp();
@@ -58,6 +59,10 @@ export default function Deals() {
       facilityType: "TERM_LOAN", requestedAmount: 800000000, currency: "INR", tenorMonths: 60,
       purpose: "Capacity expansion", collateralType: "PROPERTY", collateralValue: 600000000, secured: true,
     });
+    // Config-driven field behaviour (FIELD_POLICY): label/help overrides + conditional
+    // visibility/required, evaluated against the live form values. Empty policy ⇒ today's form.
+    const specs = useFieldPolicy("ORIGINATION_APPLICATION");
+    const policy = evalPolicy(specs, f);
     const [busy, setBusy] = useState(false);
     const submit = async () => {
       const cp = cps.find((c) => c.id.toString() === cpId);
@@ -87,7 +92,8 @@ export default function Deals() {
                   {facilities.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
                 </select>
               </Field>
-              <Field label="Requested amount">
+              <Field label={policy.requestedAmount?.label || "Requested amount"}
+                     hint={policy.requestedAmount?.help} required={policy.requestedAmount?.required}>
                 <input type="number" value={f.requestedAmount} onChange={(e) => setF({ ...f, requestedAmount: +e.target.value })} />
               </Field>
               <Field label="Currency"><input value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })} /></Field>
@@ -98,9 +104,12 @@ export default function Deals() {
                   {collaterals.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
                 </select>
               </Field>
-              <Field label="Collateral value">
-                <input type="number" value={f.collateralValue} onChange={(e) => setF({ ...f, collateralValue: +e.target.value })} />
-              </Field>
+              {!policy.collateralValue?.hidden && (
+                <Field label={policy.collateralValue?.label || "Collateral value"}
+                       hint={policy.collateralValue?.help} required={policy.collateralValue?.required}>
+                  <input type="number" value={f.collateralValue} onChange={(e) => setF({ ...f, collateralValue: +e.target.value })} />
+                </Field>
+              )}
             </div>
             <Field label="Purpose"><input value={f.purpose} onChange={(e) => setF({ ...f, purpose: e.target.value })} /></Field>
             <Button onClick={submit} busy={busy}>Create &amp; open workspace</Button>

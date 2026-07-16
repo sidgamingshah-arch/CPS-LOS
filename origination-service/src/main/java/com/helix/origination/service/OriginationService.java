@@ -1,6 +1,7 @@
 package com.helix.origination.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.fieldpolicy.FieldPolicyService;
 import com.helix.common.llm.LlmClient;
 import com.helix.common.llm.LlmRequest;
 import com.helix.common.llm.LlmResult;
@@ -9,6 +10,7 @@ import com.helix.common.model.Enums.DocumentType;
 import com.helix.common.util.References;
 import com.helix.common.web.ApiException;
 import com.helix.common.workflow.WorkflowClient;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.helix.origination.dto.Dtos.AddCollateralRequest;
 import com.helix.origination.dto.Dtos.AddFacilityRequest;
@@ -99,6 +101,10 @@ public class OriginationService {
     private final com.helix.origination.client.CounterpartyClient counterparties;
     /** Governed LLM SPI (default {@code none} → deterministic fallback everywhere). */
     private final LlmClient llm;
+    /** Config-driven dynamic screen behaviour (FIELD_POLICY). Conditional bean — present only
+     *  when helix.config-service.base-url is set — so it is read via ObjectProvider and is a
+     *  no-op when absent / on a config outage (fail-open; default byte-identical to today). */
+    private final ObjectProvider<FieldPolicyService> fieldPolicy;
 
     public OriginationService(LoanApplicationRepository applications, DocumentRepository documents,
                               FinancialPeriodRepository periods, SpreadCellRepository cells,
@@ -109,9 +115,11 @@ public class OriginationService {
                               com.helix.origination.client.FinancialTemplateClient financialTemplates,
                               com.helix.origination.client.CounterpartyClient counterparties,
                               LlmClient llm,
+                              ObjectProvider<FieldPolicyService> fieldPolicy,
                               @Autowired(required = false) WorkflowClient workflow) {
         this.counterparties = counterparties;
         this.llm = llm;
+        this.fieldPolicy = fieldPolicy;
         this.applications = applications;
         this.documents = documents;
         this.periods = periods;
@@ -132,6 +140,24 @@ public class OriginationService {
 
     @Transactional
     public LoanApplication create(CreateApplicationRequest req, String actor) {
+        // Config-driven dynamic screen behaviour: enforce the ORIGINATION_APPLICATION field
+        // policy (conditional-required + static-required) server-side BEFORE persisting. This is
+        // the authoritative gate — client-side visibility is convenience only and cannot bypass
+        // it. Fail-open: no bean / no FIELD_POLICY master / config outage ⇒ no-op (today's behaviour).
+        FieldPolicyService fp = fieldPolicy.getIfAvailable();
+        if (fp != null) {
+            Map<String, Object> submitted = new LinkedHashMap<>();
+            submitted.put("facilityType", req.facilityType());
+            submitted.put("requestedAmount", req.requestedAmount());
+            submitted.put("currency", req.currency());
+            submitted.put("tenorMonths", req.tenorMonths());
+            submitted.put("purpose", req.purpose());
+            submitted.put("collateralType", req.collateralType());
+            submitted.put("collateralValue", req.collateralValue());
+            submitted.put("secured", req.secured());
+            fp.enforce("ORIGINATION_APPLICATION", submitted);
+        }
+
         LoanApplication app = new LoanApplication();
         app.setReference(References.forDeal());
         app.setCounterpartyId(req.counterpartyId());
@@ -147,7 +173,7 @@ public class OriginationService {
         app.setTenorMonths(req.tenorMonths());
         app.setPurpose(req.purpose());
         app.setCollateralType(req.collateralType());
-        app.setCollateralValue(req.collateralValue());
+        app.setCollateralValue(req.collateralValue() == null ? 0.0 : req.collateralValue());
         app.setSecured(req.secured());
         app.setStatus(ApplicationStatus.INTAKE.name());
         LoanApplication saved = applications.save(app);
@@ -166,7 +192,8 @@ public class OriginationService {
         primary.setPurpose(req.purpose());
         facilities.save(primary);
 
-        if (req.collateralType() != null && !req.collateralType().isBlank() && req.collateralValue() > 0) {
+        if (req.collateralType() != null && !req.collateralType().isBlank()
+                && req.collateralValue() != null && req.collateralValue() > 0) {
             Collateral c = new Collateral();
             c.setApplicationId(saved.getId());
             c.setFacilityId(primary.getId());

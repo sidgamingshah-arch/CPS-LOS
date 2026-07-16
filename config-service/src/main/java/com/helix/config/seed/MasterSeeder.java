@@ -47,6 +47,26 @@ public class MasterSeeder implements CommandLineRunner {
                         map("field", "lei", "type", "CHECKSUM", "param", "LEI", "severity", "ERROR"),
                         map("field", "cin", "type", "REGEX",
                                 "param", "^[UL][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$", "severity", "ERROR"))));
+        // FIELD_POLICY — config-driven dynamic screen behaviour (FieldPolicyService in
+        // helix-common). recordKey = a business-form key; payload.fields carry per-field
+        // label/help overrides + conditional visibility (visibleWhen) / conditional-required
+        // (requiredWhen), enforced server-side and mirrored in the UI. Condition ops:
+        // PRESENT | BLANK | EQ | NE | IN. First form: the origination application-capture form.
+        // collateralValue is required only WHEN collateralType is present — and every existing
+        // flow/e2e/seed sends collateralValue alongside collateralType, so this requiredWhen
+        // NEVER rejects a current payload (additive; fail-open when the master/config is absent).
+        masters.seedActive("FIELD_POLICY", "ORIGINATION_APPLICATION", null, map(
+                "fields", List.of(
+                        map("field", "requestedAmount",
+                                "label", "Facility amount",
+                                "help", "Total facility amount requested by the borrower, in the deal currency."),
+                        map("field", "collateralValue",
+                                "label", "Collateral value (INR)",
+                                "help", "Market value of the pledged security",
+                                "hidden", false,
+                                "visibleWhen", map("field", "collateralType", "op", "PRESENT"),
+                                "requiredWhen", map("field", "collateralType", "op", "PRESENT"),
+                                "requiredSeverity", "ERROR"))));
         masters.seedActive("NEGATIVE_LIST", "country:CU", null, map("type", "COUNTRY", "value", "CU", "reason", "sanctions"));
         masters.seedActive("NEGATIVE_LIST", "country:KP", null, map("type", "COUNTRY", "value", "KP", "reason", "sanctions"));
         masters.seedActive("NEGATIVE_LIST", "country:IR", null, map("type", "COUNTRY", "value", "IR", "reason", "sanctions"));

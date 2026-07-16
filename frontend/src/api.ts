@@ -179,6 +179,14 @@ export const origination = {
     `/origination/api/collateral-intel/${ref}/charge-excel`,
 };
 
+// ---- config-driven dynamic screen behaviour (FIELD_POLICY, helix-common auto-exposed) ----
+// A form fetches its field specs once (label/help overrides + conditional visibility/required).
+// Server-side enforcement is authoritative; this read only drives the UI convenience layer.
+export const fieldPolicy = {
+  get: (formKey: string) =>
+    call<{ formKey: string; fields: any[] }>(`/origination/api/field-policy/${formKey}`, "GET"),
+};
+
 // ---- risk ----
 export const risk = {
   summary: (ref: string) => call<any>(`/risk/api/risk/${ref}`, "GET"),
