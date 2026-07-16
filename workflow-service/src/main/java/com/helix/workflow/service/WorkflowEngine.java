@@ -317,17 +317,14 @@ public class WorkflowEngine {
         }
         stages.save(stage);
 
-        // If recording the currentStage, advance the cursor.
+        // If recording the currentStage, advance the cursor through the SAME parallel-aware
+        // helper advance() uses, so a join policy is honoured rather than the old single-stage
+        // next-pending. For a linear pack (no parallelGroup) this is byte-identical to the
+        // previous "first PENDING after this stage, else complete the instance" behaviour.
         if (stageKey.equals(wf.getCurrentStageKey())) {
-            WorkflowStageState next = nextPending(wf.getId(), stage.getOrdinal());
-            if (next != null) {
-                next.setStatus("IN_PROGRESS");
-                next.setEnteredAt(now);
-                next.setSlaDueAt(now.plusSeconds(next.getSlaHours() * 3600L));
-                stages.save(next);
-                wf.setCurrentStageKey(next.getStageKey());
-                fireStageEntryHook(applicationReference, next, actor);
-            } else {
+            List<WorkflowStageState> all = stages.findByInstanceIdOrderByOrdinalAsc(wf.getId());
+            EnterResult entered = advanceCursorAfterComplete(all, stage, wf, now, applicationReference, actor);
+            if (entered.instanceCompleted()) {
                 wf.setStatus("COMPLETED");
                 wf.setCompletedAt(now);
             }
@@ -431,6 +428,23 @@ public class WorkflowEngine {
         if (target == null) {
             throw ApiException.badRequest("Stage '" + toStageKey + "' is not part of this workflow");
         }
+        // Send-back must go BACKWARDS: the target must sit strictly before the current frontier,
+        // never at/ahead of it (that would jump the lifecycle forward past still-PENDING gates).
+        int frontier = -1;
+        for (WorkflowStageState s : all) {
+            if (s.getStageKey().equals(wf.getCurrentStageKey())) { frontier = s.getOrdinal(); break; }
+        }
+        if (frontier < 0) {
+            for (WorkflowStageState s : all) {
+                if ("COMPLETE".equals(s.getStatus()) || "IN_PROGRESS".equals(s.getStatus())) {
+                    frontier = Math.max(frontier, s.getOrdinal());
+                }
+            }
+        }
+        if (target.getOrdinal() >= frontier) {
+            throw ApiException.conflict("Send-back must target a stage strictly before the current stage ("
+                    + wf.getCurrentStageKey() + ") — cannot jump forward to " + toStageKey);
+        }
         String from = wf.getCurrentStageKey();
         Instant now = Instant.now();
         for (WorkflowStageState s : all) {
@@ -488,6 +502,9 @@ public class WorkflowEngine {
      */
     @Transactional
     public WorkflowInstance withdraw(String applicationReference, String note, String actor) {
+        if (actor == null || actor.isBlank()) {
+            throw ApiException.forbiddenAutonomy("A named actor (X-Actor) is required to withdraw a workflow");
+        }
         WorkflowInstance wf = require(applicationReference);
         if (!"ACTIVE".equals(wf.getStatus())) {
             throw ApiException.conflict("Workflow is " + wf.getStatus() + " — only an ACTIVE instance can be withdrawn");
@@ -501,11 +518,11 @@ public class WorkflowEngine {
         tx.setFromStageKey(wf.getCurrentStageKey());
         tx.setToStageKey(null);
         tx.setKind("WITHDRAWN");
-        tx.setActor(actor == null ? "system" : actor);
+        tx.setActor(actor);
         tx.setActorType(normalizeActorType(null, actor));
         tx.setNote(note);
         transitions.save(tx);
-        audit.human(actor == null ? "system" : actor, "WORKFLOW_WITHDRAWN", "WorkflowInstance",
+        audit.human(actor, "WORKFLOW_WITHDRAWN", "WorkflowInstance",
                 applicationReference, "Withdrew workflow at " + wf.getCurrentStageKey(),
                 Map.of("stageKey", wf.getCurrentStageKey() == null ? "" : wf.getCurrentStageKey()));
         return wf;
@@ -602,13 +619,6 @@ public class WorkflowEngine {
 
     // =============================================================== helpers
 
-    private WorkflowStageState nextPending(Long instanceId, int afterOrdinal) {
-        for (WorkflowStageState s : stages.findByInstanceIdOrderByOrdinalAsc(instanceId)) {
-            if (s.getOrdinal() > afterOrdinal && "PENDING".equals(s.getStatus())) return s;
-        }
-        return null;
-    }
-
     /** Outcome of advancing the cursor after a stage completes. */
     private record EnterResult(WorkflowStageState next, boolean instanceCompleted) {
     }
@@ -650,6 +660,16 @@ public class WorkflowEngine {
                 wf.setCurrentStageKey(openSibling != null ? openSibling.getStageKey() : target.getStageKey());
                 return new EnterResult(null, false);
             }
+            // Join satisfied (ANY / QUORUM) — retire any still-open siblings so an SLA sweep
+            // never flags a passed stage and a later advance() cannot re-complete the group.
+            for (WorkflowStageState s : group) {
+                if (!"COMPLETE".equals(s.getStatus()) && !"SKIPPED".equals(s.getStatus())) {
+                    s.setStatus("SKIPPED");
+                    s.setCompletedAt(now);
+                    s.setNote("Join " + policy + " satisfied by sibling(s) — stage skipped");
+                    stages.save(s);
+                }
+            }
             fromOrdinal = maxOrdinal;
         }
         WorkflowStageState next = null;
@@ -686,8 +706,10 @@ public class WorkflowEngine {
     /**
      * Best-effort case-management mirror: when a stage declares a {@code queueKey},
      * entering it auto-creates a WorkItem. A mirror failure must NEVER fail the
-     * domain transition — every path here is wrapped in try/catch + log. Idempotent
-     * per (instance, stage) via the dedupe key, so re-entry never duplicates.
+     * domain transition — every path here is wrapped in try/catch + log. The dedupe key
+     * carries an entry discriminator ({@code enteredAt}), so a single entry stays
+     * idempotent but a send-back RE-entry reopens a fresh task (rework) rather than
+     * silently returning the stale COMPLETED mirror.
      */
     private void fireStageEntryHook(String applicationReference, WorkflowStageState stage, String actor) {
         if (workItems == null || stage == null || stage.getQueueKey() == null || stage.getQueueKey().isBlank()) {
@@ -698,10 +720,13 @@ public class WorkflowEngine {
             payload.put("stageKey", stage.getStageKey());
             payload.put("stageLabel", stage.getLabel());
             payload.put("source", "WORKFLOW_STAGE_ENTRY");
+            long entryStamp = stage.getEnteredAt() != null
+                    ? stage.getEnteredAt().toEpochMilli() : System.currentTimeMillis();
+            String dedupeKey = applicationReference + ":" + stage.getStageKey() + ":" + entryStamp;
             CreateTaskRequest req = new CreateTaskRequest(
                     "WorkflowInstance", applicationReference, "STAGE_" + stage.getStageKey(),
                     stage.getQueueKey(), null, null, stage.getSlaHours(),
-                    applicationReference + ":" + stage.getStageKey(), "SYSTEM", payload);
+                    dedupeKey, "SYSTEM", payload);
             workItems.create(req, actor == null ? "system" : actor);
         } catch (Exception e) {
             log.warn("stage-entry task mirror skipped for {}/{} ({})",

@@ -21,6 +21,7 @@ import json
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 GW = "http://localhost:8080"
@@ -156,10 +157,25 @@ st, claimed = call("POST", f"/workflow/api/tasks/{tref}/claim", actor=alice)
 claimed = must(st, claimed, "claim by member")
 check("member claim assigns the task", claimed["status"] == "ASSIGNED" and claimed["assignee"] == alice,
       f"{claimed.get('status')} {claimed.get('assignee')}")
-st, q = call("GET", f"/workflow/api/tasks/queue/{MAN_Q}")
+st, q = call("GET", f"/workflow/api/tasks/queue/{MAN_Q}", actor=alice)
+q = must(st, q, "read queue as member")
 check("claimed task leaves the unclaimed queue", all(x["taskRef"] != tref for x in q), f"{[x['taskRef'] for x in q]}")
-st, ibx = call("GET", f"/workflow/api/tasks/inbox?assignee={alice}")
+st, ibx = call("GET", f"/workflow/api/tasks/inbox?assignee={alice}", actor=alice)
+ibx = must(st, ibx, "read own inbox")
 check("claimed task appears in the claimer's inbox", any(x["taskRef"] == tref for x in ibx), "")
+
+
+print("== 4b. Inbox / queue reads require an authorised caller (fix #2) ==")
+# Blank X-Actor on a read -> 403 (a named caller identity is required).
+st, err = call("GET", f"/workflow/api/tasks/queue/{MAN_Q}")
+check("queue read with blank actor -> 403", st == 403, f"{st} {err}")
+st, err = call("GET", f"/workflow/api/tasks/inbox?assignee={alice}")
+check("inbox read with blank actor -> 403", st == 403, f"{st} {err}")
+# A non-member / non-supervisor cannot read someone else's queue or inbox.
+st, err = call("GET", f"/workflow/api/tasks/queue/{MAN_Q}", actor=mallory)
+check("queue read by a non-member -> 403", st == 403, f"{st} {err}")
+st, err = call("GET", f"/workflow/api/tasks/inbox?assignee={alice}", actor=bob)
+check("inbox read of another actor by a non-supervisor -> 403", st == 403, f"{st} {err}")
 
 
 print("== 5. Complete is restricted to assignee or supervisor ==")
@@ -193,16 +209,33 @@ check("REASSIGNED event recorded on the timeline", any(e["event"] == "REASSIGNED
 
 
 print("== 7. Send-back opens a REWORK task with reworkCycle incremented ==")
-st, sb0 = create_task(queue_key=None, assignee=alice, task_type="SB_REVIEW",
+# Seed on RR_Q (supervisor = sup) with an explicit assignee so send-back authz has a pool to check.
+st, sb0 = create_task(queue_key=RR_Q, assignee=alice, task_type="SB_REVIEW",
                       subject_ref=f"SB-{SUF}", actor="rm.user")
 sb0 = must(st, sb0, "send-back seed")
-st, sb = call("POST", f"/workflow/api/tasks/{sb0['taskRef']}/send-back", {"note": "fix figures"}, actor=sup)
+sbref = sb0["taskRef"]
+# Negative: send-back with a blank actor -> 403 (a named actor is now required).
+st, err = call("POST", f"/workflow/api/tasks/{sbref}/send-back", {"note": "no actor"})
+check("send-back with blank actor -> 403", st == 403, f"{st} {err}")
+# Negative: a foreign actor (not the assignee, not a supervisor) cannot send back -> 403.
+st, err = call("POST", f"/workflow/api/tasks/{sbref}/send-back", {"note": "not mine"}, actor=mallory)
+check("send-back by a foreign actor -> 403", st == 403, f"{st} {err}")
+# Positive: the pool supervisor sends it back.
+st, sb = call("POST", f"/workflow/api/tasks/{sbref}/send-back", {"note": "fix figures"}, actor=sup)
 sb = must(st, sb, "send-back")
 check("original task is SENT_BACK", sb["original"]["status"] == "SENT_BACK", f"{sb['original'].get('status')}")
 check("rework task has reworkCycle incremented", sb["rework"]["reworkCycle"] == 1, f"{sb['rework'].get('reworkCycle')}")
 check("rework task is flagged and links to its origin",
       sb["rework"]["payload"].get("rework") is True
-      and sb["rework"]["payload"].get("originTaskRef") == sb0["taskRef"], f"{sb['rework'].get('payload')}")
+      and sb["rework"]["payload"].get("originTaskRef") == sbref, f"{sb['rework'].get('payload')}")
+# Rework reopens a NEW, non-terminal task for the subject (distinct from the SENT_BACK original).
+st, sbsubj = call("GET", f"/workflow/api/tasks/subject?type=Deal&ref=SB-{SUF}")
+sbsubj = must(st, sbsubj, "send-back subject tasks")
+reworks = [t for t in sbsubj if t["taskRef"] != sbref and t["reworkCycle"] == 1
+           and t["status"] not in ("COMPLETED", "WITHDRAWN", "CANCELLED", "SENT_BACK")]
+check("send-back reopens a NEW rework task in the queue/inbox",
+      len(reworks) == 1 and reworks[0]["taskRef"] == sb["rework"]["taskRef"],
+      f"{[(t['taskRef'], t['status']) for t in sbsubj]}")
 
 
 print("== 8. Parallel fan-out + join (ANY / ALL / QUORUM:n) ==")
@@ -271,10 +304,18 @@ st, subj = call("GET", f"/workflow/api/tasks/subject?type=CadCase&ref={app_ref}"
 subj = must(st, subj, "cad tasks")
 mirror = [t for t in subj if t["taskType"] == "CAD_DEVIATION_APPROVAL"]
 check("a CAD deviation approval task was mirrored", len(mirror) == 1, f"{[t['taskType'] for t in subj]}")
-# Snapshot the authoritative CAD case, operate on the mirrored task, re-snapshot.
+mref = mirror[0]["taskRef"]
+# Withdraw authz (fix #1): blank + foreign actors are rejected; the task creator may withdraw.
+st, err = call("POST", f"/workflow/api/tasks/{mref}/withdraw", {"note": "no actor"})
+check("withdraw with blank actor -> 403", st == 403, f"{st} {err}")
+st, err = call("POST", f"/workflow/api/tasks/{mref}/withdraw", {"note": "not mine"}, actor=mallory)
+check("withdraw by a foreign actor -> 403", st == 403, f"{st} {err}")
+# Snapshot the authoritative CAD case, operate on the mirrored task (creator withdraws), re-snapshot.
 st, before = call("GET", f"/decision/api/cad/cases/{case_id}")
 before = must(st, before, "cad before")
-st, _ = call("POST", f"/workflow/api/tasks/{mirror[0]['taskRef']}/withdraw", {"note": "task-layer op"}, actor=sup)
+st, wd = call("POST", f"/workflow/api/tasks/{mref}/withdraw", {"note": "task-layer op"}, actor="cad.officer")
+wd = must(st, wd, "withdraw by creator")
+check("the task creator may withdraw the mirror", wd["status"] == "WITHDRAWN", f"{wd.get('status')}")
 st, after = call("GET", f"/decision/api/cad/cases/{case_id}")
 after = must(st, after, "cad after")
 check("mirroring/operating a task NEVER mutates the CadCase (byte-identical)",
@@ -343,7 +384,8 @@ check("a pricing-exception approval task was mirrored", len(pe_mirror) == 1, f"{
 # Snapshot the authoritative pricing-exception + recommended rate, operate on the task, re-snapshot.
 st, pes_before = call("GET", f"/risk/api/risk/{ref}/pricing/exception")
 pes_before = must(st, pes_before, "pe list before")
-call("POST", f"/workflow/api/tasks/{pe_mirror[0]['taskRef']}/withdraw", {"note": "task-layer op"}, actor=sup)
+# The mirror was created by the pricing-exception proposer (rm.user) — the creator may withdraw it.
+call("POST", f"/workflow/api/tasks/{pe_mirror[0]['taskRef']}/withdraw", {"note": "task-layer op"}, actor="rm.user")
 st, rs1 = call("GET", f"/risk/api/risk/{ref}")
 rs1 = must(st, rs1, "risk snapshot 2")
 st, pes_after = call("GET", f"/risk/api/risk/{ref}/pricing/exception")
@@ -352,6 +394,40 @@ check("authoritative recommended rate UNCHANGED by the task mirror",
       rs1["pricing"]["recommendedRate"] == rate0, f"{rate0} -> {rs1['pricing'].get('recommendedRate')}")
 check("authoritative pricing-exception record BYTE-IDENTICAL after a task-layer operation",
       canon(pes_before) == canon(pes_after), "PricingException changed after a task-layer operation")
+
+
+print("== 12. Mirror complete by dedupeKey closes the mirrored task (fix #3) ==")
+# A real TaskClient-created mirror is completed by its dedupeKey (e.g. "DEV:<id>") — the exact
+# path domain services use (taskClient.complete("DEV:"+id)) that previously always 404'd because
+# the resolver only matched the random TSK- ref.
+app_ref2 = f"CAD-CASE2-{SUF}"
+st, cad2 = call("POST", "/decision/api/cad/cases",
+                {"applicationRef": app_ref2, "counterpartyName": f"Casework Co2 {SUF}", "cpType": "NEW"},
+                actor="cad.officer")
+cad2 = must(st, cad2, "cad2 initiate")
+item2 = cad2["items"][0]["id"]
+st, dev2 = call("POST", f"/decision/api/cad/items/{item2}/deviation",
+                {"type": "WAIVER", "reason": "second deviation"}, actor="cad.officer")
+dev2 = must(st, dev2, "raise deviation 2")
+st, subj2 = call("GET", f"/workflow/api/tasks/subject?type=CadCase&ref={app_ref2}")
+subj2 = must(st, subj2, "cad2 tasks")
+m2 = [t for t in subj2 if t["taskType"] == "CAD_DEVIATION_APPROVAL"]
+check("a fresh CAD deviation mirror was created", len(m2) == 1, f"{[t['taskType'] for t in subj2]}")
+dedupe2 = m2[0]["dedupeKey"]
+tref2 = m2[0]["taskRef"]
+check("mirror carries a dedupeKey distinct from its TSK- ref",
+      bool(dedupe2) and dedupe2 != tref2 and dedupe2.startswith("DEV:"), f"dedupeKey={dedupe2} taskRef={tref2}")
+enc = urllib.parse.quote(dedupe2, safe="")
+st, dc = call("POST", f"/workflow/api/tasks/{enc}/complete", {"note": "approved"}, actor="system")
+dc = must(st, dc, "complete mirror by dedupeKey")
+check("mirror-complete by dedupeKey closes the ORIGINAL task",
+      dc["task"]["status"] == "COMPLETED" and dc["task"]["taskRef"] == tref2, f"{dc.get('task')}")
+st, view2 = call("GET", f"/workflow/api/tasks/{tref2}")
+view2 = must(st, view2, "view mirror after complete")
+check("the mirrored task is now COMPLETED when fetched by its ref", view2["status"] == "COMPLETED", f"{view2.get('status')}")
+# Proof it truly closed: a second dedupeKey-complete finds no open task -> 404.
+st, err = call("POST", f"/workflow/api/tasks/{enc}/complete", {"note": "again"}, actor="system")
+check("a second dedupeKey-complete no longer resolves an open mirror (404)", st == 404, f"{st} {err}")
 
 
 print(f"\n==== casework e2e: {PASS} passed, {FAIL} failed ====")
