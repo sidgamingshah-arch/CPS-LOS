@@ -47,5 +47,26 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
+
+        <!-- SSO/security (profile-gated real auth; DEFAULT helix.security.mode=none is permit-all,
+             so today's X-Actor identity model is preserved byte-identical). Versions are managed by
+             the Spring Boot / Spring Security BOM in the parent pom (spring-security 6.5.11). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-ldap</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ldap</groupId>
+            <artifactId>spring-ldap-core</artifactId>
+        </dependency>
+        <!-- end SSO/security -->
     </dependencies>
 </project>

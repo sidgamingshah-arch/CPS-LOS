@@ -46,11 +46,18 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
     private final String secret;
     private final boolean enforced;
+    private final boolean resourceServerMode;
 
     public AuthGlobalFilter(@Value("${helix.auth.secret:helix-dev-secret-change-me}") String secret,
-                            @Value("${helix.auth.mode:PERMISSIVE}") String mode) {
+                            @Value("${helix.auth.mode:PERMISSIVE}") String mode,
+                            @Value("${helix.security.mode:none}") String securityMode) {
         this.secret = secret;
         this.enforced = "ENFORCED".equalsIgnoreCase(mode);
+        // In oidc/ldap the downstream services are OAuth2 resource servers that validate the
+        // JWT themselves. The gateway must NOT HMAC-verify (a different token format) — it
+        // propagates the Authorization header untouched and only strips a client X-Actor when a
+        // bearer token is present, so the resource server's token-derived identity is authoritative.
+        this.resourceServerMode = "oidc".equalsIgnoreCase(securityMode) || "ldap".equalsIgnoreCase(securityMode);
     }
 
     @Override
@@ -62,6 +69,20 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         }
 
         String authz = req.getHeaders().getFirst("Authorization");
+
+        if (resourceServerMode) {
+            if (authz != null && authz.startsWith("Bearer ")) {
+                // Forward the token; strip client X-Actor so the resource server sets it from the
+                // validated claims. No HMAC verification here — the service is the authority.
+                ServerWebExchange mutated = exchange.mutate()
+                        .request(r -> r.headers(h -> h.remove("X-Actor")))
+                        .build();
+                return chain.filter(mutated);
+            }
+            // No token: let the resource server enforce (401 on protected paths).
+            return chain.filter(exchange);
+        }
+
         if (authz != null && authz.startsWith("Bearer ")) {
             String token = authz.substring("Bearer ".length()).trim();
             Optional<GatewayAuthToken.Claims> claims = GatewayAuthToken.verify(secret, token);

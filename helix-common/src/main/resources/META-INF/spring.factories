@@ -1,0 +1,3 @@
+# helix-common SSO/security: inject overridable defaults (disable the unused LDAP health probe)
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.helix.common.security.SecurityDefaultsEnvironmentPostProcessor

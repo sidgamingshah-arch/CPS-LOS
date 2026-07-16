@@ -38,7 +38,24 @@ export const auth = {
     call<LoginResult>("/config/api/auth/login", "POST", { username, password }),
   me: () => call<{ actor: string; roles: string[]; expiresAtMillis: number }>(
     "/config/api/auth/me", "GET"),
-  mode: () => call<{ mode: string; enforced: boolean }>("/auth/mode", "GET"),
+  mode: () => call<{ mode: string; enforced: boolean; securityMode?: string }>("/auth/mode", "GET"),
+};
+
+// ---- SSO / real authentication (helix.security.mode: none | oidc | ldap) ----
+// `mode` is UNAUTHENTICATED so the SPA can read it before login to decide between the
+// mock/actor-selector login (none) and the Authorization-Code + PKCE SSO redirect (oidc).
+export type OidcClientConfig = {
+  authorizationUri?: string; tokenUri?: string; clientId?: string;
+  scopes?: string; redirectUri?: string;
+};
+export type SecurityMode = {
+  mode: string; oidc: boolean; ldap: boolean; secured: boolean;
+  oidcClient?: OidcClientConfig;
+};
+export const security = {
+  mode: () => call<SecurityMode>("/config/api/security/mode", "GET"),
+  whoami: () => call<{ actor: string; roles: string[]; authenticated: boolean; mode: string }>(
+    "/config/api/security/whoami", "GET"),
 };
 
 // ---- config / abstraction layer ----
