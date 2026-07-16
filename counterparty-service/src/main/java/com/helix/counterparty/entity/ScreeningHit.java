@@ -1,5 +1,6 @@
 package com.helix.counterparty.entity;
 
+import com.helix.common.util.EncryptedStringConverter;
 import com.helix.common.util.JsonAttributeConverters;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -39,6 +40,9 @@ public class ScreeningHit {
     @Column(nullable = false, length = 40)
     private String listSource;         // OFAC | UN | EU | PEP | ADVERSE_MEDIA
 
+    // PII (matched sanctions/PEP/adverse-media name). Free text, never used in a
+    // query/dedup/join/order — safe to encrypt at rest.
+    @Convert(converter = EncryptedStringConverter.class)
     @Column(nullable = false)
     private String matchedName;
 
@@ -53,6 +57,8 @@ public class ScreeningHit {
     private List<String> matchedAttributes;
 
     /** AI-generated rationale citing the matched fields (decision-support only). */
+    // Sensitive free text (names the matched party); never queried — encrypted at rest.
+    @Convert(converter = EncryptedStringConverter.class)
     @Lob
     @Column(length = 2000)
     private String aiRationale;
@@ -62,6 +68,8 @@ public class ScreeningHit {
 
     private String dispositionedBy;
     private Instant dispositionedAt;
+    // KYC/disposition remark free text; never queried — encrypted at rest.
+    @Convert(converter = EncryptedStringConverter.class)
     private String dispositionNote;
 
     @CreationTimestamp

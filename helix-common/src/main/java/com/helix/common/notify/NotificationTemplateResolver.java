@@ -63,6 +63,35 @@ public class NotificationTemplateResolver {
         return roles instanceof List<?> l ? l.stream().map(String::valueOf).toList() : List.of();
     }
 
+    /**
+     * Optional auto-reminder policy for an event from the NOTIFICATION_ROUTE master payload
+     * ({@code {reminderEveryHours, maxReminders}}); empty when the route carries neither/partial
+     * config or the value is malformed. Never throws.
+     */
+    public Optional<ReminderPolicy> reminderPolicy(String eventType, String jurisdiction) {
+        Map<String, Object> rec = pick(records("NOTIFICATION_ROUTE", () -> routes, s -> routes = s),
+                eventType, jurisdiction);
+        if (rec == null) return Optional.empty();
+        Object payload = rec.get("payload");
+        if (!(payload instanceof Map<?, ?> p)) return Optional.empty();
+        Integer every = asInt(p.get("reminderEveryHours"));
+        Integer max = asInt(p.get("maxReminders"));
+        if (every == null || max == null || every < 0 || max <= 0) return Optional.empty();
+        return Optional.of(new ReminderPolicy(every, max));
+    }
+
+    private static Integer asInt(Object v) {
+        if (v instanceof Number n) return n.intValue();
+        if (v instanceof String s && !s.isBlank()) {
+            try {
+                return Integer.valueOf(s.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     public void invalidate() {
         templates = null;
         routes = null;
@@ -111,6 +140,9 @@ public class NotificationTemplateResolver {
     }
 
     public record Template(String subject, String body) { }
+
+    /** Auto-reminder cadence/cap for an event ({@code reminderEveryHours} 0 = every sweep). */
+    public record ReminderPolicy(int reminderEveryHours, int maxReminders) { }
 
     private record Snapshot(List<Map<String, Object>> records, Instant until) { }
 }

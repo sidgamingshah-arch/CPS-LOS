@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { counterparty, fmt, limits as L, origination } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, EmptyState, Field, Stat, statusTone, useAsync } from "../ui";
+import { Badge, Button, Card, type Col, DataTable, EmptyState, Field, Stat, statusTone, useAsync } from "../ui";
 
 /**
  * Limit management: build limit tree from a deal, view per-CIF tree with
@@ -16,13 +16,35 @@ export default function Limits() {
   const tree = useAsync(() => (cif ? L.view(cif) : Promise.resolve(null)), [cif]);
   const ledger = useAsync(() => (cif ? L.ledger(cif) : Promise.resolve([])), [cif]);
 
+  const ledgerCols: Col<any>[] = [
+    {
+      key: "createdAt", header: "When", width: "160px",
+      render: (u) => <span className="mono">{fmt.dateTime(u.createdAt)}</span>, value: (u) => u.createdAt ?? "",
+    },
+    { key: "limitNodeId", header: "Line", render: (u) => <span className="mono">{u.limitNodeId}</span> },
+    { key: "action", header: "Action", render: (u) => <Badge>{u.action}</Badge>, value: (u) => u.action ?? "" },
+    {
+      key: "amount", header: "Amount", align: "right",
+      render: (u) => fmt.money(u.amount, u.currency), value: (u) => u.amount ?? 0,
+    },
+    {
+      key: "status", header: "Status",
+      render: (u) => <><Badge kind={u.status === "CONFIRMED" ? "ok" : "bad"}>{u.status}</Badge>{u.overrideApplied && " · override"}</>,
+      value: (u) => u.status ?? "",
+    },
+    {
+      key: "message", header: "Note",
+      render: (u) => <small className="prov">{u.message || ""}</small>, value: (u) => u.message ?? "",
+    },
+  ];
+
   return (
     <div className="grid">
       <Card title="Limit management"
         sub="Multi-level tree, fungibility pools, View / Validation / Utilisation APIs. Build the tree from an approved deal once.">
         <div className="grid cols-3" style={{ alignItems: "end" }}>
           <Field label="Counterparty (CIF)">
-            <select value={cif} onChange={(e) => setCif(e.target.value)}>
+            <select value={cif} onChange={(e) => { setCif(e.target.value); }}>
               <option value="">— select —</option>
               {(cps.data || []).map((c: any) => <option key={c.id} value={c.reference}>{c.legalName} · {c.reference}</option>)}
             </select>
@@ -48,21 +70,12 @@ export default function Limits() {
 
       {(ledger.data || []).length > 0 && (
         <Card title="Utilisation ledger" sub="Append-only — every UTILISE / RELEASE / RESERVE / REVERSAL recorded.">
-          <table>
-            <thead><tr><th>When</th><th>Line</th><th>Action</th><th className="num">Amount</th><th>Status</th><th>Note</th></tr></thead>
-            <tbody>
-              {ledger.data!.slice(0, 25).map((u: any) => (
-                <tr key={u.id}>
-                  <td className="mono">{new Date(u.createdAt).toLocaleString()}</td>
-                  <td className="mono">{u.limitNodeId}</td>
-                  <td><Badge>{u.action}</Badge></td>
-                  <td className="num">{fmt.money(u.amount, u.currency)}</td>
-                  <td><Badge kind={u.status === "CONFIRMED" ? "ok" : "bad"}>{u.status}</Badge>{u.overrideApplied && " · override"}</td>
-                  <td><small className="prov">{u.message || ""}</small></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            id="limits-ledger"
+            columns={ledgerCols}
+            rows={ledger.data || []}
+            rowKey={(u) => String(u.id)}
+          />
         </Card>
       )}
 
@@ -75,6 +88,7 @@ function EodPanel({ actor, notify }: { actor: string; notify: any }) {
   const fxv = useAsync(() => L.eodFx(), []);
   const runs = useAsync(() => L.eodRuns(), []);
   const [selected, setSelected] = useState<number | null>(null);
+  const [showAllRuns, setShowAllRuns] = useState(false);
   const detail = useAsync(() => (selected ? L.eodRunDetail(selected) : Promise.resolve(null)), [selected]);
 
   const reloadAll = () => { fxv.reload(); runs.reload(); detail.reload(); };
@@ -118,7 +132,7 @@ function EodPanel({ actor, notify }: { actor: string; notify: any }) {
             ? Object.entries(fxv.data.rates).map(([k, v]) => `${k} ${v}`).join(" · ")
             : "—"}</span>} />
         <Stat label="Last EOD"
-          value={latest ? `#${latest.id} · ${latest.runDate}` : "—"}
+          value={latest ? `#${latest.id} · ${fmt.date(latest.runDate)}` : "—"}
           delta={latest ? `${latest.revaluedCount} revalued · ${latest.varianceCount} variance(s)` : undefined} />
         <Stat label="Net revaluation Δ (base)"
           value={latest ? fmt.money(latest.revaluationDeltaBase) : "—"}
@@ -126,22 +140,32 @@ function EodPanel({ actor, notify }: { actor: string; notify: any }) {
       </div>
 
       {(runs.data || []).length > 0 && (
-        <table style={{ marginTop: 10 }}>
+        <>
+        <div className="table-scroll" style={{ marginTop: 10 }}>
+        <table>
           <thead><tr><th>Run</th><th>Date</th><th>By</th><th className="num">Revalued</th><th className="num">Δ base</th><th className="num">Variances</th><th>Completed</th></tr></thead>
           <tbody>
-            {runs.data!.slice(0, 8).map((r: any) => (
+            {(showAllRuns ? runs.data! : runs.data!.slice(0, 8)).map((r: any) => (
               <tr key={r.id} className={selected === r.id ? "rowlink active" : "rowlink"} onClick={() => setSelected(r.id)}>
                 <td className="mono">#{r.id}</td>
-                <td className="mono">{r.runDate}</td>
+                <td className="mono">{fmt.date(r.runDate)}</td>
                 <td className="mono">{r.runBy}</td>
                 <td className="num">{r.revaluedCount}</td>
                 <td className="num">{fmt.money(r.revaluationDeltaBase)}</td>
                 <td className="num">{r.varianceCount > 0 ? <Badge kind="warn">{r.varianceCount}</Badge> : 0}</td>
-                <td className="mono"><small className="prov">{new Date(r.completedAt).toLocaleString()}</small></td>
+                <td className="mono"><small className="prov">{fmt.dateTime(r.completedAt)}</small></td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
+        {runs.data!.length > 8 && (
+          <div className="table-more">
+            <span>showing {showAllRuns ? runs.data!.length : 8} of {runs.data!.length}</span>
+            <button onClick={() => setShowAllRuns((s) => !s)}>{showAllRuns ? "show less" : "show all"}</button>
+          </div>
+        )}
+        </>
       )}
 
       {detail.data && (
@@ -149,6 +173,7 @@ function EodPanel({ actor, notify }: { actor: string; notify: any }) {
           <Card title={`Revaluations · run #${selected}`}
             sub={(detail.data.revaluations || []).length === 0 ? "No revaluations" : `${detail.data.revaluations.length} entry(ies)`}>
             {(detail.data.revaluations || []).length > 0 && (
+              <div className="table-scroll">
               <table>
                 <thead><tr><th>Line</th><th>Ccy</th><th className="num">Sanctioned</th><th className="num">Old base</th><th className="num">New base</th><th className="num">Δ</th><th className="num">Rate</th></tr></thead>
                 <tbody>
@@ -165,6 +190,7 @@ function EodPanel({ actor, notify }: { actor: string; notify: any }) {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </Card>
           <Card title={`Reconciliation variances · run #${selected}`}
@@ -231,6 +257,7 @@ function TreeView({ tree, reload, actor, notify }: { tree: any; reload: () => vo
           </div>
         )}
         {tree.nodes.length === 0 ? <div className="muted">No tree.</div> : (
+          <div className="table-scroll">
           <table>
             <thead><tr><th></th><th>Code</th><th>Reference</th><th className="num">Sanctioned (base)</th>
               <th className="num">Outstanding</th><th className="num">Available</th><th>Type</th><th>Status</th><th>Action</th></tr></thead>
@@ -260,6 +287,7 @@ function TreeView({ tree, reload, actor, notify }: { tree: any; reload: () => vo
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>

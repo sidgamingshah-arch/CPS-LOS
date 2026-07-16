@@ -64,7 +64,7 @@ public class ConfigController {
     public RulePack create(@RequestBody CreateRulePackRequest req,
                            @RequestHeader(value = "X-Actor", defaultValue = "config.author") String actor) {
         return configService.createDraft(req.jurisdiction(), req.type(), req.code(),
-                req.payload(), req.effectiveFrom(), actor);
+                req.payload(), req.effectiveFrom(), actor, req.rationale());
     }
 
     /** G6 — checker queue: unsigned, inactive drafts awaiting sign-off. */
@@ -73,6 +73,8 @@ public class ConfigController {
         return configService.draftQueue();
     }
 
+    // rationale is optional (older callers omit it → null).
     public record CreateRulePackRequest(String jurisdiction, String type, String code,
-                                        Map<String, Object> payload, LocalDate effectiveFrom) {}
+                                        Map<String, Object> payload, LocalDate effectiveFrom,
+                                        String rationale) {}
 }

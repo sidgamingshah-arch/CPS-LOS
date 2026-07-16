@@ -1,5 +1,6 @@
 package com.helix.origination.entity;
 
+import com.helix.common.util.EncryptedStringConverter;
 import com.helix.common.util.JsonAttributeConverters;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -46,6 +47,9 @@ public class CollateralExtraction {
     @Column(nullable = false, length = 40)
     private String documentKind;         // VALUATION_REPORT | TITLE_DEED | INSURANCE_POLICY | VEHICLE_RC | BOND_CERT | PG_DEED
 
+    // Raw collateral-document text (property/title/PG-deed): owner names, addresses,
+    // guarantor personal details. Grounding-only, never queried — encrypted at rest.
+    @Convert(converter = EncryptedStringConverter.class)
     @Lob
     @Column(length = 4000)
     private String sourceText;
@@ -73,6 +77,8 @@ public class CollateralExtraction {
     private String extractedBy;          // AI capability marker
     private String reviewedBy;
     private Instant reviewedAt;
+    // Reviewer remark free text; never queried — encrypted at rest.
+    @Convert(converter = EncryptedStringConverter.class)
     private String reviewNote;
 
     /** Set on confirm — the real collateral this extraction materialised into. */

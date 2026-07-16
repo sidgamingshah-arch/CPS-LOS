@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { mis, origination, fmt } from "../api";
+import { useApp } from "../app-context";
 import { Badge, Card, EmptyState, Field, GradeBadge, Stat, useAsync } from "../ui";
 
 /**
@@ -8,8 +9,9 @@ import { Badge, Card, EmptyState, Field, GradeBadge, Stat, useAsync } from "../u
  * Pure read; nothing here is credit-binding.
  */
 export default function Customer360() {
+  const { ref: ctxRef } = useApp();
   const apps = useAsync(() => origination.list(), []);
-  const [ref, setRef] = useState<string>("");
+  const [ref, setRef] = useState<string>(ctxRef ?? "");
   const data = useAsync(() => (ref ? mis.customer360(ref) : Promise.resolve(null)), [ref]);
 
   return (

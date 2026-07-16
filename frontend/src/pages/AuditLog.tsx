@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { audit } from "../api";
-import { AiBadge, Badge, Card, DeterministicBadge, Field, HumanBadge, useAsync } from "../ui";
+import { audit, fmt } from "../api";
+import { AiBadge, Badge, Card, type Col, DataTable, DeterministicBadge, Field, HumanBadge, useAsync } from "../ui";
 
 // G8 — every service that includes helix-common auto-exposes /api/audit + /api/audit/subject.
 const SERVICES = ["config", "counterparty", "origination", "risk", "decision", "portfolio",
@@ -10,7 +10,6 @@ const ACTOR_TYPES = ["ALL", "HUMAN", "AI", "SYSTEM"];
 export default function AuditLog() {
   const [svc, setSvc] = useState("risk");
   const [actorType, setActorType] = useState("ALL");
-  const [q, setQ] = useState("");
   const [subjType, setSubjType] = useState("");
   const [subjId, setSubjId] = useState("");
 
@@ -21,14 +20,25 @@ export default function AuditLog() {
     () => (bySubject ? audit.subject(svc, subjType.trim(), subjId.trim()) : audit.recent(svc)),
     [svc, bySubject, subjType, subjId]);
 
-  const rows = (data || []).filter((e: any) => {
-    if (actorType !== "ALL" && e.actorType !== actorType) return false;
-    if (q.trim()) {
-      const hay = `${e.eventType} ${e.summary} ${e.actor}`.toLowerCase();
-      if (!hay.includes(q.trim().toLowerCase())) return false;
-    }
-    return true;
-  });
+  // Actor-type is a quick client-side pre-filter; free-text search + per-column
+  // filtering are handled by the DataTable below.
+  const rows = (data || []).filter((e: any) => actorType === "ALL" || e.actorType === actorType);
+
+  const cols: Col<any>[] = [
+    {
+      key: "occurredAt", header: "When", width: "160px",
+      render: (e) => <span className="mono" style={{ whiteSpace: "nowrap" }}>{fmt.dateTime(e.occurredAt)}</span>,
+      value: (e) => e.occurredAt ?? "",
+    },
+    { key: "actor", header: "Actor" },
+    {
+      key: "actorType", header: "Type",
+      render: (e) => <Badge kind={e.actorType === "HUMAN" ? "ok" : e.actorType === "AI" ? "ai" : "info"}>{e.actorType}</Badge>,
+      value: (e) => e.actorType ?? "",
+    },
+    { key: "eventType", header: "Event", render: (e) => <span className="mono">{e.eventType}</span> },
+    { key: "summary", header: "Summary" },
+  ];
 
   return (
     <Card
@@ -50,9 +60,6 @@ export default function AuditLog() {
             ))}
           </div>
         </div>
-        <Field label="Filter (event / summary / actor)">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. OVERRIDE, DECISION, cro" />
-        </Field>
         <Field label="Subject type">
           <input value={subjType} onChange={(e) => setSubjType(e.target.value)} placeholder="e.g. Application" />
         </Field>
@@ -62,23 +69,14 @@ export default function AuditLog() {
       </div>
       {bySubject && <div className="sub" style={{ marginBottom: 8 }}>Showing the append-only trail for <b>{subjType} {subjId}</b> on <b>{svc}</b>.</div>}
       {error && <div className="alert err">{error}</div>}
-      {loading ? <div className="loading">Loading…</div> : (
-        <table>
-          <thead><tr><th>When</th><th>Actor</th><th>Type</th><th>Event</th><th>Summary</th></tr></thead>
-          <tbody>
-            {rows.map((e: any) => (
-              <tr key={e.id}>
-                <td className="mono" style={{ whiteSpace: "nowrap" }}>{new Date(e.occurredAt).toLocaleString()}</td>
-                <td>{e.actor}</td>
-                <td><Badge kind={e.actorType === "HUMAN" ? "ok" : e.actorType === "AI" ? "ai" : "info"}>{e.actorType}</Badge></td>
-                <td className="mono">{e.eventType}</td>
-                <td>{e.summary}</td>
-              </tr>
-            ))}
-            {rows.length === 0 && <tr><td colSpan={5} className="muted">No matching events for {svc}.</td></tr>}
-          </tbody>
-        </table>
-      )}
+      <DataTable
+        id="audit-log"
+        columns={cols}
+        rows={rows}
+        rowKey={(e) => String(e.id)}
+        initialPageSize={50}
+        empty={loading ? <div className="loading">Loading…</div> : <div className="muted">No matching events for {svc}.</div>}
+      />
     </Card>
   );
 }

@@ -40,11 +40,12 @@ public class DecisionService {
     private final ConditionPrecedentService conditionsPrecedent;
     private final CommitteeVoteRepository votes;
     private final NotificationService notifications;
+    private final CoiService coi;
 
     public DecisionService(CreditDecisionRepository decisions, UpstreamClient upstream,
                            DoaRouter router, ActorDirectory roles, AuditService audit,
                            ConditionPrecedentService conditionsPrecedent, CommitteeVoteRepository votes,
-                           NotificationService notifications) {
+                           NotificationService notifications, CoiService coi) {
         this.decisions = decisions;
         this.upstream = upstream;
         this.router = router;
@@ -53,6 +54,7 @@ public class DecisionService {
         this.conditionsPrecedent = conditionsPrecedent;
         this.votes = votes;
         this.notifications = notifications;
+        this.coi = coi;
     }
 
     @Transactional
@@ -98,6 +100,9 @@ public class DecisionService {
         decision.setRoutedBy(actor);
         decision.setCommitteeMode(routing.committee());
         decision.setQuorumRequired(routing.committee() ? Math.max(1, routing.quorum()) : 1);
+        // Additive, default-OFF COI gate: capture the pack's require_coi_attestation flag at
+        // routing time. Absent key (every existing pack) -> false -> behaviour unchanged.
+        decision.setRequireCoiAttestation(coiRequired(doaPack));
         decision.setStatus("PENDING_APPROVAL");
         CreditDecision saved = decisions.save(decision);
 
@@ -122,6 +127,15 @@ public class DecisionService {
         // req.role() is an advisory claim — recorded for the trail but never rank-checked.
         String qualifyingRole = requireAuthorityRank(actor, decision.getRequiredAuthority());
         requireConditionOnConditional(outcome, req);
+
+        // COI gate — ADDITIVE, DEFAULT-OFF. Only enforced when the DOA_MATRIX pack opted in
+        // (require_coi_attestation=true, captured on the decision at routing time). For every
+        // pack without the key this is a no-op, so the single-approver and committee paths are
+        // byte-identical to today. When active, the acting approver/voter must hold an ATTESTED,
+        // non-CONFLICTED COI attestation for this application or the decision/vote is refused (403).
+        if (decision.isRequireCoiAttestation()) {
+            coi.assertCleared(reference, actor);
+        }
 
         // Committee tiers (flagged in the DOA_MATRIX pack) require a quorum of distinct votes;
         // a single-authority tier keeps the original one-approver path (behaviour-preserving).
@@ -233,6 +247,13 @@ public class DecisionService {
                 Map.of("outcome", finalOutcome.name(), "authority", decision.getRequiredAuthority(),
                         "conditions", saved.getConditions(), "amount", decision.getAmount()));
         return saved;
+    }
+
+    /** Reads the optional {@code require_coi_attestation} flag from the DOA_MATRIX pack (default false). */
+    private static boolean coiRequired(RulePackDto doaPack) {
+        if (doaPack == null || doaPack.payload() == null) return false;
+        Object v = doaPack.payload().get("require_coi_attestation");
+        return Boolean.TRUE.equals(v) || "true".equalsIgnoreCase(String.valueOf(v));
     }
 
     private void requireConditionOnConditional(DecisionOutcome outcome, DecisionRequest req) {

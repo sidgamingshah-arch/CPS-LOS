@@ -1,12 +1,22 @@
-import { useState } from "react";
-import { masters } from "../api";
+import { useMemo, useState } from "react";
+import { fmt, masters } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Field, useAsync } from "../ui";
+import {
+  BulkUpload, JsonDiff, PagerBar, PayloadEditor, PayloadView, RationaleBox,
+  SearchBox, schemaFor, useSearchPaginate,
+} from "../config-forms";
 
 /**
  * Generic master-data admin (PRD Master-Data engine + maker-checker SoD).
- * Pick a master type → view the active records, the pending queue, and approve /
- * reject pending submissions. Server-side enforces checker ≠ maker.
+ * Pick a master type → view / search the active records, the pending queue, and
+ * approve / reject pending submissions. Server-side enforces checker ≠ maker.
+ *
+ * Schema-aware editing: common master types render a guided form (see
+ * config-forms.tsx) with inline validation, clone-from-active, a before/after
+ * diff and a mandatory change rationale on edits. The raw-JSON escape hatch is
+ * always available, and types with no curated schema fall back to it. A bulk
+ * CSV/JSON upload feeds the same maker-checker path.
  */
 const TYPES: { key: string; label: string }[] = [
   { key: "ACTOR_ROLE", label: "Actor roles (RBAC)" },
@@ -44,14 +54,30 @@ export default function Masters() {
   const active = useAsync(() => masters.list(type), [type]);
   const pending = useAsync(() => masters.pending(), []);
   const [proposing, setProposing] = useState(false);
+  const [bulking, setBulking] = useState(false);
+  const [cloneSeed, setCloneSeed] = useState<any>(null);
 
   const reload = () => { active.reload(); pending.reload(); };
   const run = async (fn: () => Promise<any>, ok: string) => {
     try { await fn(); notify(ok); reload(); } catch (e: any) { notify(e.message, true); }
   };
 
+  const activeRecords = (active.data || []) as any[];
   const pendingForType = (pending.data || []).filter((p: any) => p.masterType === type);
   const pendingTotal = (pending.data || []).length;
+  const hasSchema = !!schemaFor(type);
+
+  const search = useSearchPaginate<any>(
+    activeRecords,
+    (r) => `${r.recordKey} ${r.jurisdiction || ""} ${JSON.stringify(r.payload || {})}`,
+    10,
+  );
+
+  function startClone(rec: any) {
+    setCloneSeed(rec);
+    setProposing(true);
+    setBulking(false);
+  }
 
   return (
     <div className="grid">
@@ -59,42 +85,67 @@ export default function Masters() {
         sub="Generic Master-Data engine: dedup rules, negative lists, facility/collateral/covenant masters, RAROC tables, EWS triggers, checklists and email templates. Every change goes through a maker-checker workflow; server-side enforces checker ≠ maker."
         right={<Badge kind={pendingTotal > 0 ? "warn" : ""}>{pendingTotal} pending</Badge>}>
         <div className="grid cols-3" style={{ alignItems: "end" }}>
-          <Field label="Master type">
-            <select value={type} onChange={(e) => setType(e.target.value)}>
+          <Field label="Master type" hint={hasSchema ? "Guided form available" : "Raw-JSON editing"}>
+            <select value={type} onChange={(e) => { setType(e.target.value); setCloneSeed(null); }}>
               {TYPES.map((t) => <option key={t.key} value={t.key}>{t.label} · {t.key}</option>)}
             </select>
           </Field>
           <div style={{ gridColumn: "span 2" }} className="btnrow">
-            <Button kind="ghost" onClick={() => setProposing((o) => !o)}>{proposing ? "Cancel" : "+ Propose new"}</Button>
+            <Button kind="ghost" onClick={() => { setCloneSeed(null); setProposing((o) => !o); }}>
+              {proposing ? "Cancel" : "+ Propose new"}
+            </Button>
+            <Button kind="subtle" onClick={() => setBulking((o) => !o)}>
+              {bulking ? "Cancel bulk" : "⇪ Bulk upload"}
+            </Button>
+            {hasSchema && <Badge kind="info">schema</Badge>}
           </div>
         </div>
       </Card>
 
+      {bulking && (
+        <Card title={`Bulk upload · ${type}`}
+          sub="Upload or paste CSV / JSON. Each row is submitted through the same maker-checker path (lands as PENDING_APPROVAL for a checker). A recordKey is required per row.">
+          <BulkUpload type={type} actor={actor} notify={notify}
+            onDone={() => reload()} />
+        </Card>
+      )}
+
       {proposing && (
-        <ProposeRecord type={type} actor={actor} notify={notify}
-          onDone={() => { setProposing(false); reload(); }} />
+        <ProposeRecord key={`${type}:${cloneSeed?.id ?? "new"}`}
+          type={type} actor={actor} notify={notify}
+          activeRecords={activeRecords} clone={cloneSeed}
+          onDone={() => { setProposing(false); setCloneSeed(null); reload(); }} />
       )}
 
       <div className="grid cols-2">
         <Card title={`Active records · ${type}`}
-          sub={active.loading ? "Loading…" : `${(active.data || []).length} active record(s) · version-controlled`}>
-          {(active.data || []).length === 0 ? (
+          sub={active.loading ? "Loading…" : `${activeRecords.length} active record(s) · version-controlled`}
+          right={<SearchBox value={search.query} onChange={search.setQuery} placeholder="Search records…" />}>
+          {activeRecords.length === 0 ? (
             <div className="muted">No active records.</div>
           ) : (
-            <table>
-              <thead><tr><th>Key</th><th>Ver</th><th>Maker</th><th>Checker</th><th>Payload</th></tr></thead>
-              <tbody>
-                {(active.data || []).map((r: any) => (
-                  <tr key={r.id}>
-                    <td><b>{r.recordKey}</b></td>
-                    <td className="mono">v{r.version}</td>
-                    <td className="mono"><small>{r.maker || "—"}</small></td>
-                    <td className="mono"><small>{r.checker || "—"}</small></td>
-                    <td><PayloadPreview payload={r.payload} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <>
+              <div className="table-scroll">
+                <table>
+                  <thead><tr><th>Key</th><th>Ver</th><th>Maker</th><th>Checker</th><th>Payload</th><th /></tr></thead>
+                  <tbody>
+                    {search.pageRows.map((r: any) => (
+                      <tr key={r.id}>
+                        <td><b>{r.recordKey}</b>{r.jurisdiction && <div className="muted" style={{ fontSize: 11 }}>{r.jurisdiction}</div>}</td>
+                        <td className="mono">v{r.version}</td>
+                        <td className="mono"><small>{r.maker || "—"}</small></td>
+                        <td className="mono"><small>{r.checker || "—"}</small></td>
+                        <td><PayloadView payload={r.payload} /></td>
+                        <td><Button kind="ghost" onClick={() => startClone(r)}>Clone / edit</Button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <PagerBar page={search.page} pageCount={search.pageCount} setPage={search.setPage}
+                start={search.start} shown={search.pageRows.length}
+                filteredTotal={search.filteredTotal} total={search.total} />
+            </>
           )}
         </Card>
 
@@ -105,27 +156,39 @@ export default function Masters() {
               ? <div className="muted">{pendingTotal} pending across other master types — switch the selector.</div>
               : <div className="muted">No pending submissions.</div>
           ) : (
-            <table>
-              <thead><tr><th>Key</th><th>Maker</th><th>When</th><th>Payload</th><th>Decide</th></tr></thead>
-              <tbody>
-                {pendingForType.map((r: any) => (
-                  <tr key={r.id}>
-                    <td><b>{r.recordKey}</b></td>
-                    <td className="mono"><small>{r.maker}</small></td>
-                    <td className="mono"><small>{new Date(r.makerAt).toLocaleString()}</small></td>
-                    <td><PayloadPreview payload={r.payload} /></td>
-                    <td>
-                      <div className="btnrow">
-                        <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
-                          onClick={() => run(() => masters.approve(r.id, actor), "Approved")}>Approve</button>
-                        <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
-                          onClick={() => run(() => masters.reject(r.id, actor), "Rejected")}>Reject</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>Key</th><th>Maker</th><th>When</th><th>Rationale</th><th>Payload</th><th>Decide</th></tr></thead>
+                <tbody>
+                  {pendingForType.map((r: any) => {
+                    const isMaker = r.maker === actor;
+                    return (
+                      <tr key={r.id}>
+                        <td><b>{r.recordKey}</b> <span className="muted">v{r.version}</span></td>
+                        <td className="mono"><small>{r.maker}</small></td>
+                        <td className="mono"><small>{fmt.dateTime(r.makerAt)}</small></td>
+                        <td><small className="muted">{r.comment || "—"}</small></td>
+                        <td><PayloadView payload={r.payload} /></td>
+                        <td>
+                          <div className="btnrow">
+                            <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                              disabled={isMaker}
+                              title={isMaker ? "SoD: the maker cannot approve their own record" : undefined}
+                              onClick={() => run(() => masters.approve(r.id, actor), "Approved")}>Approve</button>
+                            <button className="btn danger" style={{ fontSize: 11, padding: "3px 8px" }}
+                              disabled={isMaker}
+                              onClick={() => {
+                                if (window.confirm(`Reject pending record ${r.recordKey}?`))
+                                  run(() => masters.reject(r.id, actor), "Rejected");
+                              }}>Reject</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </Card>
       </div>
@@ -133,54 +196,89 @@ export default function Masters() {
   );
 }
 
-function PayloadPreview({ payload }: { payload: any }) {
-  if (!payload || typeof payload !== "object") return <span className="muted">—</span>;
-  const entries = Object.entries(payload).slice(0, 4);
-  return (
-    <small className="prov" style={{ fontFamily: "ui-monospace, Menlo, monospace" }}>
-      {entries.map(([k, v]) => `${k}: ${preview(v)}`).join(" · ")}
-      {Object.keys(payload).length > entries.length && " …"}
-    </small>
-  );
-}
+function ProposeRecord({ type, actor, notify, activeRecords, clone, onDone }: {
+  type: string; actor: string; notify: (t: string, e?: boolean) => void;
+  activeRecords: any[]; clone: any | null; onDone: () => void;
+}) {
+  const schema = schemaFor(type);
+  const [recordKey, setRecordKey] = useState(clone?.recordKey || "");
+  const [jurisdiction, setJurisdiction] = useState(clone?.jurisdiction || "");
+  const [payload, setPayload] = useState<any>(clone?.payload || {});
+  const [editorInitial, setEditorInitial] = useState<any>(clone?.payload || {});
+  const [payloadErrors, setPayloadErrors] = useState<Record<string, string>>({});
+  const [rationale, setRationale] = useState("");
+  const [attempted, setAttempted] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
 
-function preview(v: any): string {
-  if (v == null) return "—";
-  if (Array.isArray(v)) return `[${v.length}]`;
-  if (typeof v === "object") return "{…}";
-  const s = String(v);
-  return s.length > 28 ? s.slice(0, 25) + "…" : s;
-}
+  // The active record the edit would supersede (same key + jurisdiction scope).
+  const activeMatch = useMemo(() => {
+    const jur = jurisdiction.trim();
+    return activeRecords.find((r) =>
+      r.recordKey === recordKey.trim() && (r.jurisdiction || "") === jur) || null;
+  }, [activeRecords, recordKey, jurisdiction]);
+  const before = activeMatch?.payload || null;
+  const isEdit = !!activeMatch;
 
-function ProposeRecord({ type, actor, notify, onDone }:
-                       { type: string; actor: string; notify: any; onDone: () => void }) {
-  const [recordKey, setRecordKey] = useState("");
-  const [payloadText, setPayloadText] = useState('{\n  "enabled": true\n}');
   const submit = async () => {
+    setAttempted(true);
     if (!recordKey.trim()) { notify("Record key required", true); return; }
-    let payload: any;
-    try { payload = JSON.parse(payloadText); }
-    catch (e: any) { notify("Payload must be valid JSON: " + e.message, true); return; }
+    if (Object.keys(payloadErrors).length > 0) { notify("Fix the highlighted payload fields first", true); return; }
+    if (isEdit && !rationale.trim()) { notify("A change rationale is required for an edit", true); return; }
     try {
-      await masters.submit(type, { recordKey: recordKey.trim(), payload }, actor);
-      notify(`Proposed ${type}:${recordKey} (pending checker approval)`);
+      const body: any = { recordKey: recordKey.trim(), payload };
+      if (jurisdiction.trim()) body.jurisdiction = jurisdiction.trim();
+      if (rationale.trim()) body.comment = rationale.trim();
+      const m = await masters.submit(type, body, actor);
+      notify(`Proposed ${type}/${recordKey} v${m.version} (pending checker approval)`);
       onDone();
     } catch (e: any) { notify(e.message, true); }
   };
+
   return (
-    <Card title={`Propose new ${type}`} sub="The submission enters PENDING_APPROVAL — a different actor must approve before it becomes active.">
+    <Card title={`${clone ? "Clone / edit" : "Propose new"} ${type}`}
+      sub="The submission enters PENDING_APPROVAL — a different actor must approve before it becomes active."
+      right={isEdit ? <Badge kind="warn">EDIT · supersedes v{activeMatch.version}</Badge>
+        : <Badge kind="ok">NEW</Badge>}>
       <div className="grid cols-2">
-        <Field label="Record key">
-          <input value={recordKey} onChange={(e) => setRecordKey(e.target.value)} placeholder="e.g. NEW_THRESHOLD" />
+        <Field label="Record key" required hint={schema?.keyHint}>
+          <input value={recordKey} onChange={(e) => setRecordKey(e.target.value)}
+            placeholder="e.g. NEW_THRESHOLD" />
         </Field>
-        <Field label="Acting as">
-          <input value={actor} disabled className="mono" />
+        <Field label="Jurisdiction (optional override)">
+          <input value={jurisdiction} onChange={(e) => setJurisdiction(e.target.value)} placeholder="(default)" />
         </Field>
       </div>
-      <Field label="Payload (JSON)">
-        <textarea value={payloadText} onChange={(e) => setPayloadText(e.target.value)}
-          rows={6} style={{ fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12 }} />
-      </Field>
+
+      {activeRecords.length > 0 && (
+        <div className="btnrow" style={{ marginBottom: 8, gap: 6, alignItems: "center" }}>
+          <span className="muted" style={{ fontSize: 11 }}>Clone from active:</span>
+          {activeRecords.slice(0, 8).map((r) => (
+            <button key={r.id} className="btn subtle" style={{ fontSize: 11, padding: "2px 8px" }}
+              onClick={() => {
+                setRecordKey(r.recordKey);
+                setJurisdiction(r.jurisdiction || "");
+                setPayload(r.payload || {});
+                setEditorInitial(r.payload || {});
+                setResetKey((k) => k + 1);
+              }}>{r.recordKey}</button>
+          ))}
+          {activeRecords.length > 8 && <span className="muted" style={{ fontSize: 11 }}>…and {activeRecords.length - 8} more (use the list's Clone / edit)</span>}
+        </div>
+      )}
+
+      <PayloadEditor schema={schema} initial={editorInitial} resetKey={resetKey}
+        onChange={(p, errs) => { setPayload(p); setPayloadErrors(errs); }} />
+
+      {isEdit && (
+        <Card title="Diff vs active version" sub="What this submission changes on approval.">
+          <JsonDiff before={before} after={payload} />
+        </Card>
+      )}
+
+      <RationaleBox value={rationale} onChange={setRationale}
+        show={attempted} required={isEdit}
+        label={isEdit ? "Change rationale (required)" : "Rationale (optional for a new record)"} />
+
       <Button onClick={submit}>Submit for approval</Button>
     </Card>
   );

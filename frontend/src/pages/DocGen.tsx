@@ -14,7 +14,7 @@
  */
 
 import { useState } from "react";
-import { origination, docs } from "../api";
+import { origination, docs, printing } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, EmptyState, Field, GovFlow, useAsync } from "../ui";
 
@@ -44,11 +44,11 @@ function statusBadgeKind(status: string): string {
 }
 
 export default function DocGen() {
-  const { actor, notify } = useApp();
+  const { actor, notify, ref: ctxRef } = useApp();
 
   /* ── Deal selector ─────────────────────────────────────────── */
   const apps = useAsync(() => origination.list(), []);
-  const [ref, setRef] = useState<string>("");
+  const [ref, setRef] = useState<string>(ctxRef ?? "");
 
   /* ── Document list for selected deal ──────────────────────── */
   const docList = useAsync<GeneratedDocument[]>(
@@ -91,14 +91,18 @@ export default function DocGen() {
   const [addPos, setAddPos] = useState<string>("");
   const [addBusy, setAddBusy] = useState(false);
 
+  // The clause library is the primary selector — picking a library clause keys the
+  // new clause by its recordKey; the typed reference is only the custom-clause fallback.
+  const effectiveClauseRef = (addTncKey || addClauseRef).trim();
+
   const handleAddClause = async () => {
-    if (!selectedDoc || !addClauseRef) { notify("Enter a clause reference.", true); return; }
+    if (!selectedDoc || !effectiveClauseRef) { notify("Pick a library clause or enter a clause reference.", true); return; }
     setAddBusy(true);
     try {
       await docs.addClause(
         selectedDoc.id,
         {
-          clauseRef: addClauseRef,
+          clauseRef: effectiveClauseRef,
           tncRecordKey: addTncKey || undefined,
           customTitle: addTitle || undefined,
           customText: addText || undefined,
@@ -146,6 +150,15 @@ export default function DocGen() {
       notify("Document confirmed.");
       docList.reload();
     } catch (e: any) { notify(e.message, true); }
+  };
+
+  /* ── Download PDF (print pipeline) ─────────────────────────── */
+  // Opens the backend print-optimised standalone HTML in a new window and lets the
+  // browser save it as a PDF. The rendering is a faithful copy of the authoritative
+  // document body — no clause or figure is recomputed.
+  const handleDownloadPdf = () => {
+    if (!selectedDoc) return;
+    printing.print(printing.documentHtml(selectedDoc.id, actor), notify);
   };
 
   /* ── Withdraw ──────────────────────────────────────────────── */
@@ -273,12 +286,11 @@ export default function DocGen() {
                   </div>
                 }
               >
-                {isDraft && (
-                  <div className="btnrow" style={{ marginTop: 8 }}>
-                    <Button onClick={handleConfirm}>Confirm</Button>
-                    <Button kind="ghost" onClick={handleWithdraw}>Withdraw</Button>
-                  </div>
-                )}
+                <div className="btnrow print-actions" style={{ marginTop: 8 }}>
+                  <Button kind="ghost" onClick={handleDownloadPdf}>Download PDF</Button>
+                  {isDraft && <Button onClick={handleConfirm}>Confirm</Button>}
+                  {isDraft && <Button kind="danger" onClick={handleWithdraw}>Withdraw</Button>}
+                </div>
               </Card>
 
               {/* Two-column workspace */}
@@ -326,7 +338,7 @@ export default function DocGen() {
                                         Edit
                                       </Button>
                                       <Button
-                                        kind="ghost"
+                                        kind="danger"
                                         onClick={() => handleRemoveClause(cRef)}
                                       >
                                         Remove
@@ -344,25 +356,29 @@ export default function DocGen() {
 
                   {/* Add clause form — DRAFT only */}
                   {isDraft && (
-                    <Card title="Add clause" sub="Attach a standard T&C clause or enter a custom one.">
-                      <Field label="Clause reference (required)">
-                        <input
-                          type="text"
-                          value={addClauseRef}
-                          onChange={(e) => setAddClauseRef(e.target.value)}
-                          placeholder="e.g. EVENTS_OF_DEFAULT"
-                        />
-                      </Field>
-                      <Field label="T&C clause (library)">
-                        <select value={addTncKey} onChange={(e) => setAddTncKey(e.target.value)}>
-                          <option value="">— none / custom —</option>
-                          {(tncClauses.data ?? []).map((c: any) => (
-                            <option key={c.recordKey} value={c.recordKey}>
-                              {c.recordKey}{c.appliesTo ? ` (${c.appliesTo})` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
+                    <Card title="Add clause" sub="Pick a standard T&C clause from the library, or write a custom one.">
+                      {(tncClauses.data ?? []).length > 0 && (
+                        <Field label="T&C clause (library)" hint="Picking a library clause keys it automatically — no reference needed.">
+                          <select value={addTncKey} onChange={(e) => setAddTncKey(e.target.value)}>
+                            <option value="">— custom clause —</option>
+                            {(tncClauses.data ?? []).map((c: any) => (
+                              <option key={c.recordKey} value={c.recordKey}>
+                                {c.recordKey}{c.appliesTo ? ` (${c.appliesTo})` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                      )}
+                      {!addTncKey && (
+                        <Field label="Clause reference" required>
+                          <input
+                            type="text"
+                            value={addClauseRef}
+                            onChange={(e) => setAddClauseRef(e.target.value)}
+                            placeholder="e.g. EVENTS_OF_DEFAULT"
+                          />
+                        </Field>
+                      )}
                       <Field label="Custom title (optional)">
                         <input
                           type="text"
@@ -388,7 +404,7 @@ export default function DocGen() {
                           min={1}
                         />
                       </Field>
-                      <Button onClick={handleAddClause} busy={addBusy} disabled={!addClauseRef}>
+                      <Button onClick={handleAddClause} busy={addBusy} disabled={!effectiveClauseRef}>
                         Add clause
                       </Button>
                     </Card>

@@ -15,6 +15,10 @@ public final class Dtos {
             @NotBlank String legalName,
             String legalForm,
             String registrationNo,
+            String pan,
+            String gstin,
+            String lei,
+            String cin,
             @NotBlank String jurisdiction,
             @NotBlank String segment,
             String sector,
@@ -45,5 +49,14 @@ public final class Dtos {
     }
 
     public record CloseRequest(@NotBlank String reason) {
+    }
+
+    // ---- hygiene RAG (deterministic read-only aggregation — no figures touched) ----
+
+    public record HygieneCheck(String key, String state, String detail) {
+    }
+
+    public record HygieneResult(Long counterpartyId, String reference, String status,
+                                List<HygieneCheck> checks) {
     }
 }

@@ -81,9 +81,9 @@ const PRESET_CONSERVATIVE: OptimiserForm = {
 };
 
 export default function PricingLab() {
-  const { actor, notify } = useApp();
+  const { actor, notify, ref: ctxRef } = useApp();
   const apps = useAsync(() => origination.list(), []);
-  const [ref, setRef] = useState<string>("");
+  const [ref, setRef] = useState<string>(ctxRef ?? "");
   const [form, setForm] = useState<OptimiserForm>(BLANK_FORM);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<OptimisationResult | null>(null);

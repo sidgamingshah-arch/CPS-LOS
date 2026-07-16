@@ -234,7 +234,7 @@ export default function ReportBuilder() {
           {result.rows.length === 0
             ? <EmptyState title="No rows" sub="Filters returned an empty set."/>
             : (
-              <div style={{ overflowX: "auto" }}>
+              <div className="table-scroll">
                 <table className="table">
                   <thead><tr>{result.columns.map((c) => (
                     <th key={c.key}>{c.label} <span className="sub">{c.type}</span></th>

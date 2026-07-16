@@ -79,7 +79,7 @@ public class Notification {
     private Map<String, Object> vars;
 
     @Column(nullable = false, length = 20)
-    private String status = "PENDING";      // PENDING | SENT | FAILED | SUPPRESSED
+    private String status = "PENDING";      // PENDING | SCHEDULED | SENT | FAILED | SUPPRESSED
 
     @Column(nullable = false, length = 20)
     private String transport = "OUTBOX";
@@ -98,6 +98,33 @@ public class Notification {
     private Instant createdAt;
 
     private Instant sentAt;
+
+    /** When set (status SCHEDULED), transport dispatch is deferred until the sweep passes this instant. */
+    private Instant scheduledFor;
+
+    /** Reminder cadence in hours (0 = every sweep); null ⇒ not reminder-eligible. */
+    private Integer reminderEveryHours;
+
+    /** Cap on reminder rows spawned from this notification; null ⇒ not reminder-eligible. */
+    private Integer maxReminders;
+
+    /** How many reminder rows have been spawned so far (null means 0). */
+    private Integer remindersSent;
+
+    private Instant lastReminderAt;
+
+    /**
+     * Read-state (notification-center). Nullable so existing rows/tests are unaffected — an
+     * absent {@code readAt} means unread. Column names are reserved-word-safe: a bare
+     * {@code read} column would clash with SQLite keywords, whereas {@code read_at}/{@code read_by}
+     * do not. Stamped only by the human-gated {@code POST /{id}/read} + {@code /read-all}
+     * endpoints; the enqueue / dispatch / reminder paths never touch these.
+     */
+    @Column(name = "read_at")
+    private Instant readAt;
+
+    @Column(name = "read_by", length = 120)
+    private String readBy;
 
     public Long getId() { return id; }
 
@@ -156,4 +183,25 @@ public class Notification {
 
     public Instant getSentAt() { return sentAt; }
     public void setSentAt(Instant sentAt) { this.sentAt = sentAt; }
+
+    public Instant getScheduledFor() { return scheduledFor; }
+    public void setScheduledFor(Instant scheduledFor) { this.scheduledFor = scheduledFor; }
+
+    public Integer getReminderEveryHours() { return reminderEveryHours; }
+    public void setReminderEveryHours(Integer reminderEveryHours) { this.reminderEveryHours = reminderEveryHours; }
+
+    public Integer getMaxReminders() { return maxReminders; }
+    public void setMaxReminders(Integer maxReminders) { this.maxReminders = maxReminders; }
+
+    public Integer getRemindersSent() { return remindersSent; }
+    public void setRemindersSent(Integer remindersSent) { this.remindersSent = remindersSent; }
+
+    public Instant getLastReminderAt() { return lastReminderAt; }
+    public void setLastReminderAt(Instant lastReminderAt) { this.lastReminderAt = lastReminderAt; }
+
+    public Instant getReadAt() { return readAt; }
+    public void setReadAt(Instant readAt) { this.readAt = readAt; }
+
+    public String getReadBy() { return readBy; }
+    public void setReadBy(String readBy) { this.readBy = readBy; }
 }

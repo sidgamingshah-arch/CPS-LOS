@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -197,7 +198,7 @@ public class PortfolioService {
             double utilisation = limitAmount > 0 ? exp / limitAmount : 0;
             boolean breach = exp > limitAmount;
             if (breach) {
-                breaches.add("%s limit breached: %s at %.0f vs limit %.0f".formatted(dim, key, exp, limitAmount));
+                breaches.add("%s limit breached: %s at %s vs limit %s".formatted(dim, key, inr(exp), inr(limitAmount)));
             }
             String band = utilisation > 1.0 + 1e-6 ? "BREACH"
                     : utilisation >= 0.90 ? "WARNING"
@@ -336,5 +337,26 @@ public class PortfolioService {
 
     private double round4(double v) {
         return Math.round(v * 10000.0) / 10000.0;
+    }
+
+    /**
+     * Compact rupee for human-facing breach messages (India book): crore / lakh
+     * scale with the ₹ symbol so "at ₹1,029.1 Cr vs limit ₹750 Cr" reads cleanly
+     * instead of a 10-digit run. The structured amounts on ConcentrationLine are
+     * unchanged — this is display text only.
+     */
+    private String inr(double v) {
+        double abs = Math.abs(v);
+        String sign = v < 0 ? "-" : "";
+        if (abs >= 1e7) return sign + "₹" + trimAmt(abs / 1e7) + " Cr";
+        if (abs >= 1e5) return sign + "₹" + trimAmt(abs / 1e5) + " L";
+        return sign + "₹" + String.format(Locale.UK, "%,.0f", abs);
+    }
+
+    /** Group with up to two decimals, dropping trailing zeros ("1,029.10" -> "1,029.1"). */
+    private String trimAmt(double v) {
+        String s = String.format(Locale.UK, "%,.2f", v);
+        if (s.contains(".")) s = s.replaceAll("0+$", "").replaceAll("\\.$", "");
+        return s;
     }
 }

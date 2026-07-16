@@ -120,7 +120,7 @@ h1, h2, h3, h4 { margin: 0 0 .4rem; font-weight: 600; letter-spacing: -0.02em; c
   border-right: 1px solid #073744;
   z-index: 40;
 }
-.brand { padding: 22px 22px 18px; }
+.brand { padding: 22px 22px 18px; position: relative; }
 .brand .logo {
   font-size: 22px; font-weight: 600; color: #fff; letter-spacing: -0.03em;
   display: flex; align-items: center; gap: 0;
@@ -187,6 +187,59 @@ h1, h2, h3, h4 { margin: 0 0 .4rem; font-weight: 600; letter-spacing: -0.02em; c
     display: inline-flex; align-items: center; justify-content: center;
     width: 38px; height: 38px; border: 1px solid var(--hairline); background: var(--canvas);
     border-radius: var(--r-sm); cursor: pointer; font-size: 16px; color: var(--ink); flex: 0 0 auto;
+  }
+  /* Rail collapse is desktop-only; hide its toggle in the mobile drawer where it has no effect. */
+  .rail-toggle { display: none; }
+}
+
+/* ---- desktop icon-rail collapse (orthogonal to the mobile drawer above) ---- */
+.rail-toggle {
+  position: absolute; top: 18px; right: 14px; padding: 0;
+  width: 26px; height: 26px; line-height: 1; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #0d4655; background: var(--surface-dark-2);
+  color: var(--on-dark-soft); border-radius: var(--r-sm);
+  cursor: pointer; font-size: 13px; font-family: var(--font-sans);
+}
+.rail-toggle:hover { color: #fff; border-color: #1c6076; }
+.nav-label { min-width: 0; }
+
+/* The rail is a desktop-only feature; scope it above the mobile breakpoint so the
+   .app.rail-collapsed class can never shrink or relabel the mobile drawer. */
+@media (min-width: 981px) {
+  .app.rail-collapsed .sidebar { width: 64px; flex: 0 0 64px; }
+  .app.rail-collapsed .brand {
+    padding: 16px 0 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .app.rail-collapsed .brand .logo { font-size: 18px; }
+  .app.rail-collapsed .brand .tag { display: none; }
+  .app.rail-collapsed .rail-toggle { position: static; }
+
+  .app.rail-collapsed .nav { padding: 6px 8px 12px; }
+  .app.rail-collapsed .nav-group { margin-bottom: 8px; }
+  .app.rail-collapsed .nav-group-title { display: none; }
+  /* In rail mode every item shows as a glyph, so ignore the per-group accordion. */
+  .app.rail-collapsed .nav-group.collapsed .nav-group-items { display: flex; }
+  .app.rail-collapsed .nav .dot,
+  .app.rail-collapsed .nav-label { display: none; }
+  .app.rail-collapsed .nav button.nav-item {
+    justify-content: center; gap: 0; padding: 5px 0;
+  }
+  .app.rail-collapsed .nav button.nav-item::before {
+    content: attr(data-glyph);
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: var(--r-sm);
+    font-size: 14px; font-weight: 600; text-transform: uppercase;
+    background: rgba(255,255,255,.06); color: #cddbdf;
+  }
+  .app.rail-collapsed .nav button.nav-item:hover { background: transparent; }
+  .app.rail-collapsed .nav button.nav-item:hover::before {
+    background: rgba(255,255,255,.14); color: #fff;
+  }
+  .app.rail-collapsed .nav button.nav-item.active { background: transparent; }
+  .app.rail-collapsed .nav button.nav-item.active::before {
+    background: var(--ocean-8); color: #fff;
   }
 }
 
@@ -431,3 +484,691 @@ small.prov { color: var(--muted); font-size: 11px; }
 .gov-banner .gb-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .gov-banner .gb-chip { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16); color: #d7e4e7; padding: 5px 12px; border-radius: var(--r-pill); font-size: 11.5px; font-weight: 500; }
 .gov-banner .gb-chip b { color: #fff; font-weight: 600; }
+
+/* ============================================================================
+   Universal top-bar search (Unit 2) — an input-styled launcher that opens the
+   ⌘K palette. Sits in the topbar-right cluster; reuses the pill geometry and
+   surface tokens so it reads as chrome, not a form field.
+   ============================================================================ */
+.topsearch {
+  display: inline-flex; align-items: center; gap: 8px;
+  flex: 1 1 300px; min-width: 200px; max-width: 440px;
+  padding: 7px 12px; border-radius: var(--r-pill);
+  background: var(--surface-strong); border: 1px solid transparent; cursor: text;
+  transition: background .12s ease, border-color .12s ease;
+}
+.topsearch:hover, .topsearch:focus-within { background: var(--canvas); border-color: var(--hairline); }
+.topsearch .ico { color: var(--muted); font-size: 15px; flex: 0 0 auto; }
+.topsearch .topsearch-input {
+  flex: 1; min-width: 0; width: auto; border: 0; padding: 0; background: transparent;
+  font-size: 12.5px; color: var(--ink); cursor: text; box-shadow: none !important;
+}
+.topsearch .topsearch-input::placeholder { color: var(--muted); }
+.topsearch .topsearch-input:focus { border: 0; outline: none; box-shadow: none !important; }
+.topsearch kbd {
+  flex: 0 0 auto; font-family: var(--font-mono); font-size: 11px; background: var(--canvas);
+  border: 1px solid var(--hairline); border-radius: 5px; padding: 1px 6px; color: var(--muted);
+}
+
+/* Palette result dots, tinted per source so the universal search reads at a glance. */
+.cmdk-item .ci-dot.ci-recent       { background: var(--muted-soft); }
+.cmdk-item .ci-dot.ci-screen       { background: var(--ocean-5); }
+.cmdk-item .ci-dot.ci-counterparty { background: var(--ocean-8); }
+.cmdk-item .ci-dot.ci-deal         { background: var(--ocean-6); }
+.cmdk-item .ci-dot.ci-group        { background: var(--human); }
+.cmdk-item .ci-dot.ci-jurisdiction { background: var(--ai); }
+.cmdk-item .ci-dot.ci-country      { background: var(--ocean-4); }
+.cmdk-item .ci-dot.ci-exposure     { background: var(--down); }
+
+/* ============================ Copilot dock (floating, all-screen) =========
+   A persistent, advisory chatbot present on every screen. Launcher (FAB) sits
+   bottom-right like the toast; the expanded panel anchors the same corner. It
+   lives in the 60–80 z-index band so it floats above content and the toast
+   (z-index 60) but stays BELOW the ⌘K command palette (z-index 80), which must
+   keep working with the dock open. Responsive: the panel is capped so it never
+   covers the whole viewport on mobile. */
+
+/* --- launcher (FAB) --- */
+.copilot-fab {
+  position: fixed; bottom: 24px; right: 24px; z-index: 70;
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 12px 18px; border-radius: var(--r-pill); cursor: pointer;
+  background: var(--ai); color: #fff; border: 1px solid var(--ai);
+  font-family: var(--font-sans); font-size: 13.5px; font-weight: 600;
+  box-shadow: var(--shadow-hover); transition: transform .14s ease, box-shadow .14s ease;
+}
+.copilot-fab:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(120,32,128,.28); }
+.copilot-fab .copilot-fab-glyph { font-size: 15px; line-height: 1; }
+
+/* --- expanded chat panel --- */
+.copilot-dock {
+  position: fixed; bottom: 24px; right: 24px; z-index: 70;
+  width: min(380px, 92vw); max-height: min(560px, 78vh);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--canvas); border: 1px solid var(--hairline);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-hover);
+}
+@media (max-width: 480px) {
+  .copilot-dock { bottom: 12px; right: 12px; left: 12px; width: auto; max-height: 80vh; }
+  .copilot-fab { bottom: 16px; right: 16px; }
+}
+
+/* header — AI-purple tinted, like the advisory pane */
+.copilot-dock-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; border-bottom: 1px solid var(--hairline);
+  background: linear-gradient(180deg, #faf6fb, #fff);
+}
+.copilot-dock-head .cd-title { display: flex; align-items: center; gap: 9px; }
+.copilot-dock-head .cd-name { font-weight: 600; font-size: 14px; color: var(--ink); }
+.copilot-dock-head .cd-close {
+  border: 1px solid var(--hairline); background: var(--canvas); color: var(--muted);
+  width: 28px; height: 28px; border-radius: var(--r-sm); cursor: pointer; font-size: 18px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+}
+.copilot-dock-head .cd-close:hover { border-color: var(--ai); color: var(--ai); background: var(--ai-soft); }
+
+/* sub-header — governance flow + active-deal scope chip */
+.copilot-dock-sub {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 14px; border-bottom: 1px solid var(--hairline-soft); background: var(--surface-soft);
+}
+.copilot-dock-sub .cd-scope { font-size: 11.5px; color: var(--ocean-7); }
+.copilot-dock-sub .cd-scope.muted { color: var(--muted); }
+.copilot-dock-sub .cd-scope b { font-weight: 600; }
+
+/* message list */
+.copilot-dock-body {
+  flex: 1 1 auto; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px;
+  background: var(--canvas);
+}
+.copilot-dock-body .cd-empty { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.cd-msg { display: flex; }
+.cd-msg.user { justify-content: flex-end; }
+.cd-msg.assistant { justify-content: flex-start; }
+.cd-bubble {
+  max-width: 86%; padding: 10px 12px; border-radius: var(--r-md); font-size: 13px; line-height: 1.5;
+  border: 1px solid var(--hairline);
+}
+.cd-msg.user .cd-bubble { background: var(--ocean-8); color: #fff; border-color: var(--ocean-8); border-bottom-right-radius: 4px; }
+.cd-msg.assistant .cd-bubble { background: var(--surface-soft); color: var(--ink); border-bottom-left-radius: 4px; }
+.cd-msg.assistant .cd-bubble.refused { background: #fff7ed; border-color: #f3d9b8; }
+.cd-bubble .cd-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+.cd-bubble .cd-answer { white-space: pre-wrap; }
+.cd-bubble .cd-gate { margin-top: 8px; }
+.cd-bubble .cd-suggest {
+  margin-top: 8px; padding: 8px 10px; border-radius: var(--r-sm);
+  background: var(--ai-soft); color: #6a1c70; font-size: 12px; font-weight: 500;
+}
+.cd-bubble .cd-cites { margin-top: 8px; }
+.cd-bubble .cd-cites ul { margin: 4px 0 0; padding-left: 16px; }
+.cd-bubble .cd-inscope { display: block; margin-top: 8px; }
+
+/* typing indicator */
+.cd-bubble.typing { display: inline-flex; align-items: center; gap: 4px; padding: 12px 14px; }
+.cd-bubble.typing span {
+  width: 6px; height: 6px; border-radius: 999px; background: var(--muted-soft);
+  animation: cd-blink 1.2s infinite ease-in-out;
+}
+.cd-bubble.typing span:nth-child(2) { animation-delay: .18s; }
+.cd-bubble.typing span:nth-child(3) { animation-delay: .36s; }
+@keyframes cd-blink { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
+
+/* quick-prompt chips */
+.copilot-dock-quick {
+  display: flex; gap: 6px; overflow-x: auto; padding: 10px 14px 0;
+  border-top: 1px solid var(--hairline-soft);
+}
+.copilot-dock-quick .cd-chip {
+  flex: 0 0 auto; white-space: nowrap; cursor: pointer;
+  padding: 6px 11px; border-radius: var(--r-pill); font-size: 11.5px; font-weight: 500;
+  background: var(--surface-strong); color: var(--ink); border: 1px solid transparent;
+}
+.copilot-dock-quick .cd-chip:hover:not(:disabled) { background: var(--ai-soft); color: #6a1c70; }
+.copilot-dock-quick .cd-chip:disabled { opacity: .5; cursor: not-allowed; }
+
+/* composer */
+.copilot-dock-input { display: flex; gap: 8px; align-items: center; padding: 12px 14px; }
+.copilot-dock-input input {
+  flex: 1 1 auto; padding: 9px 12px; border: 1px solid var(--hairline); border-radius: var(--r-pill);
+  font: inherit; font-family: var(--font-sans); font-size: 13px; background: var(--canvas); color: var(--ink);
+}
+.copilot-dock-input input:focus { outline: none; border-color: var(--ai); box-shadow: 0 0 0 3px var(--ai-soft); }
+.copilot-dock-input .cd-send {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: var(--r-pill); cursor: pointer;
+  background: var(--ai); color: #fff; border: 1px solid var(--ai); font-size: 16px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.copilot-dock-input .cd-send:disabled { background: var(--ocean-disabled); border-color: var(--ocean-disabled); cursor: not-allowed; }
+
+/* ============================ Wave-0 shared utilities =====================
+   Foundation for the UI/UX quick-win pass: horizontal-scroll wrapper for wide
+   tables (page must never scroll sideways), and Field-level hint/error slots
+   so validation is visible in place, not only in a 4s toast. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-scroll > table { min-width: 100%; }
+
+.field .req { color: var(--bad, #b3261e); font-weight: 700; }
+.field .field-hint { display: block; font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+.field .field-error { display: block; font-size: 11.5px; color: var(--bad, #b3261e); margin-top: 3px; font-weight: 600; }
+.field.has-error input, .field.has-error select, .field.has-error textarea {
+  border-color: var(--bad, #b3261e);
+  box-shadow: 0 0 0 3px rgba(179, 38, 30, .08);
+}
+
+/* "showing N of M" row under truncated tables + show-more control */
+.table-more { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.table-more button { border: 0; background: transparent; color: var(--ocean-8); cursor: pointer; font-size: 12px; font-weight: 600; padding: 0; }
+.table-more button:hover { text-decoration: underline; }
+
+/* ================= Disbursement: inline action panels (Wave-0) =============
+   Replaces window.prompt() capture on the Disbursement screen. A single
+   per-action panel expands in place — inside a full-width table row
+   (tr.inline-panel-row) or at the top of a card — and reuses the shared
+   Field hint/error slots and existing tokens. Appended section only. */
+.inline-panel {
+  display: grid; gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--human);   /* human-gated action */
+  border-radius: var(--r-sm);
+}
+.inline-panel.danger { border-left-color: var(--bad); }
+.inline-panel-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.inline-panel.danger .inline-panel-title { color: var(--bad); }
+.inline-panel-fields { display: flex; flex-wrap: wrap; gap: 0 12px; align-items: flex-start; }
+.inline-panel-fields .field { flex: 1 1 220px; min-width: 180px; max-width: 360px; margin-bottom: 0; }
+.inline-panel textarea { resize: vertical; min-height: 44px; }
+tr.inline-panel-row > td { padding: 6px 6px 10px; }
+
+/* ============================ Deal Workspace navigation ===================
+   Wave-0 nav cluster: the workspace case-file chrome — the sticky section
+   jump-list, the "Open in …" deep-link chips (nav carries the deal ref into
+   each deal-scoped screen), the next-action CTA beside the pill-steps, and
+   the compact workflow-stage strip. Ocean tokens + pill radius only, so the
+   chips read as part of the existing design language. */
+
+/* anchored sections: keep card headings clear of the sticky jump bar */
+.ws-anchor { scroll-margin-top: 64px; }
+
+/* sticky horizontal jump-list under the workspace header */
+.ws-jumpbar {
+  position: sticky; top: 8px; z-index: 30;
+  display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto;
+  padding: 8px 10px;
+  background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-pill);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .05);
+}
+.ws-jump-chip {
+  flex: 0 0 auto; white-space: nowrap; cursor: pointer;
+  padding: 5px 12px; border-radius: var(--r-pill); font-size: 11.5px; font-weight: 500;
+  background: var(--light-blue-soft); color: var(--ocean-7); border: 1px solid transparent;
+}
+.ws-jump-chip:hover { background: var(--ocean-8); color: #fff; }
+
+/* "Open in …" deep-link chips */
+.ws-links { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+.ws-links-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 600; color: var(--muted); margin-right: 2px;
+}
+.ws-link-chip {
+  cursor: pointer; padding: 4px 11px; border-radius: var(--r-pill); font-size: 11.5px; font-weight: 500;
+  background: var(--canvas); color: var(--ocean-8); border: 1px solid var(--hairline);
+}
+.ws-link-chip:hover { background: var(--light-blue-soft); border-color: var(--ocean-8); }
+
+/* next-action CTA beside the pill-steps */
+.ws-next-cta {
+  cursor: pointer; padding: 5px 13px; border-radius: var(--r-pill); font-size: 11.5px; font-weight: 600;
+  background: var(--canvas); color: var(--ocean-8); border: 1px dashed var(--ocean-6);
+}
+.ws-next-cta:hover { background: var(--light-blue-soft); }
+
+/* compact workflow-stage strip (stage · status · SLA) atop the case file */
+.ws-workflow-strip {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 12px; margin: 0 0 12px;
+  background: var(--light-blue-soft); border: 1px solid var(--hairline); border-radius: var(--r-sm);
+  font-size: 12.5px; color: var(--ocean-7);
+}
+.ws-workflow-strip .wsw-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.ws-workflow-strip .wsw-stage { color: var(--body); }
+.ws-workflow-strip .wsw-sla { font-size: 11.5px; color: var(--muted); }
+
+/* ============================================================================
+   DataTable — the shared list surface (search · sort · per-column filters ·
+   column chooser · pagination · CSV · saved views). Reuses the existing table,
+   pill-button, badge and surface tokens so an adopted list reads as before,
+   just with the toolbar + footer chrome added around it.
+   ============================================================================ */
+.dt { display: flex; flex-direction: column; gap: 12px; }
+
+/* toolbar */
+.dt-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+.dt-toolbar-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dt-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* compact toolbar buttons (share .btn.subtle geometry, but smaller) */
+.dt-btn { padding: 6px 12px; font-size: 12.5px; }
+.dt-btn.active { background: var(--ocean-8); color: #fff; border-color: var(--ocean-8); }
+
+/* pill search box (mirrors the topbar search language) */
+.dt-search {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: var(--r-pill);
+  background: var(--surface-strong); border: 1px solid transparent; cursor: text;
+  min-width: 200px; max-width: 320px; flex: 1 1 220px;
+  transition: background .12s ease, border-color .12s ease;
+}
+.dt-search:focus-within { background: var(--canvas); border-color: var(--hairline); }
+.dt-search .dt-search-ico { color: var(--muted); font-size: 14px; flex: 0 0 auto; }
+.dt-search .dt-search-input {
+  flex: 1; min-width: 0; width: auto; border: 0; padding: 0; background: transparent;
+  font-size: 12.5px; color: var(--ink); box-shadow: none !important;
+}
+.dt-search .dt-search-input:focus { border: 0; outline: none; box-shadow: none !important; }
+.dt-search .dt-search-input::placeholder { color: var(--muted); }
+/* strip the native search "clear" affordance so it matches the pill */
+.dt-search .dt-search-input::-webkit-search-decoration,
+.dt-search .dt-search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
+
+/* dropdown menus (columns + views) */
+.dt-menu-wrap { position: relative; }
+.dt-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
+  min-width: 200px; max-height: 320px; overflow-y: auto;
+  background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-md);
+  box-shadow: var(--shadow-hover); padding: 8px;
+}
+.dt-menu-title {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); font-weight: 600; padding: 4px 8px 8px;
+}
+.dt-menu-empty { font-size: 12px; color: var(--muted); padding: 4px 8px 8px; }
+.dt-menu-check {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--r-sm);
+  font-size: 13px; color: var(--ink); cursor: pointer;
+}
+.dt-menu-check:hover { background: var(--surface-soft); }
+.dt-menu-check input { width: auto; }
+
+/* saved-view rows */
+.dt-view-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.dt-view-apply {
+  flex: 1; text-align: left; border: 0; background: transparent; cursor: pointer;
+  padding: 6px 8px; border-radius: var(--r-sm); font-size: 13px; color: var(--ocean-8); font-weight: 500;
+  font-family: var(--font-sans);
+}
+.dt-view-apply:hover { background: var(--light-blue-soft); }
+.dt-view-del {
+  flex: 0 0 auto; width: 24px; height: 24px; border: 1px solid var(--hairline); background: var(--canvas);
+  color: var(--muted); border-radius: var(--r-sm); cursor: pointer; font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.dt-view-del:hover { border-color: var(--down); color: var(--down); }
+.dt-view-save { display: flex; gap: 6px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hairline-soft); }
+.dt-view-save input { padding: 6px 10px; font-size: 12.5px; }
+
+/* table (horizontal-scroll wrapper — page never scrolls sideways) */
+.dt-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.dt-table-wrap > .dt-table { min-width: 100%; }
+.dt-table th.dt-center, .dt-table td.dt-center { text-align: center; }
+
+/* sortable header button */
+.dt-sort {
+  display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; cursor: pointer;
+  padding: 0; color: inherit; font: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .05em; font-family: var(--font-sans);
+}
+.dt-sort:hover { color: var(--ocean-8); }
+.dt-sort.active { color: var(--ocean-8); }
+.dt-sort-arrow { font-size: 9px; }
+.dt-table th.num .dt-sort { justify-content: flex-end; width: 100%; }
+
+/* per-column filter row */
+.dt-filter-row th { padding-top: 0; padding-bottom: 8px; border-bottom: 1px solid var(--hairline); }
+.dt-filter-input { padding: 5px 9px; font-size: 12px; border-radius: var(--r-sm); }
+
+.dt-no-match { text-align: center; padding: 22px 10px; }
+.dt-empty { padding: 4px 0; }
+
+/* footer: page-size + range + prev/next */
+.dt-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding-top: 4px;
+}
+.dt-pagesize { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 0; }
+.dt-pagesize select { width: auto; padding: 5px 9px; font-size: 12.5px; border-radius: var(--r-sm); }
+.dt-footer-right { display: flex; align-items: center; gap: 10px; }
+.dt-range { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ================= Schema-aware config UX (config-forms.tsx) ==============
+   Shared styling for the Masters / RulePacks / ModelBuilder enhancements:
+   the Form <-> Raw JSON editor toggle, before/after diff cells, collapsible
+   payload view and bulk-upload preview. Reuses the existing tokens so the
+   config screens stay in the same design language. Appended section. */
+.cfg-cell { font-size: 11px; max-width: 280px; overflow-wrap: anywhere; word-break: break-word; }
+.cfg-note { font-size: 11.5px; color: var(--muted); }
+.cfg-editor-mode { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+/* the collapsible payload view sits inside dense table cells — keep it compact */
+.cfg-cell pre.trace, td pre.trace { margin-top: 6px; }
+
+/* ==================== Notification center (topbar bell) ===================
+   The live bell + unread badge + dropdown that complements the full-page
+   outbox viewer. Matches the topbar chrome (pill geometry, surface tokens).
+   Appended section. */
+.notif-bell { position: relative; display: inline-flex; align-items: center; }
+.notif-bell-btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: var(--r-pill);
+  background: var(--surface-strong); border: 1px solid transparent; color: var(--muted);
+  cursor: pointer; transition: background .12s ease, color .12s ease;
+}
+.notif-bell-btn:hover { background: #e2e6e8; color: var(--ink); }
+.notif-bell-btn.has-unread { color: var(--ocean-8); }
+.notif-badge {
+  position: absolute; top: -3px; right: -3px; min-width: 17px; height: 17px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--down); color: #fff; border: 2px solid var(--canvas);
+  border-radius: 999px; font-size: 10px; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.notif-panel {
+  position: absolute; top: calc(100% + 10px); right: 0; z-index: 70; width: 360px; max-width: 92vw;
+  background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-md);
+  box-shadow: var(--shadow-hover); overflow: hidden;
+}
+.notif-panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; border-bottom: 1px solid var(--hairline-soft);
+}
+.notif-panel-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.notif-markall {
+  background: none; border: none; color: var(--ocean-8); font-size: 12px; font-weight: 600; cursor: pointer;
+  padding: 2px 4px; border-radius: var(--r-sm);
+}
+.notif-markall:hover:not(:disabled) { text-decoration: underline; }
+.notif-markall:disabled { color: var(--muted-soft); cursor: default; }
+.notif-list { max-height: 380px; overflow-y: auto; }
+.notif-empty { padding: 26px 14px; text-align: center; color: var(--muted); font-size: 12.5px; }
+.notif-item {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left;
+  padding: 11px 14px; background: none; border: none; border-bottom: 1px solid var(--hairline-soft);
+  cursor: pointer; transition: background .1s ease;
+}
+.notif-item:hover { background: var(--surface-soft); }
+.notif-item:last-child { border-bottom: none; }
+.notif-dot { flex: 0 0 auto; width: 7px; height: 7px; margin-top: 6px; border-radius: 999px; background: var(--ocean-6); }
+.notif-item-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.notif-item-title {
+  font-size: 12.5px; font-weight: 600; color: var(--ink); line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.notif-item-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
+.notif-item-subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; }
+.notif-item-time { white-space: nowrap; }
+.notif-panel-foot { padding: 10px 14px; border-top: 1px solid var(--hairline-soft); text-align: center; }
+.notif-viewall {
+  background: none; border: none; color: var(--ocean-8); font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.notif-viewall:hover { text-decoration: underline; }
+
+/* Notings — governed decision records (human-gated). */
+.noting-note {
+  margin: 4px 0 12px; padding: 8px 12px; font-size: 12px; line-height: 1.5;
+  border-left: 3px solid var(--human); border-radius: 6px;
+  background: var(--human-soft); color: var(--ink-2, inherit);
+}
+
+/* ---- Monitoring Artifacts (post-disbursement; one master-driven lifecycle) ---- */
+.mon-artifact-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.mon-artifact-sections textarea { width: 100%; resize: vertical; font: inherit; }
+.mon-artifact-sections textarea:disabled { background: var(--surface-strong); color: var(--muted); }
+.mon-artifact-vendor { margin-top: 16px; border-top: 1px solid var(--hairline-soft); padding-top: 12px; }
+.mon-artifact-vendor ul { margin: 8px 0 0; padding-left: 18px; }
+.mon-artifact-vendor li { font-size: 13px; margin-bottom: 4px; }
+
+/* ---- IP Notes (In-Principle sponsorship notes; precede a full application) ---- */
+.ipnote-note {
+  margin: 4px 0 12px; padding: 8px 12px; font-size: 12px; line-height: 1.5;
+  border-left: 3px solid var(--human); border-radius: 6px;
+  background: var(--human-soft); color: var(--ink-2, inherit);
+}
+.ipnote-converted {
+  font-size: 13px; color: var(--human); font-weight: 600; align-self: center;
+}
+/* ---- SCF (Supply-Chain Finance) product paper ---- */
+.scf-note {
+  margin: 4px 0 12px; padding: 8px 12px; font-size: 12px; line-height: 1.5;
+  border-left: 3px solid var(--det); border-radius: 6px;
+  background: var(--det-soft); color: var(--ink-2, inherit);
+}
+.scf-rollup {
+  display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px;
+  padding-top: 10px; border-top: 1px solid var(--hairline-soft);
+  font-size: 13px; color: var(--muted);
+}
+.scf-rollup b { color: var(--ink, inherit); font-variant-numeric: tabular-nums; }
+.scf-reasons { margin: 0; padding-left: 16px; }
+.scf-reasons li { margin-bottom: 2px; color: var(--muted); }
+/* ---- Escrow monitoring (record surface; deterministic budget-vs-actual + RAG) ---- */
+.escrow-note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+/* SRM — Structured Review / renewal (built on the Noting engine) */
+.srm-note { font-size: 13px; color: var(--muted); background: var(--human-soft); border: 1px solid var(--hairline-soft);
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; line-height: 1.5; }
+.srm-checklist { list-style: none; margin: 0; padding: 0; }
+.srm-checklist li { border-bottom: 1px solid var(--hairline-soft); padding: 8px 2px; font-size: 13px; }
+.srm-checklist li:last-child { border-bottom: 0; }
+.srm-checklist li.done { color: var(--muted); }
+.srm-checklist li.done .srm-code { text-decoration: line-through; }
+.srm-checklist label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.srm-checklist input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--human); }
+.srm-code { color: var(--ocean-8); font-size: 12px; }
+.srm-req { margin-left: auto; font-size: 11px; color: var(--muted); border: 1px solid var(--hairline);
+  border-radius: 6px; padding: 1px 6px; }
+/* ---- MOE / mortgage security perfection ---- */
+.perf-gate { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px;
+  padding: 10px 12px; border: 1px solid var(--hairline-soft); border-radius: 8px;
+  background: var(--human-soft); font-size: 12.5px; line-height: 1.45; }
+.perf-gate > span { color: var(--muted); }
+.perf-btn { font-size: 11px; padding: 3px 8px; }
+/* ---- Conflict of Interest (COI) attestations — named-human self-declaration ---- */
+.coi-form {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+}
+.coi-form .field { min-width: 160px; }
+.coi-hint {
+  margin-top: 12px; padding: 8px 12px; font-size: 12px; line-height: 1.5;
+  border-left: 3px solid var(--human); border-radius: 6px;
+  background: var(--human-soft); color: var(--ink-2, inherit);
+}
+/* ---- TAT / MIS reporting (deterministic case & query rollups) ---- */
+.tat-filters {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+}
+.tat-filters .field { min-width: 150px; }
+.tat-statgrid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;
+}
+.tat-note {
+  margin-top: 4px; padding: 8px 12px; font-size: 12px; line-height: 1.5;
+  border-left: 3px solid var(--det); border-radius: 6px;
+  background: var(--det-soft); color: var(--ink-2, inherit);
+}
+
+/* ---- role-scoped landing dashboard ("My Workspace") ---- */
+.rolehome-hero {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap; padding: 16px 18px; border: 1px solid var(--hairline, var(--warm-gray));
+  border-radius: 12px; background: var(--light-blue-soft, var(--human-soft));
+}
+.rolehome-hero .rh-eyebrow {
+  font-size: 10.5px; letter-spacing: 0.14em; font-weight: 700;
+  color: var(--ocean-8); text-transform: uppercase;
+}
+.rolehome-hero .rh-title { margin: 2px 0 6px; font-size: 20px; }
+.rolehome-hero .rh-sub { font-size: 12.5px; color: var(--muted); display: flex;
+  align-items: center; gap: 10px; flex-wrap: wrap; }
+.rolehome-hero .rh-roles { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.rolehome-hero .rh-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ============================================================================
+   Accessibility — keyboard focus visibility + skip-to-content link
+   (Wave-3 a11y pass; APPENDED at EOF — additive only, no existing rule touched).
+   ============================================================================ */
+
+/* Visible keyboard-focus indicator. Scoped to :focus-visible so pointer clicks
+   never show it — mouse users see no change. Lower specificity than the existing
+   `input:focus` glow, so form fields keep their box-shadow ring untouched; this
+   covers buttons, links, nav items and other controls that had no focus style. */
+:focus-visible {
+  outline: 2px solid var(--ocean-8);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* The main content region receives programmatic focus on view change / skip-link;
+   suppress the outline so there is no box around the whole content area. */
+#main:focus,
+#main:focus-visible { outline: none; }
+
+/* Skip-to-content link: off-screen until keyboard-focused, then pinned top-left.
+   position:fixed keeps it out of layout flow (no visual change for mouse users). */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  padding: 10px 16px;
+  background: var(--ocean-8);
+  color: var(--on-primary);
+  border-radius: var(--r-sm);
+  font-weight: 600;
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-160%);
+  transition: transform .15s ease;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid var(--on-primary);
+  outline-offset: 2px;
+  text-decoration: none;
+}
+/* ---- print / PDF rendering affordance (Wave-3: DocGen · Cad proposal · Committee sanction) ---- */
+/* The downloaded page itself is a self-contained standalone HTML document with its own
+   inlined print CSS (served by decision-service /api/docs/{id}/print and
+   /api/decisions/{ref}/credit-proposal/print). These rules only style the in-app
+   "Download PDF" action rows on the feature pages. */
+.print-actions {
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.print-actions .btn.ghost {
+  border-style: dashed;
+}
+
+/* ============================================================================
+   Mobile / responsive pass (APPENDED at EOF — additive only).
+
+   Goal: the page body never scrolls horizontally on small screens, dense chrome
+   (topbar, cards, tables, forms) condenses gracefully, and tap targets are
+   comfortable. Everything here is scoped inside min-/max-width media queries, so
+   the desktop layout (≥ 981px) is byte-for-byte unchanged. The two existing
+   breakpoints are reused: 980px (tablet — the sidebar becomes a drawer here) and
+   a new 640px (phone). Nothing above 980px is touched.
+   ============================================================================ */
+
+/* ---- Tablet & phone (≤ 980px): the sidebar is already a drawer at this width - */
+@media (max-width: 980px) {
+  /* Safety net so the body can never scroll sideways even if a child overflows.
+     `clip` (not `hidden`) does NOT create a scroll container, so it leaves the
+     drawer's fixed positioning and any sticky elements (e.g. the deal-workspace
+     jump bar) working exactly as before. */
+  html, body { overflow-x: clip; }
+  img, video { max-width: 100%; height: auto; }
+
+  /* Topbar wraps: the chip/search/actor cluster drops below the title instead of
+     being crushed against it. */
+  .topbar { padding: 12px 16px; flex-wrap: wrap; }
+  .topbar-right { width: 100%; justify-content: flex-start; gap: 10px; row-gap: 8px; }
+  .content { padding: 20px 16px; }
+  .gov-strip { padding: 9px 16px; gap: 10px 12px; }
+
+  /* Cap the drawer so a scrim always remains tappable on narrow phones. */
+  .sidebar { max-width: 84vw; }
+
+  /* Any wide table that is NOT already inside a managed scroll wrapper becomes a
+     horizontally-scrollable block, so it scrolls within its own box instead of
+     widening the page. The DataTable (.dt-table-wrap) and hand-wrapped
+     (.table-scroll) tables already scroll, so restore those inner elements to a
+     real table box and let their existing wrapper do the scrolling. */
+  .content table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  .content .dt-table-wrap > table,
+  .content .table-scroll > table {
+    display: table;
+    overflow: visible;
+  }
+
+  /* Grids collapse to a single, viewport-constrained column. minmax(0,1fr) — NOT
+     plain 1fr — sets a ZERO minimum, and min-width:0 on the items lets a wide child
+     (a nested grid, a DataTable, a long value) shrink and scroll inside its own box
+     instead of forcing the grid track — and therefore the page — wider than the
+     screen. Plain `.grid` (gap-only, no cols class) is included because its default
+     `auto` column otherwise sizes to content max-content and overflows. */
+  .grid,
+  .grid.cols-2,
+  .grid.cols-3,
+  .grid.cols-4 { grid-template-columns: minmax(0, 1fr); }
+  .grid > * { min-width: 0; }
+
+  /* Fixed-column inline stat grids (rendered with an inline style, so a class-based
+     media query can't reach them) — collapse the repeat(N,1fr) rows to 2-up. Only
+     matches inline grids that use repeat(), i.e. the compact Stat tile rows. */
+  .content div[style*="grid-template-columns"][style*="repeat"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* Comfortable tap targets (~40px min) for the smaller controls. Text inputs and
+     full-size selects already clear 40px via their padding. */
+  button.btn { min-height: 40px; }
+  .cmdk-btn { min-height: 40px; }
+  .hamburger { width: 40px; height: 40px; }
+  .notif-bell-btn { width: 40px; height: 40px; }
+  .nav button.nav-item { min-height: 42px; }
+  .topbar-actor select { min-height: 40px; }
+  .notif-item { padding-top: 13px; padding-bottom: 13px; }
+}
+
+/* ---- Phone (≤ 640px): tighter chrome, full-width search, stacked form rows ---- */
+@media (max-width: 640px) {
+  .topbar { padding: 10px 12px; gap: 10px; }
+  .topbar h2 { font-size: 18px; }
+  .topbar .crumb { font-size: 11px; }
+  .content { padding: 16px 12px; }
+  .gov-strip { font-size: 11px; padding: 8px 12px; gap: 6px 10px; }
+
+  /* Search takes its own full-width row within the wrapped topbar cluster; the
+     ⌘K hint is redundant on touch, so hide it. */
+  .topbar-right .topsearch { flex: 1 1 100%; max-width: none; min-width: 0; }
+  .topsearch kbd { display: none; }
+
+  /* Stack the remaining multi-column rows that rely on flex without wrapping. */
+  .inline { flex-wrap: wrap; }
+  .flexbetween { flex-wrap: wrap; }
+
+  /* Slightly calmer heroes / banners on a phone. */
+  .gov-banner { padding: 18px 16px; }
+  .rolehome-hero { padding: 14px 14px; }
+}
+

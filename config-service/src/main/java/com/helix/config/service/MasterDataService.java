@@ -37,6 +37,18 @@ public class MasterDataService {
     @Transactional
     public MasterRecord submit(String masterType, String recordKey, String jurisdiction,
                                Map<String, Object> payload, String maker) {
+        return submit(masterType, recordKey, jurisdiction, payload, maker, null);
+    }
+
+    /**
+     * Maker submits a new/updated record with an optional change rationale. The rationale
+     * is persisted on the record's {@code comment} column (the maker's justification for
+     * the change) and stamped into the audit trail — it never becomes part of the payload,
+     * so the governed figure/config is untouched.
+     */
+    @Transactional
+    public MasterRecord submit(String masterType, String recordKey, String jurisdiction,
+                               Map<String, Object> payload, String maker, String rationale) {
         // Normalise blank → null so a record's stored jurisdiction matches the scope it
         // was versioned under (the IsNull helpers treat blank as the default line).
         String jur = normaliseJurisdiction(jurisdiction);
@@ -53,23 +65,28 @@ public class MasterDataService {
         m.setVersion(version);
         m.setMaker(maker);
         m.setMakerAt(Instant.now());
+        String rat = (rationale == null || rationale.isBlank()) ? null : rationale.trim();
+        if (rat != null) m.setComment(rat);
         MasterRecord saved = repo.save(m);
         audit.human(maker, "MASTER_SUBMITTED", "Master:" + masterType, recordKey,
-                "Submitted %s/%s v%d for approval".formatted(masterType, recordKey, version),
-                Map.of("masterType", masterType, "recordKey", recordKey, "version", version));
+                "Submitted %s/%s v%d for approval%s".formatted(masterType, recordKey, version,
+                        rat == null ? "" : " — " + rat),
+                Map.of("masterType", masterType, "recordKey", recordKey, "version", version,
+                        "rationale", rat == null ? "" : rat));
         return saved;
     }
 
-    /** Bulk submit (spreadsheet-style). Each item: {recordKey, payload, jurisdiction?}. */
+    /** Bulk submit (spreadsheet-style). Each item: {recordKey, payload, jurisdiction?, comment?}. */
     @Transactional
     public List<MasterRecord> bulkSubmit(String masterType, List<Map<String, Object>> rows, String maker) {
         return rows.stream().map(row -> {
             String key = String.valueOf(row.get("recordKey"));
             String jur = row.get("jurisdiction") == null ? null : String.valueOf(row.get("jurisdiction"));
+            String comment = row.get("comment") == null ? null : String.valueOf(row.get("comment"));
             @SuppressWarnings("unchecked")
             Map<String, Object> payload = row.get("payload") instanceof Map<?, ?> p
                     ? (Map<String, Object>) p : Map.of();
-            return submit(masterType, key, jur, payload, maker);
+            return submit(masterType, key, jur, payload, maker, comment);
         }).toList();
     }
 
@@ -94,7 +111,9 @@ public class MasterDataService {
         m.setStatus(ACTIVE);
         m.setChecker(checker);
         m.setCheckerAt(Instant.now());
-        m.setComment(comment);
+        // Only overwrite the comment when the checker supplies a decision note; otherwise
+        // preserve the maker's change rationale captured at submit time.
+        if (comment != null && !comment.isBlank()) m.setComment(comment);
         audit.human(checker, "MASTER_APPROVED", "Master:" + m.getMasterType(), m.getRecordKey(),
                 "Approved %s/%s v%d".formatted(m.getMasterType(), m.getRecordKey(), m.getVersion()),
                 Map.of("masterType", m.getMasterType(), "recordKey", m.getRecordKey()));
@@ -113,7 +132,7 @@ public class MasterDataService {
         m.setStatus(REJECTED);
         m.setChecker(checker);
         m.setCheckerAt(Instant.now());
-        m.setComment(comment);
+        if (comment != null && !comment.isBlank()) m.setComment(comment);
         audit.human(checker, "MASTER_REJECTED", "Master:" + m.getMasterType(), m.getRecordKey(),
                 "Rejected %s/%s v%d".formatted(m.getMasterType(), m.getRecordKey(), m.getVersion()), Map.of());
         return repo.save(m);

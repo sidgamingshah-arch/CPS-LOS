@@ -135,7 +135,7 @@ export default function Cpt() {
               {t.status === "DRAFT" && (
                 <>
                   <Button kind="ghost" onClick={() => review(t.id, true)}>Approve</Button>
-                  <Button kind="subtle" onClick={() => review(t.id, false)}>Reject</Button>
+                  <Button kind="danger" onClick={() => review(t.id, false)}>Reject</Button>
                 </>
               )}
             </>
@@ -198,6 +198,7 @@ export default function Cpt() {
             {scenarios.length === 0 ? (
               <div className="muted">No spread on file — scenarios require a confirmed EBITDA margin to back out base revenue.</div>
             ) : (
+              <div className="table-scroll">
               <table>
                 <thead><tr><th>Scenario</th><th>Δ%</th><th>Y1</th><th>Y2</th><th>Y3</th><th>Commentary</th></tr></thead>
                 <tbody>
@@ -213,6 +214,7 @@ export default function Cpt() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
             {indic && (
               <div className="alert info" style={{ marginTop: 10 }}>
@@ -260,7 +262,7 @@ export default function Cpt() {
           </Card>
 
           {/* Rendered HTML */}
-          <Card title="Full CPT" sub={`Generated ${new Date(t.generatedAt).toLocaleString()} · ${t.generatedBy}`}>
+          <Card title="Full CPT" sub={`Generated ${fmt.dateTime(t.generatedAt)} · ${t.generatedBy}`}>
             <div
               className="proposal"
               style={{
@@ -281,7 +283,7 @@ export default function Cpt() {
                     <tr key={v.id}>
                       <td>{v.version}</td>
                       <td><Badge kind={v.status === "CONFIRMED" ? "ok" : v.status === "REJECTED" ? "bad" : "ai"}>{v.status}</Badge></td>
-                      <td className="mono">{new Date(v.generatedAt).toLocaleString()}</td>
+                      <td className="mono">{fmt.dateTime(v.generatedAt)}</td>
                       <td className="muted">{v.reviewedBy ?? "—"}</td>
                     </tr>
                   ))}

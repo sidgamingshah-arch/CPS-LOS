@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { decision } from "../api";
+import { decision, origination, fmt, printing } from "../api";
+import { useApp } from "../app-context";
 import { Badge, Button, Card, EmptyState, Field, GovFlow, HumanBadge, Stat, Toast, statusTone, useAsync } from "../ui";
 
 /**
@@ -9,8 +10,9 @@ import { Badge, Button, Card, EmptyState, Field, GovFlow, HumanBadge, Stat, Toas
  * sanction letter is AI-drafted then human-confirmed. AI never appears in the voter column.
  */
 export default function Committee() {
-  const [refInput, setRefInput] = useState("");
-  const [ref, setRef] = useState("");
+  const { ref: ctxRef, actor } = useApp();
+  const apps = useAsync(() => origination.list(), []);
+  const [ref, setRef] = useState(ctxRef ?? "");
   const [voter, setVoter] = useState("cro");
   const [outcome, setOutcome] = useState("APPROVE");
   const [role, setRole] = useState("CREDIT_COMMITTEE");
@@ -58,15 +60,19 @@ export default function Committee() {
     <div className="stack">
       <Toast msg={toast} onClose={() => setToast(null)} />
       <Card title="Committee Room" sub="Quorum voting on committee-routed decisions + the sanction letter that follows approval. Named-human votes with segregation of duties; AI never votes.">
-        <div className="btnrow" style={{ alignItems: "flex-end", gap: 12 }}>
-          <Field label="Application reference">
-            <input value={refInput} onChange={(e) => setRefInput(e.target.value)} placeholder="APP-XXXX" />
-          </Field>
-          <Button onClick={() => setRef(refInput.trim())}>Load decision</Button>
-        </div>
+        <Field label="Deal">
+          <select value={ref} onChange={(e) => setRef(e.target.value)}>
+            <option value="">— select deal —</option>
+            {(apps.data ?? []).map((a: any) => (
+              <option key={a.reference} value={a.reference}>
+                {a.reference} · {a.counterpartyName} · {a.status}
+              </option>
+            ))}
+          </select>
+        </Field>
       </Card>
 
-      {!ref && <Card><EmptyState glyph="⚖" title="Load a routed decision" sub="Enter an application whose decision was routed to a committee tier." /></Card>}
+      {!ref && <Card><EmptyState glyph="⚖" title="Load a routed decision" sub="Pick a deal whose decision was routed to a committee tier." /></Card>}
       {ref && error && <Card><div className="alert err">{error}</div></Card>}
       {ref && loading && <Card><div className="loading">Loading…</div></Card>}
 
@@ -103,12 +109,13 @@ export default function Committee() {
       {d && (
         <Card title="Votes cast" sub={`${votes.length} vote(s)`}>
           {votes.length === 0 ? <div className="muted">No votes yet.</div> : (
+            <div className="table-scroll">
             <table>
               <thead><tr><th>When</th><th>Voter</th><th>Role</th><th>Vote</th><th>Dissent</th><th>Rationale</th></tr></thead>
               <tbody>
                 {votes.map((v: any) => (
                   <tr key={v.id}>
-                    <td className="mono" style={{ whiteSpace: "nowrap" }}>{v.castAt ? new Date(v.castAt).toLocaleString() : "—"}</td>
+                    <td className="mono" style={{ whiteSpace: "nowrap" }}>{fmt.dateTime(v.castAt)}</td>
                     <td>{v.voter}</td>
                     <td className="mono">{v.voterRole}</td>
                     <td><Badge kind={statusTone(v.voteOutcome)}>{v.voteOutcome}</Badge></td>
@@ -118,6 +125,7 @@ export default function Committee() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </Card>
       )}
@@ -131,6 +139,17 @@ export default function Committee() {
                 <Badge kind={statusTone(letter.status)}>{letter.status}</Badge>{" "}
                 {letter.advisory ? <Badge kind="ai">advisory</Badge> : null}{" "}
                 <span className="mono">{letter.templateKey}</span> · clauses: {(letter.clauseOrder || []).join(", ")}
+              </div>
+              <div className="btnrow print-actions" style={{ marginTop: 8 }}>
+                <Button
+                  kind="ghost"
+                  onClick={() =>
+                    printing.print(printing.documentHtml(letter.id, actor),
+                      (m, e) => setToast({ text: m, err: e }))
+                  }
+                >
+                  Download PDF
+                </Button>
               </div>
               {letter.html && <div className="doc-preview" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: letter.html }} />}
             </div>

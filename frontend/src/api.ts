@@ -215,6 +215,24 @@ export const structure = {
     call<any>(`/origination/api/applications/${ref}/structure/copy-from/${sourceRef}`, "POST", undefined, actor),
 };
 
+// ---- Supply-Chain Finance (SCF) product paper (anchor programme + spokes) ----
+export const scf = {
+  list: (anchorRef?: string) =>
+    call<any[]>(`/origination/api/scf/programs${anchorRef ? `?anchorRef=${encodeURIComponent(anchorRef)}` : ""}`, "GET"),
+  get: (scfRef: string) => call<any>(`/origination/api/scf/programs/${scfRef}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/origination/api/scf/programs", "POST", body, actor),
+  addSpoke: (scfRef: string, body: any, actor: string) =>
+    call<any>(`/origination/api/scf/programs/${scfRef}/spokes`, "POST", body, actor),
+  submit: (scfRef: string, actor: string) =>
+    call<any>(`/origination/api/scf/programs/${scfRef}/submit`, "POST", undefined, actor),
+  approve: (scfRef: string, body: any, actor: string) =>
+    call<any>(`/origination/api/scf/programs/${scfRef}/approve`, "POST", body, actor),
+  reject: (scfRef: string, body: any, actor: string) =>
+    call<any>(`/origination/api/scf/programs/${scfRef}/reject`, "POST", body, actor),
+  withdraw: (scfRef: string, actor: string) =>
+    call<any>(`/origination/api/scf/programs/${scfRef}/withdraw`, "POST", undefined, actor),
+};
+
 // ---- document generation (templates · clause surgery · confirm) ----
 export const docs = {
   templates: () => call<any[]>("/decision/api/docs/templates", "GET"),
@@ -321,6 +339,43 @@ export const decision = {
     call<any>(`/decision/api/decisions/${ref}/sanction-letter`, "POST", undefined, actor),
 };
 
+// ---- conflict-of-interest (COI) attestations ----
+export const coi = {
+  list: (subjectRef: string) =>
+    call<any[]>(`/decision/api/coi?subjectRef=${encodeURIComponent(subjectRef)}`, "GET"),
+  get: (coiRef: string) => call<any>(`/decision/api/coi/${coiRef}`, "GET"),
+  attest: (
+    body: { subjectType: string; subjectRef: string; role?: string; declaration: string; note?: string },
+    actor: string,
+  ) => call<any>("/decision/api/coi", "POST", body, actor),
+};
+
+// ---- notings (governed decision records: TOD, CAM note, product paper, deferrals, …) ----
+export const notings = {
+  list: (params?: { subjectRef?: string; status?: string; type?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.subjectRef) q.set("subjectRef", params.subjectRef);
+    if (params?.status) q.set("status", params.status);
+    if (params?.type) q.set("type", params.type);
+    const qs = q.toString();
+    return call<any[]>(`/decision/api/notings${qs ? `?${qs}` : ""}`, "GET");
+  },
+  get: (ref: string) => call<any>(`/decision/api/notings/${ref}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/decision/api/notings", "POST", body, actor),
+  submit: (ref: string, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/submit`, "POST", undefined, actor),
+  approve: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/approve`, "POST", { note }, actor),
+  cadAuthorize: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/cad-authorize`, "POST", { note }, actor),
+  reject: (ref: string, reason: string, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/reject`, "POST", { reason }, actor),
+  reverse: (ref: string, reason: string, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/reverse`, "POST", { reason }, actor),
+  withdraw: (ref: string, actor: string) =>
+    call<any>(`/decision/api/notings/${ref}/withdraw`, "POST", undefined, actor),
+};
+
 // ---- portfolio ----
 export const portfolio = {
   exposures: () => call<any[]>("/portfolio/api/portfolio/exposures", "GET"),
@@ -384,6 +439,48 @@ export const cap = {
   sweep: (actor: string) => call<any>("/portfolio/api/cap/sweep", "POST", undefined, actor),
 };
 
+// ---- monitoring artifacts (post-disbursement; ONE lifecycle, master-driven) ----
+export const monitoringArtifacts = {
+  list: (q?: { subjectRef?: string; status?: string; type?: string }) => {
+    const p = new URLSearchParams();
+    if (q?.subjectRef) p.set("subjectRef", q.subjectRef);
+    if (q?.status) p.set("status", q.status);
+    if (q?.type) p.set("type", q.type);
+    const qs = p.toString();
+    return call<any[]>("/portfolio/api/monitoring/artifacts" + (qs ? `?${qs}` : ""), "GET");
+  },
+  get: (ref: string) => call<any>(`/portfolio/api/monitoring/artifacts/${ref}`, "GET"),
+  create: (body: any, actor: string) =>
+    call<any>("/portfolio/api/monitoring/artifacts", "POST", body, actor),
+  updateSections: (ref: string, sections: any, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/sections`, "PUT", { sections }, actor),
+  submit: (ref: string, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/submit`, "POST", undefined, actor),
+  review: (ref: string, notes: string, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/review`, "POST", { notes }, actor),
+  approve: (ref: string, notes: string, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/approve`, "POST", { notes }, actor),
+  authorize: (ref: string, notes: string, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/authorize`, "POST", { notes }, actor),
+  vendorRfq: (ref: string, vendorId: string, question: string, actor: string) =>
+    call<any>(`/portfolio/api/monitoring/artifacts/${ref}/vendor-rfq`, "POST", { vendorId, question }, actor),
+};
+
+// ---- escrow monitoring (record surface; deterministic budget-vs-actual + RAG) ----
+export const escrow = {
+  list: (subjectRef?: string) =>
+    call<any[]>("/portfolio/api/escrow/accounts" + (subjectRef ? `?subjectRef=${encodeURIComponent(subjectRef)}` : ""), "GET"),
+  get: (ref: string) => call<any>(`/portfolio/api/escrow/accounts/${ref}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/portfolio/api/escrow/accounts", "POST", body, actor),
+  addBudgetLine: (ref: string, body: any, actor: string) =>
+    call<any>(`/portfolio/api/escrow/accounts/${ref}/budget-lines`, "POST", body, actor),
+  budgetHistory: (ref: string) => call<any[]>(`/portfolio/api/escrow/accounts/${ref}/budget-lines`, "GET"),
+  postTransaction: (ref: string, body: any, actor: string) =>
+    call<any>(`/portfolio/api/escrow/accounts/${ref}/transactions`, "POST", body, actor),
+  transactions: (ref: string) => call<any[]>(`/portfolio/api/escrow/accounts/${ref}/transactions`, "GET"),
+  budgetVsActual: (ref: string) => call<any>(`/portfolio/api/escrow/accounts/${ref}/budget-vs-actual`, "GET"),
+};
+
 // ---- CAD ----
 export const cad = {
   initiate: (body: any, actor: string) => call<any>("/decision/api/cad/cases", "POST", body, actor),
@@ -397,6 +494,23 @@ export const cad = {
   complete: (id: number, actor: string) => call<any>(`/decision/api/cad/cases/${id}/complete`, "POST", undefined, actor),
   limitRelease: (id: number, body: any, actor: string) =>
     call<any>(`/decision/api/cad/cases/${id}/limit-release`, "POST", body, actor),
+};
+
+// ---- MOE / mortgage security perfection ----
+export const perfection = {
+  list: (subjectRef?: string, status?: string) => {
+    const q = [subjectRef ? `subjectRef=${encodeURIComponent(subjectRef)}` : "", status ? `status=${status}` : ""]
+      .filter(Boolean).join("&");
+    return call<any[]>("/decision/api/perfection/cases" + (q ? `?${q}` : ""), "GET");
+  },
+  create: (body: any, actor: string) => call<any>("/decision/api/perfection/cases", "POST", body, actor),
+  view: (perfRef: string) => call<any>(`/decision/api/perfection/cases/${perfRef}`, "GET"),
+  complete: (perfRef: string, stepKey: string, body: any, actor: string) =>
+    call<any>(`/decision/api/perfection/cases/${perfRef}/steps/${stepKey}/complete`, "POST", body, actor),
+  waive: (perfRef: string, stepKey: string, body: any, actor: string) =>
+    call<any>(`/decision/api/perfection/cases/${perfRef}/steps/${stepKey}/waive`, "POST", body, actor),
+  vendorRfq: (perfRef: string, stepKey: string, body: any, actor: string) =>
+    call<any>(`/decision/api/perfection/cases/${perfRef}/steps/${stepKey}/vendor-rfq`, "POST", body, actor),
 };
 
 // ---- MER (monitoring of exceptions & renewals) ----
@@ -416,6 +530,20 @@ export const mer = {
   sweep: (actor: string) => call<any>("/decision/api/mer/sweep", "POST", undefined, actor),
   upcoming: (days: number) => call<any[]>(`/decision/api/mer/upcoming?days=${days}`, "GET"),
   sendReminders: (days: number, actor: string) => call<any>(`/decision/api/mer/reminders/send?days=${days}`, "POST", undefined, actor),
+};
+
+// ---- SRM (structured review / renewal — built on the Noting engine) ----
+export const srm = {
+  list: (subjectRef?: string) =>
+    call<any[]>("/decision/api/srm/reviews" + (subjectRef ? `?subjectRef=${encodeURIComponent(subjectRef)}` : ""), "GET"),
+  get: (id: number) => call<any>(`/decision/api/srm/reviews/${id}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/decision/api/srm/reviews", "POST", body, actor),
+  markItem: (id: number, code: string, done: boolean, actor: string) =>
+    call<any>(`/decision/api/srm/reviews/${id}/checklist/${encodeURIComponent(code)}`, "POST", { done }, actor),
+  submitNoting: (id: number, actor: string) =>
+    call<any>(`/decision/api/srm/reviews/${id}/submit-noting`, "POST", undefined, actor),
+  refresh: (id: number, actor: string) =>
+    call<any>(`/decision/api/srm/reviews/${id}/refresh`, "POST", undefined, actor),
 };
 
 // ---- limit management ----
@@ -738,11 +866,195 @@ export const notifications = {
     return call<any[]>(`/${svc}/api/notifications` + (qs ? `?${qs}` : ""), "GET");
   },
   get: (svc: string, id: number) => call<any>(`/${svc}/api/notifications/${id}`, "GET"),
+  // ---- notification-center read-state (bell + unread badge) ----
+  unreadCount: (svc: string, q?: { recipient?: string; role?: string }) => {
+    const p = new URLSearchParams();
+    if (q?.recipient) p.set("recipient", q.recipient);
+    if (q?.role) p.set("role", q.role);
+    const qs = p.toString();
+    return call<{ unread: number }>(`/${svc}/api/notifications/unread-count` + (qs ? `?${qs}` : ""), "GET");
+  },
+  markRead: (svc: string, id: number, actor: string) =>
+    call<any>(`/${svc}/api/notifications/${id}/read`, "POST", undefined, actor),
+  markAllRead: (svc: string, actor: string, recipient?: string) =>
+    call<{ read: number }>(
+      `/${svc}/api/notifications/read-all` + (recipient ? `?recipient=${encodeURIComponent(recipient)}` : ""),
+      "POST", undefined, actor),
 };
 
+/** Currency symbol per ISO code; falls back to the code itself for anything unmapped. */
+const CCY_SYMBOL: Record<string, string> = { INR: "₹", AED: "AED ", USD: "$", EUR: "€", GBP: "£" };
+
 export const fmt = {
-  money: (v: number, ccy = "INR") =>
+  /**
+   * Compact, currency-aware money. Large figures are scaled to readable units so a
+   * book of ₹2.6 lakh-crore no longer prints as a wall of digits: INR uses the
+   * Indian scale (Cr = crore = 1e7, L = lakh = 1e5); every other currency uses the
+   * international scale (Bn/Mn/K). Pass the deal/exposure currency as `ccy`.
+   * Use `moneyFull` when the exact rupee figure matters (tooltips, exports).
+   */
+  money: (v: number, ccy = "INR") => {
+    if (v == null || Number.isNaN(v)) return "—";
+    const sign = v < 0 ? "-" : "";
+    const abs = Math.abs(v);
+    const sym = CCY_SYMBOL[ccy] ?? (ccy ? ccy + " " : "");
+    const scaled = (n: number, dp: number, locale: string) =>
+      sign + sym + n.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits: dp });
+    if (ccy === "INR") {
+      if (abs >= 1e7) return scaled(abs / 1e7, 2, "en-IN") + " Cr";
+      if (abs >= 1e5) return scaled(abs / 1e5, 2, "en-IN") + " L";
+      return scaled(abs, 0, "en-IN");
+    }
+    if (abs >= 1e9) return scaled(abs / 1e9, 2, "en-US") + " Bn";
+    if (abs >= 1e6) return scaled(abs / 1e6, 2, "en-US") + " Mn";
+    if (abs >= 1e3) return scaled(abs / 1e3, 1, "en-US") + " K";
+    return scaled(abs, 0, "en-US");
+  },
+  /** Exact grouped figure with the currency code — no unit scaling. */
+  moneyFull: (v: number, ccy = "INR") =>
     v == null ? "—" : new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(v) + (ccy ? " " + ccy : ""),
   pct: (v: number, dp = 2) => (v == null ? "—" : (v * 100).toFixed(dp) + "%"),
   num: (v: number, dp = 2) => (v == null ? "—" : v.toFixed(dp)),
+  /** Date-only, unambiguous "12 Mar 2026" (locale-stable; accepts ISO strings/epoch/Date). */
+  date: (v: string | number | Date | null | undefined) => {
+    if (v == null || v === "") return "—";
+    // Parse a bare YYYY-MM-DD as LOCAL midnight, not UTC — otherwise new Date("2026-03-15")
+    // is UTC and renders as the 14th in any negative-offset timezone.
+    let d: Date;
+    if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
+      const [y, m, day] = v.split("-").map(Number);
+      d = new Date(y, m - 1, day);
+    } else {
+      d = new Date(v);
+    }
+    if (isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  },
+  /** Date + 24h time "12 Mar 2026, 14:05" for timestamps (audit rows, events). */
+  dateTime: (v: string | number | Date | null | undefined) => {
+    if (v == null || v === "") return "—";
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) +
+      ", " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  },
+};
+
+// ---- IP notes (In-Principle sponsorship notes; precede a full application) ----
+export const ipNotes = {
+  list: (params?: { counterpartyRef?: string; status?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.counterpartyRef) q.set("counterpartyRef", params.counterpartyRef);
+    if (params?.status) q.set("status", params.status);
+    const qs = q.toString();
+    return call<any[]>(`/origination/api/ip-notes${qs ? `?${qs}` : ""}`, "GET");
+  },
+  get: (ref: string) => call<any>(`/origination/api/ip-notes/${ref}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/origination/api/ip-notes", "POST", body, actor),
+  submit: (ref: string, actor: string) =>
+    call<any>(`/origination/api/ip-notes/${ref}/submit`, "POST", undefined, actor),
+  approve: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/origination/api/ip-notes/${ref}/approve`, "POST", { note }, actor),
+  reject: (ref: string, reason: string, actor: string) =>
+    call<any>(`/origination/api/ip-notes/${ref}/reject`, "POST", { reason }, actor),
+  withdraw: (ref: string, actor: string) =>
+    call<any>(`/origination/api/ip-notes/${ref}/withdraw`, "POST", undefined, actor),
+  convert: (ref: string, actor: string) =>
+    call<any>(`/origination/api/ip-notes/${ref}/convert`, "POST", undefined, actor),
+};
+
+// ---- TAT / MIS reporting over the case & query operational data (deterministic, read-only) ----
+export const tatMis = {
+  // Cycle-time / SLA / rework / throughput aggregations over WorkItem + WorkItemEvent.
+  mis: (q?: { queueKey?: string; taskType?: string; from?: string; to?: string }) => {
+    const p = new URLSearchParams();
+    if (q?.queueKey) p.set("queueKey", q.queueKey);
+    if (q?.taskType) p.set("taskType", q.taskType);
+    if (q?.from) p.set("from", q.from);
+    if (q?.to) p.set("to", q.to);
+    const qs = p.toString();
+    return call<any>("/workflow/api/tasks/mis" + (qs ? `?${qs}` : ""), "GET");
+  },
+  // Per-subject TAT (derived from the event timeline).
+  tat: (subjectRef: string) =>
+    call<any>(`/workflow/api/tasks/tat?subjectRef=${encodeURIComponent(subjectRef)}`, "GET"),
+  // Query / RFI SLA rollup for a given service (auto-exposed per service by helix-common).
+  querySla: (svc: string) => call<any>(`/${svc}/api/queries/sla-rollup`, "GET"),
+};
+
+// ---- case-management tasks (WorkItem inbox; workflow-service /api/tasks) ----
+// Read-only surfaces used by the role-scoped landing dashboards ("my tasks").
+export const tasks = {
+  inbox: (assignee: string) =>
+    call<any[]>(`/workflow/api/tasks/inbox?assignee=${encodeURIComponent(assignee)}`, "GET"),
+  queue: (key: string) =>
+    call<any[]>(`/workflow/api/tasks/queue/${encodeURIComponent(key)}`, "GET"),
+  subject: (ref: string, type?: string) =>
+    call<any[]>(`/workflow/api/tasks/subject?ref=${encodeURIComponent(ref)}${type ? `&type=${encodeURIComponent(type)}` : ""}`, "GET"),
+  get: (ref: string) => call<any>(`/workflow/api/tasks/${ref}`, "GET"),
+  claim: (ref: string, actor: string) =>
+    call<any>(`/workflow/api/tasks/${ref}/claim`, "POST", undefined, actor),
+  complete: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/workflow/api/tasks/${ref}/complete`, "POST", { note }, actor),
+};
+
+// ---- query / RFI collaboration (helix-common surface on every service) ----
+// The inbox for a role dashboard reads the decision-service shared surface (the
+// primary collaboration lane); `svc` overridable for other services if needed.
+export const queries = {
+  list: (q?: { subjectRef?: string; addressee?: string }, svc = "decision") => {
+    const p = new URLSearchParams();
+    if (q?.subjectRef) p.set("subjectRef", q.subjectRef);
+    if (q?.addressee) p.set("addressee", q.addressee);
+    const qs = p.toString();
+    return call<any[]>(`/${svc}/api/queries` + (qs ? `?${qs}` : ""), "GET");
+  },
+  get: (ref: string, svc = "decision") => call<any>(`/${svc}/api/queries/${ref}`, "GET"),
+};
+
+// ---- print / PDF rendering (dependency-free print pipeline) ----
+// The backend returns a self-contained, print-optimised standalone HTML document
+// (letterhead, governance header, embedded @media print CSS, page-break styling) whose
+// body reproduces the AUTHORITATIVE artifact verbatim. The frontend opens it in a new
+// window and invokes the browser's print-to-PDF ("Save as PDF"). These endpoints return
+// text/html (not JSON), so they use a raw text fetch that still forwards the auth token
+// and X-Actor (persisted as a *_RENDERED audit event server-side).
+async function fetchText(path: string, actor = "demo.user"): Promise<string> {
+  const headers: Record<string, string> = { "X-Actor": actor };
+  if (authToken) headers["Authorization"] = "Bearer " + authToken;
+  const res = await fetch(GATEWAY + path, { method: "GET", headers });
+  const text = await res.text();
+  if (!res.ok) throw new Error(text || res.statusText || "Print render failed");
+  return text;
+}
+
+export const printing = {
+  // Standalone print/PDF HTML for a generated document (facility/sanction letter, …).
+  documentHtml: (id: number, actor: string) =>
+    fetchText(`/decision/api/docs/${id}/print`, actor),
+  // Standalone print/PDF HTML for the latest credit proposal on an application.
+  proposalHtml: (ref: string, actor: string) =>
+    fetchText(`/decision/api/decisions/${encodeURIComponent(ref)}/credit-proposal/print`, actor),
+  // Open a loaded standalone-HTML string in a new window; the page auto-invokes the
+  // browser print dialog so the user can "Save as PDF". Pop-up-blocker aware.
+  openHtmlWindow: (html: string, notify?: (m: string, err?: boolean) => void): boolean => {
+    const w = window.open("", "_blank");
+    if (!w) { notify?.("Enable pop-ups for this site to download the PDF.", true); return false; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    return true;
+  },
+  // Convenience: fetch + open in one call, surfacing errors through `notify`.
+  print: async (
+    loader: Promise<string>,
+    notify?: (m: string, err?: boolean) => void,
+  ): Promise<void> => {
+    try {
+      const html = await loader;
+      printing.openHtmlWindow(html, notify);
+    } catch (e: any) {
+      notify?.(e?.message ?? "Print render failed", true);
+    }
+  },
 };

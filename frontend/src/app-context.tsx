@@ -4,8 +4,23 @@ export type Nav = (view: string, ref?: string) => void;
 
 export interface AppCtx {
   actor: string;
+  /**
+   * The acting identity's roles, resolved from the ACTOR_ROLE master at login
+   * (echoed by /config/api/auth/login). Drives role-scoped navigation + the
+   * role-scoped landing dashboards. Empty array = no roles known → treated as
+   * default-permissive (see role-scope.ts). The server-side RBAC gate remains
+   * the source of truth; this only shapes the UI.
+   */
+  roles: string[];
   notify: (text: string, err?: boolean) => void;
   nav: Nav;
+  /**
+   * The active deal reference (set by nav(view, ref) — e.g. arriving from the
+   * Deal Workspace deep links). Deal-scoped screens seed their own deal
+   * selector from this so context carries across screens; undefined when no
+   * deal is active. Screens stay fully usable standalone.
+   */
+  ref?: string;
   /**
    * Resolved enabled-state of every governed AI capability, keyed by capability key
    * (e.g. "doc-intel", "rag-overlay"). When a capability is off, the matching UI
@@ -18,6 +33,7 @@ export interface AppCtx {
 
 export const AppContext = createContext<AppCtx>({
   actor: "demo.user",
+  roles: [],
   notify: () => {},
   nav: () => {},
   aiEnabled: {},

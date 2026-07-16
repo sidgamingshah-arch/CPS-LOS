@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppContext, AI_BY_NAV, isNavEnabled } from "./app-context";
-import { governance, setAuthToken } from "./api";
+import { governance, masters, setAuthToken } from "./api";
+import {
+  resolveWorkspace, parseRoleWorkspaceMaster, isNavItemInScope,
+  type RoleWorkspaceMap,
+} from "./role-scope";
 import { Toast, AiBadge, HumanBadge, DeterministicBadge, GovernanceStrip } from "./ui";
 import CommandPalette from "./CommandPalette";
+import CopilotDock from "./CopilotDock";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import RoleDashboard from "./pages/RoleDashboard";
 import RulePacks from "./pages/RulePacks";
 import Governance from "./pages/Governance";
 import Disbursement from "./pages/Disbursement";
@@ -16,10 +22,15 @@ import Copilot from "./pages/Copilot";
 import Mis from "./pages/Mis";
 import Customer360 from "./pages/Customer360";
 import Cad from "./pages/Cad";
+import Perfection from "./pages/Perfection";
 import Monitoring from "./pages/Monitoring";
+import MonitoringArtifacts from "./pages/MonitoringArtifacts";
+import Escrow from "./pages/Escrow";
+import Srm from "./pages/Srm";
 import Limits from "./pages/Limits";
 import Masters from "./pages/Masters";
 import Structuring from "./pages/Structuring";
+import Scf from "./pages/Scf";
 import Syndication from "./pages/Syndication";
 import DocIntel from "./pages/DocIntel";
 import RiskLab from "./pages/RiskLab";
@@ -31,13 +42,18 @@ import Exports from "./pages/Exports";
 import Groups from "./pages/Groups";
 import Cpt from "./pages/Cpt";
 import WorkflowTracker from "./pages/WorkflowTracker";
+import TatReports from "./pages/TatReports";
 import ReportBuilder from "./pages/ReportBuilder";
 import ModelBuilder from "./pages/ModelBuilder";
 import Projections from "./pages/Projections";
 import Committee from "./pages/Committee";
+import Coi from "./pages/Coi";
 import DrawingPower from "./pages/DrawingPower";
 import Notifications from "./pages/Notifications";
+import Notings from "./pages/Notings";
+import IpNotes from "./pages/IpNotes";
 import PostureChip from "./pages/PostureChip";
+import NotificationBell from "./notification-center";
 import { prefetchAllCodes } from "./code-values";
 
 /**
@@ -52,6 +68,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Overview",
     items: [
+      { key: "home", label: "My Workspace" },
       { key: "dashboard", label: "Portfolio Dashboard" },
       { key: "copilot", label: "Copilot" },
     ],
@@ -62,8 +79,10 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "counterparties", label: "Counterparties" },
       { key: "groups", label: "Borrower Groups" },
       { key: "cpt", label: "Client Planning" },
+      { key: "ipnotes", label: "IP Notes" },
       { key: "deals", label: "Deals" },
       { key: "structuring", label: "Deal Structuring" },
+      { key: "scf", label: "Supply-Chain Finance" },
       { key: "syndication", label: "Syndication" },
       { key: "spreading", label: "Financial Spreading" },
       { key: "docintel", label: "Doc Intelligence" },
@@ -76,9 +95,12 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "projections", label: "Projections" },
       { key: "pricinglab", label: "Pricing Lab" },
       { key: "cad", label: "CAD · Documentation" },
+      { key: "perfection", label: "MOE Perfection" },
       { key: "docgen", label: "Doc Generation" },
       { key: "commentary", label: "AI Commentary" },
       { key: "committee", label: "Committee Room" },
+      { key: "coi", label: "Conflict of Interest" },
+      { key: "notings", label: "Notings" },
     ],
   },
   {
@@ -88,10 +110,14 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "disbursement", label: "Disbursement · CPs" },
       { key: "drawingpower", label: "Drawing Power" },
       { key: "monitoring", label: "Monitoring · MER" },
+      { key: "srm", label: "SRM · Renewals" },
+      { key: "monitoringartifacts", label: "Monitoring Artifacts" },
+      { key: "escrow", label: "Escrow Monitoring" },
       { key: "customer360", label: "Customer-360" },
       { key: "mis", label: "MIS · Reports" },
       { key: "reportbuilder", label: "Ad-hoc Reports" },
       { key: "workflowtracker", label: "Workflow Tracker" },
+      { key: "tatreports", label: "TAT · MIS Reports" },
       { key: "exports", label: "Downstream Exports" },
     ],
   },
@@ -117,10 +143,12 @@ const SCREENS = NAV_GROUPS.flatMap((g) =>
 );
 
 const CRUMB: Record<string, string> = {
+  home: "Role-scoped workspace — my tasks, queries, approvals & pipeline",
   dashboard: "Portfolio & book-level intelligence",
   deals: "Origination pipeline",
   spreading: "SpreadJS-style grid · multi-period · cell provenance · override-with-reason gate · ratios",
   structuring: "Specialised CP variants · group · joint/dual-obligor · syndication · FI ICR · renewal copy",
+  scf: "Supply-chain finance · anchor programme · deterministic spoke eligibility · PRODUCT_PAPER noting · limit via limit-service",
   syndication: "Syndicate book · fee waterfall · agency reconciliation · participant feed",
   docintel: "GenAI document intelligence · extraction (human-confirmed) · language · translation · checks",
   counterparties: "Onboarding · KYC/KYB · UBO",
@@ -129,16 +157,21 @@ const CRUMB: Record<string, string> = {
   limits: "Multi-level limit tree · fungibility · View/Validation/Utilisation APIs",
   disbursement: "Pre-disbursement gate · CP register · drawdown maker-checker · limit-utilise booking",
   cad: "Credit Administration · checklist · waivers/deviations · limit release",
+  perfection: "Mortgage / MOE security perfection · ordered role-gated steps · MOE-vetting SoD · vendor RFQ · optional limit-release gate",
   docgen: "Template-driven document generation · clause add/remove/edit · human-confirm gate",
   commentary: "AI narrative commentary · grounded · advisory · human-confirm gate",
   pricinglab: "Pricing scenario optimiser · goal-seek · advisory (authoritative pricing untouched)",
   monitoring: "Deferred docs · conditions subsequent · renewals · reminders · escalation · DMS feed",
+  srm: "Structured review / renewal on the Noting engine · SRM_CHECKLIST · linked SRM_RENEWAL noting · AUTHORIZED advances the MER next-review date",
+  monitoringartifacts: "One master-driven lifecycle · call memo/plant visit/LCR/QPR/broker/stock audit/audit note · review→approve→authorize SoD · vendor RFQ · ECL/exposure untouched",
+  escrow: "Escrow monitoring · append-only versioned budget lines · category-tagged transactions · deterministic budget-vs-actual + RAG (VALIDATION_PARAMETER) · ECL/exposure/limit untouched",
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
   risklab: "Advisory overlays · statistical RAG scoring · macro directional impact (non-binding)",
   projections: "Multi-year proforma · driver assumptions · projected DSCR · sensitivity (advisory)",
   mis: "Composition · RAROC variance · ECL · ageing · watchlist",
   reportbuilder: "Self-service · whitelisted datasets · maker-checker on saved defs · deterministic figures",
   workflowtracker: "Lifecycle from WORKFLOW_DEFINITION pack · humanGate / autonomy guard · SLA",
+  tatreports: "TAT / MIS over the case & query layer · cycle time · SLA breach · rework · throughput · deterministic",
   exports: "Canonical outbound feeds · ERM · Finance/GL · CPR · idempotent batches",
   copilot: "Scoped, grounded, non-binding assistant",
   rulepacks: "Regulatory abstraction layer",
@@ -146,6 +179,7 @@ const CRUMB: Record<string, string> = {
   modelbuilder: "Configure scoring models · sections · typed questions · visibility rules · master-driven options · maker-checker",
   governance: "AI off-switch · capability-level · per-jurisdiction override · 403 enforced",
   committee: "Committee/quorum voting · SoD (router can't vote · no double-vote) · sanction letter (AI draft → human confirm)",
+  coi: "Conflict-of-interest attestations · named-human self-declaration · gates the decision/vote only where the DOA pack requires it (default-off)",
   drawingpower: "Working-capital drawing power · borrowing base · deterministic + advisory · ledger unchanged",
   notifications: "Outbound notification outbox · EMAIL_TEMPLATE-rendered · SYSTEM · idempotent",
   audit: "Immutable, examiner-ready trail",
@@ -165,14 +199,32 @@ export default function App() {
   // boot; without one the app renders the Login screen.
   const [token, setToken] = useState<string | null>(() => lsGet("helix.token", "") || null);
   const [actor, setActor] = useState(() => lsGet("helix.actor", "demo.user"));
+  // The acting identity's roles (from the ACTOR_ROLE master, echoed at login).
+  // Restored from localStorage on reload so role-scope survives a refresh.
+  const [roles, setRoles] = useState<string[]>(() => {
+    try { return JSON.parse(lsGet("helix.roles", "[]")) as string[]; } catch { return []; }
+  });
   if (token) setAuthToken(token);
   const [msg, setMsg] = useState<{ text: string; err?: boolean } | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(lsGet("helix.nav.collapsed", "{}")); } catch { return {}; }
+    const stored = lsGet("helix.nav.collapsed", "");
+    if (stored) { try { return JSON.parse(stored); } catch { /* fall through to curated default */ } }
+    // First-time user (no saved preference): keep the two secondary groups collapsed so
+    // fewer options show upfront. A returning user's saved map is honoured verbatim.
+    return { "Limits & Portfolio": true, "Configure & Govern": true };
   });
+  const [railCollapsed, setRailCollapsed] = useState(() => lsGet("helix.nav.rail", "0") === "1");
   const [navOpen, setNavOpen] = useState(false);   // mobile drawer
   const [cmdkOpen, setCmdkOpen] = useState(false); // ⌘K palette
   const [aiEnabled, setAiEnabled] = useState<Record<string, boolean>>({});
+  // Config-driven role→workspace overrides from the ROLE_WORKSPACE master (generic
+  // master engine). Empty until fetched; role-scope.ts falls back to its baked-in
+  // conservative map when this is empty, so the nav works even if the master is absent.
+  const [roleWorkspace, setRoleWorkspace] = useState<RoleWorkspaceMap>({});
+  // The main content region, focused on view change so keyboard / screen-reader
+  // users land on the freshly-rendered screen (skipped on first mount).
+  const mainRef = useRef<HTMLElement>(null);
+  const didMountRef = useRef(false);
 
   // Pull the resolved AI-governance map on boot. Conservative fallback: if the
   // call fails we treat every capability as enabled (matches the server's TTL'd
@@ -189,6 +241,14 @@ export default function App() {
       .catch(() => setAiEnabled({}));
   }, []);
 
+  // Pull the config-driven role→workspace map (ROLE_WORKSPACE master) on boot.
+  // Best-effort: any failure/empty simply leaves the baked-in fallback map in force.
+  useEffect(() => {
+    masters.list("ROLE_WORKSPACE")
+      .then((recs) => setRoleWorkspace(parseRoleWorkspaceMaster(recs)))
+      .catch(() => setRoleWorkspace({}));
+  }, []);
+
   const notify = useCallback((text: string, err?: boolean) => setMsg({ text, err }), []);
   const nav = useCallback((v: string, r?: string) => {
     setView(v);
@@ -196,11 +256,18 @@ export default function App() {
     setNavOpen(false); // close the mobile drawer on navigation
   }, []);
 
-  const onLogin = useCallback((tok: string, who: string) => {
+  const onLogin = useCallback((tok: string, who: string, _displayName?: string, rolesArg: string[] = []) => {
     setAuthToken(tok);
     setToken(tok);
     setActor(who);
-  }, []);
+    setRoles(rolesArg);
+    lsSet("helix.roles", JSON.stringify(rolesArg));
+    // Route a role-scoped (non-see-all) identity to its landing view. See-all
+    // identities (demo / admin / CRO) are left exactly where they were, so the
+    // existing demo UX is unchanged.
+    const ws = resolveWorkspace(who, rolesArg, roleWorkspace);
+    if (!ws.seeAll) setView(ws.landing);
+  }, [roleWorkspace]);
   const onLogout = useCallback(() => {
     setAuthToken(null);
     setToken(null);
@@ -218,8 +285,10 @@ export default function App() {
   useEffect(() => { lsSet("helix.view", view); }, [view]);
   useEffect(() => { lsSet("helix.ref", ref ?? ""); }, [ref]);
   useEffect(() => { lsSet("helix.actor", actor); }, [actor]);
+  useEffect(() => { lsSet("helix.roles", JSON.stringify(roles)); }, [roles]);
   useEffect(() => { if (token) lsSet("helix.token", token); }, [token]);
   useEffect(() => { lsSet("helix.nav.collapsed", JSON.stringify(collapsed)); }, [collapsed]);
+  useEffect(() => { lsSet("helix.nav.rail", railCollapsed ? "1" : "0"); }, [railCollapsed]);
 
   // Global ⌘K / Ctrl-K to open the command palette.
   useEffect(() => {
@@ -233,8 +302,34 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const ctx = useMemo(() => ({ actor, notify, nav, aiEnabled }),
-                       [actor, notify, nav, aiEnabled]);
+  // On view change, move focus to the main region so keyboard / screen-reader users
+  // land on the new content. Additive: skipped on first mount, and preventScroll keeps
+  // the viewport still, so there is no observable change for mouse users.
+  useEffect(() => {
+    if (!didMountRef.current) { didMountRef.current = true; return; }
+    mainRef.current?.focus({ preventScroll: true });
+  }, [view]);
+
+  // Resolve the effective role workspace (nav scope + landing). Default-permissive:
+  // see-all identities (demo / admin / CRO / unmapped) resolve to "show everything".
+  const workspace = useMemo(
+    () => resolveWorkspace(actor, roles, roleWorkspace),
+    [actor, roles, roleWorkspace],
+  );
+
+  // Guard: if a role-scoped user lands on a nav screen outside their scope (e.g. a
+  // persisted view after login as a narrower role), bounce them to their landing.
+  // Never fires for see-all identities, and Overview screens are always in scope,
+  // so the deal workspace + dashboards stay reachable for everyone.
+  useEffect(() => {
+    if (workspace.seeAll) return;
+    const group = NAV_GROUPS.find((g) => g.items.some((n) => n.key === view));
+    if (!group) return; // non-nav views (e.g. "workspace") are always allowed
+    if (!isNavItemInScope(workspace, group.title, view)) setView(workspace.landing);
+  }, [workspace, view]);
+
+  const ctx = useMemo(() => ({ actor, roles, notify, nav, aiEnabled, ref }),
+                       [actor, roles, notify, nav, aiEnabled, ref]);
 
   const title = NAV.find((n) => n.key === view)?.label || "Deal Workspace";
   // The active-deal context chip: show whenever a deal is selected but we're not
@@ -246,39 +341,58 @@ export default function App() {
 
   return (
     <AppContext.Provider value={ctx}>
-      <div className={`app${navOpen ? " nav-open" : ""}`}>
+      <div className={`app${navOpen ? " nav-open" : ""}${railCollapsed ? " rail-collapsed" : ""}`}>
+        <a href="#main" className="skip-link">Skip to content</a>
         <div className="scrim" onClick={() => setNavOpen(false)} />
         <aside className="sidebar">
           <div className="brand">
             <div className="logo">Heli<span>x</span></div>
             <div className="tag">Governed AI for Wholesale Credit</div>
+            <button
+              className="rail-toggle"
+              onClick={() => setRailCollapsed((r) => !r)}
+              aria-pressed={railCollapsed}
+              aria-label={railCollapsed ? "Expand navigation" : "Collapse navigation"}
+              title={railCollapsed ? "Expand navigation" : "Collapse navigation"}
+            >
+              {railCollapsed ? "»" : "«"}
+            </button>
           </div>
-          <nav className="nav">
+          <nav className="nav" aria-label="Primary">
             {NAV_GROUPS.map((g) => {
               const isCollapsed = !!collapsed[g.title];
               // Hide AI-disabled screens from the nav. The server-side enforcement
               // (403 forbiddenAutonomy) is the real gate; this just stops users
-              // landing on a screen whose primary action wouldn't work.
-              const items = g.items.filter((n) => isNavEnabled(n.key, aiEnabled));
+              // landing on a screen whose primary action wouldn't work. On top of
+              // that, layer the ROLE scope (default-permissive: see-all identities
+              // pass every item — see role-scope.ts).
+              const items = g.items.filter(
+                (n) => isNavEnabled(n.key, aiEnabled) && isNavItemInScope(workspace, g.title, n.key),
+              );
               if (items.length === 0) return null;
+              const groupId = `navgrp-${g.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
               return (
                 <div key={g.title} className={`nav-group${isCollapsed ? " collapsed" : ""}`}>
                   <button
                     className="nav-group-title"
                     onClick={() => toggleGroup(g.title)}
                     aria-expanded={!isCollapsed}
+                    aria-controls={groupId}
                   >
                     <span>{g.title}</span>
-                    <span className="chev">▾</span>
+                    <span className="chev" aria-hidden="true">▾</span>
                   </button>
-                  <div className="nav-group-items">
+                  <div className="nav-group-items" id={groupId}>
                     {items.map((n) => (
                       <button
                         key={n.key}
                         className={`nav-item${view === n.key ? " active" : ""}`}
                         onClick={() => nav(n.key)}
+                        title={n.label}
+                        data-glyph={n.label.charAt(0)}
+                        aria-current={view === n.key ? "page" : undefined}
                       >
-                        <span className="dot" /> {n.label}
+                        <span className="dot" aria-hidden="true" /> <span className="nav-label">{n.label}</span>
                       </button>
                     ))}
                   </div>
@@ -288,8 +402,8 @@ export default function App() {
           </nav>
         </aside>
 
-        <main className="main">
-          <div className="topbar">
+        <main className="main" id="main" tabIndex={-1} ref={mainRef}>
+          <header className="topbar">
             <div className="topbar-left">
               <button className="hamburger" aria-label="Toggle navigation" onClick={() => setNavOpen((o) => !o)}>≡</button>
               <div>
@@ -304,28 +418,40 @@ export default function App() {
               )}
             </div>
             <div className="topbar-right">
-              <button className="cmdk-btn" onClick={() => setCmdkOpen(true)}>
-                <span className="ico">⌕</span> Search <kbd>⌘K</kbd>
-              </button>
+              <div className="topsearch" onClick={() => setCmdkOpen(true)}>
+                <span className="ico">⌕</span>
+                <input
+                  className="topsearch-input"
+                  placeholder="Search everything — screens, borrowers, deals, masters…"
+                  aria-label="Universal search"
+                  readOnly
+                  onFocus={(e) => { setCmdkOpen(true); e.currentTarget.blur(); }}
+                />
+                <kbd>⌘K</kbd>
+              </div>
               <div className="gov-chips">
                 <AiBadge />
                 <HumanBadge />
                 <DeterministicBadge label="DETERMINISTIC FIGURES" />
                 <PostureChip />
               </div>
+              <NotificationBell />
               <div className="topbar-actor" title="Verified identity from your login token — drives every SoD check">
                 <span className="ta-label">Signed in</span>
                 <span className="mono" style={{ fontWeight: 600 }}>{actor}</span>
                 <button className="cmdk-btn" style={{ marginLeft: 8 }} onClick={onLogout}>Logout</button>
               </div>
             </div>
-          </div>
+          </header>
           <GovernanceStrip />
           <div className="content">
+            {view === "home" && <RoleDashboard />}
             {view === "dashboard" && <Dashboard />}
             {view === "deals" && <Deals />}
+            {view === "ipnotes" && <IpNotes />}
             {view === "spreading" && <Spreading />}
             {view === "structuring" && <Structuring />}
+            {view === "scf" && <Scf />}
             {view === "syndication" && <Syndication />}
             {view === "docintel" && <DocIntel />}
             {view === "counterparties" && <Counterparties />}
@@ -334,19 +460,26 @@ export default function App() {
             {view === "limits" && <Limits />}
             {view === "disbursement" && <Disbursement />}
             {view === "cad" && <Cad />}
+            {view === "perfection" && <Perfection />}
             {view === "docgen" && <DocGen />}
             {view === "commentary" && <Commentary />}
             {view === "committee" && <Committee />}
+            {view === "coi" && <Coi />}
+            {view === "notings" && <Notings />}
             {view === "drawingpower" && <DrawingPower />}
             {view === "notifications" && <Notifications />}
             {view === "pricinglab" && <PricingLab />}
             {view === "monitoring" && <Monitoring />}
+            {view === "srm" && <Srm />}
+            {view === "monitoringartifacts" && <MonitoringArtifacts />}
+            {view === "escrow" && <Escrow />}
             {view === "customer360" && <Customer360 />}
             {view === "risklab" && <RiskLab />}
             {view === "projections" && <Projections />}
             {view === "mis" && <Mis />}
             {view === "reportbuilder" && <ReportBuilder />}
             {view === "workflowtracker" && <WorkflowTracker />}
+            {view === "tatreports" && <TatReports />}
             {view === "exports" && <Exports />}
             {view === "copilot" && <Copilot />}
             {view === "rulepacks" && <RulePacks />}
@@ -359,6 +492,7 @@ export default function App() {
         </main>
       </div>
       <CommandPalette open={cmdkOpen} onClose={() => setCmdkOpen(false)} screens={SCREENS} onPick={nav} />
+      <CopilotDock reference={ref} />
       <Toast msg={msg} onClose={() => setMsg(null)} />
     </AppContext.Provider>
   );

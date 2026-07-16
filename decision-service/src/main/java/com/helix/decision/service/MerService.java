@@ -334,6 +334,43 @@ public class MerService {
         return Map.of("markedOverdue", overdue, "markedEscalated", escalated);
     }
 
+    /**
+     * SRM renewal hook (additive; invoked only by {@code SrmService} once it observes an
+     * AUTHORIZED {@code SRM_RENEWAL} noting). Advances the next review / renewal due date
+     * on the subject's register by one cycle for every <b>active {@code RENEWAL_REVIEW}</b>
+     * item of the given reference, re-opening it for the fresh cycle. It touches nothing
+     * else — no other item type, no other subject, no other transition — so every existing
+     * MER flow is byte-identical for non-SRM callers. Returns the items advanced.
+     */
+    @Transactional
+    public List<MerItem> advanceReviewForSrm(String reference, String triggerRef, String actor) {
+        List<MerItem> advanced = new ArrayList<>();
+        if (reference == null || reference.isBlank()) {
+            return advanced;
+        }
+        for (MerItem m : items.findByApplicationReferenceOrderByDueDateAsc(reference)) {
+            if (!"RENEWAL_REVIEW".equals(m.getItemType()) || !ACTIVE.contains(m.getStatus())) {
+                continue;
+            }
+            LocalDate before = m.getDueDate();
+            LocalDate after = addPeriod(before, m.getRenewalFrequency());
+            m.setDueDate(after);
+            m.setStatus(OPEN);
+            m.setDocRef(null);
+            m.setSubmittedBy(null);
+            m.setSubmittedAt(null);
+            m.setLastReminderAt(null);
+            m.setCycleCount(m.getCycleCount() + 1);
+            items.save(m);
+            advanced.add(m);
+            audit.human(actor, "MER_RENEWAL_ADVANCED", "MerItem", String.valueOf(m.getId()),
+                    "SRM renewal %s advanced next review %s -> %s".formatted(triggerRef, before, after),
+                    Map.of("trigger", triggerRef == null ? "" : triggerRef,
+                            "before", before.toString(), "after", after.toString()));
+        }
+        return advanced;
+    }
+
     /** Items whose due date falls within {@code days} from today and still active. */
     @Transactional(readOnly = true)
     public List<MerItem> upcoming(int days) {

@@ -34,9 +34,9 @@ function confTone(c: number) {
 }
 
 export default function Spreading() {
-  const { actor, notify } = useApp();
+  const { actor, notify, ref: ctxRef } = useApp();
   const apps = useAsync(() => origination.list(), []);
-  const [ref, setRef] = useState<string>("");
+  const [ref, setRef] = useState<string>(ctxRef ?? "");
   // Level-1 currency view: figures shown in each period's native currency, or
   // restated into the borrower's presentation currency (analyst edits stay native).
   const [ccyView, setCcyView] = useState<"native" | "presentation">("native");

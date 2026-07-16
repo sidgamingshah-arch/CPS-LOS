@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { decision, origination, portfolio, risk, tracking as covTracking, fmt } from "../api";
-import { useApp } from "../app-context";
+import { Fragment, useState } from "react";
+import { decision, origination, portfolio, risk, tracking as covTracking, workflow, WorkflowView, fmt } from "../api";
+import { useApp, isNavEnabled } from "../app-context";
 import { AiBadge, Badge, Button, Card, Field, GovFlow, GradeBadge, statusTone, useAsync } from "../ui";
 import { useCodes } from "../code-values";
 import CopilotPanel from "../CopilotPanel";
@@ -27,8 +27,55 @@ const SAMPLE_PERIODS = {
   ],
 };
 
+/* ── Navigable case-file chrome ─────────────────────────────────────────────
+   Stable section anchors for the jump-list + next-action CTA, the action that
+   clears each pill-step, and the deal-scoped screens this workspace deep-links
+   into (nav carries the reference so each screen opens on this deal). */
+const WS_SECTIONS: { id: string; label: string }[] = [
+  { id: "ws-facilities", label: "Facilities" },
+  { id: "ws-collateral", label: "Collateral" },
+  { id: "ws-documents", label: "Documents" },
+  { id: "ws-spreading", label: "Spreading" },
+  { id: "ws-rating", label: "Rating" },
+  { id: "ws-capital", label: "Capital" },
+  { id: "ws-pricing", label: "Pricing" },
+  { id: "ws-approval", label: "Approval" },
+  { id: "ws-covenants", label: "Covenants" },
+  { id: "ws-proposal", label: "Proposal" },
+  { id: "ws-booking", label: "Booking" },
+];
+
+const NEXT_ACTION: Record<string, { label: string; anchor: string }> = {
+  Intake: { label: "Add facilities", anchor: "ws-facilities" },
+  Documents: { label: "Attach documents", anchor: "ws-documents" },
+  Spread: { label: "Enter spreading", anchor: "ws-spreading" },
+  Confirmed: { label: "Confirm spread", anchor: "ws-spreading" },
+  Rated: { label: "Run rating", anchor: "ws-rating" },
+  Capital: { label: "Compute capital", anchor: "ws-capital" },
+  Priced: { label: "Run pricing", anchor: "ws-pricing" },
+  Decided: { label: "Route for decision", anchor: "ws-approval" },
+};
+
+const OPEN_IN: { view: string; label: string }[] = [
+  { view: "risklab", label: "Risk Lab" },
+  { view: "pricinglab", label: "Pricing Lab" },
+  { view: "spreading", label: "Financial Spreading" },
+  { view: "docintel", label: "Doc Intelligence" },
+  { view: "commentary", label: "AI Commentary" },
+  { view: "docgen", label: "Doc Generation" },
+  { view: "committee", label: "Committee Room" },
+  { view: "disbursement", label: "Disbursement" },
+  { view: "cad", label: "CAD" },
+  { view: "drawingpower", label: "Drawing Power" },
+  { view: "customer360", label: "Customer-360" },
+  { view: "structuring", label: "Deal Structuring" },
+];
+
+const scrollToSection = (id: string) =>
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
 export default function DealWorkspace({ reference }: { reference: string }) {
-  const { actor, notify, nav } = useApp();
+  const { actor, notify, nav, aiEnabled } = useApp();
   // CODE_VALUE dropdowns shared across the nested forms below.
   const grades = useCodes("GRADE_SCALE");
   const overrideReasons = useCodes("OVERRIDE_REASON");
@@ -48,6 +95,9 @@ export default function DealWorkspace({ reference }: { reference: string }) {
   const covTests = useAsync(() => decision.covenantTests(reference).catch(() => [] as any[]), [reference]);
   const rarocHist = useAsync(() => portfolio.rarocHistory(reference).catch(() => [] as any[]), [reference]);
   const proposalLatest = useAsync(() => decision.latestProposal(reference).catch(() => null as any), [reference]);
+  // Workflow instance (current lifecycle stage + SLA). Chrome only — degrades
+  // silently (renders nothing) when the engine errors or has no instance.
+  const wfView = useAsync(() => workflow.view(reference).catch(() => null as WorkflowView | null), [reference]);
 
   const reload = () => { app.reload(); analysis.reload(); docs.reload(); summary.reload(); dec.reload(); covs.reload();
     facs.reload(); cols.reload(); covTests.reload(); rarocHist.reload(); proposalLatest.reload(); };
@@ -68,6 +118,11 @@ export default function DealWorkspace({ reference }: { reference: string }) {
     { k: "Priced", done: !!pricing },
     { k: "Decided", done: d?.status === "DECIDED" },
   ];
+  const nextStep = steps.find((s) => !s.done);
+  const nextAction = nextStep ? NEXT_ACTION[nextStep.k] : undefined;
+
+  const wfInst = wfView.data?.instance;
+  const wfStage = wfInst ? (wfView.data?.stages || []).find((s) => s.stageKey === wfInst.currentStageKey) : undefined;
 
   if (app.loading) return <div className="loading">Loading deal…</div>;
   if (!a) return <Card title="Not found"><div className="muted">No application {reference}.</div></Card>;
@@ -77,30 +132,75 @@ export default function DealWorkspace({ reference }: { reference: string }) {
     <div className="grid">
       <Card title={`${a.counterpartyName}`} sub={`${a.reference} · ${a.facilityType} · ${fmt.money(a.requestedAmount, a.currency)} · ${a.segment} · ${a.jurisdiction}`}
         right={<Badge kind={statusTone(a.status)}>{a.status}</Badge>}>
+        {wfInst && (
+          <div className="ws-workflow-strip">
+            <span className="wsw-label">Workflow</span>
+            <b className="mono">{wfInst.currentStageKey || wfInst.status}</b>
+            {wfStage && <span className="wsw-stage">{wfStage.label}</span>}
+            {wfStage && (
+              <Badge kind={wfStage.status === "COMPLETE" ? "ok" : wfStage.status === "BLOCKED" ? "warn" : "info"}>
+                {wfStage.status}
+              </Badge>
+            )}
+            {wfStage?.slaBreached
+              ? <Badge kind="bad">SLA BREACHED</Badge>
+              : wfStage?.slaDueAt
+                ? <span className="wsw-sla">SLA due {fmt.dateTime(wfStage.slaDueAt)}</span>
+                : null}
+          </div>
+        )}
         <div className="pill-steps">
-          {steps.map((s) => <span key={s.k} className={`step ${s.done ? "done" : ""}`}>{s.done ? "✓ " : ""}{s.k}</span>)}
+          {steps.map((s) => (
+            <span key={s.k} className={`step ${s.done ? "done" : ""}${nextStep?.k === s.k ? " active" : ""}`}>
+              {s.done ? "✓ " : ""}{s.k}
+            </span>
+          ))}
+          {nextAction && (
+            <button className="ws-next-cta" onClick={() => scrollToSection(nextAction.anchor)}
+              title="Jump to the section that clears this step">
+              Next: {nextAction.label} ↓
+            </button>
+          )}
+        </div>
+        <div className="ws-links">
+          <span className="ws-links-label">Open in</span>
+          {OPEN_IN.filter((l) => isNavEnabled(l.view, aiEnabled)).map((l) => (
+            <button key={l.view} className="ws-link-chip" onClick={() => nav(l.view, reference)}>{l.label}</button>
+          ))}
         </div>
         <Button kind="subtle" onClick={() => nav("deals")}>← Back to pipeline</Button>
       </Card>
 
+      {/* Section jump-list — sticky, plain anchors into the case file */}
+      <nav className="ws-jumpbar" aria-label="Deal sections">
+        {WS_SECTIONS.map((s) => (
+          <button key={s.id} className="ws-jump-chip" onClick={() => scrollToSection(s.id)}>{s.label}</button>
+        ))}
+      </nav>
+
       {/* Facilities proposed */}
+      <section id="ws-facilities" className="ws-anchor">
       <Card title="Facilities proposed · sublimits · interchangeability"
         sub="An application can propose multiple facilities; each facility may carry sublimits (CC · LC · BG · PCFC …) with optional interchangeability groups. Sublimits in the same group share a combined cap — utilisation may move freely within. Cap overflow is enforced server-side."
         right={<AddFacilityButton reference={reference} onAdded={facs.reload} />}>
         <FacilitiesTable facs={facs.data || []} onChange={() => { facs.reload(); reload(); }} />
       </Card>
+      </section>
 
       {/* Collateral */}
+      <section id="ws-collateral" className="ws-anchor">
       <Card title="Collateral and security"
         sub="First-class collateral items: type, market value, supervisory haircut, perfection status. Effective cover after haircut feeds the capital projection."
         right={<AddCollateralButton reference={reference} facilities={facs.data || []} onAdded={cols.reload} />}>
         <CollateralsTable cols={cols.data || []} onChange={() => { cols.reload(); reload(); }} />
       </Card>
+      </section>
 
       {/* Collateral intelligence: type-aware extraction + LTV revaluation + charge-Excel */}
       <CollateralIntelBlock reference={reference} cols={cols.data || []} onChange={cols.reload} />
 
       {/* Documents */}
+      <section id="ws-documents" className="ws-anchor">
       <Card title="Documents" sub="AI classification with confidence; low-confidence routed to human review (PRD §3).">
         <div className="btnrow" style={{ marginBottom: 10 }}>
           <Button kind="ghost" onClick={() => run(() => origination.uploadDoc(reference, { fileName: "audited_financials_FY24.pdf" }, actor), "Uploaded financials")}>+ Upload financials</Button>
@@ -116,8 +216,10 @@ export default function DealWorkspace({ reference }: { reference: string }) {
             ))}</tbody></table>
         )}
       </Card>
+      </section>
 
       {/* Spreading */}
+      <section id="ws-spreading" className="ws-anchor">
       <Card title="Financial spreading" sub="Canonical chart with figure-level provenance; derived lines computed; analyst overrides retained (PRD §4)."
         right={<div className="btnrow">
           <Button kind="ghost" onClick={() => run(() => origination.spread(reference, SAMPLE_PERIODS, actor), "Spread generated")}>Auto-spread sample financials</Button>
@@ -170,7 +272,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
                 </div>
                 {an.trends && Object.keys(an.trends).length > 0 && (
                   <><h4 style={{ marginTop: 12 }}>YoY</h4><div className="kv">
-                    {Object.entries(an.trends).map(([k, v]: any) => (<><div className="k" key={k}>{k}</div><div className="v" key={k + "v"}>{fmt.pct(v as number, 1)}</div></>))}
+                    {Object.entries(an.trends).map(([k, v]: any) => (<Fragment key={k}><div className="k">{k}</div><div className="v">{fmt.pct(v as number, 1)}</div></Fragment>))}
                   </div></>
                 )}
               </div>
@@ -178,8 +280,10 @@ export default function DealWorkspace({ reference }: { reference: string }) {
           </>
         )}
       </Card>
+      </section>
 
       {/* Rating */}
+      <section id="ws-rating" className="ws-anchor">
       <Card title="Risk rating" sub="Scorecard PD/LGD/EAD with per-factor contributions; overrides are notch-limited and logged (PRD §5)."
         right={<Button disabled={!a.spreadConfirmed} onClick={() => run(() => risk.rate(reference, actor), "Rating produced")}>{rating ? "Re-rate" : "Rate"}</Button>}>
         {!rating ? <div className="muted">{a.spreadConfirmed ? "Rate the deal." : "Confirm the spread first."}</div> : (
@@ -215,14 +319,18 @@ export default function DealWorkspace({ reference }: { reference: string }) {
           </div>
         )}
       </Card>
+      </section>
 
       {/* Capital */}
+      <section id="ws-capital" className="ws-anchor">
       <Card title="Capital projection (for RAROC)" sub="Internal projection used to drive RAROC pricing — the bank's capital engine remains the system of record. Deterministic, every figure traces to inputs + rule-pack version."
         right={<Button disabled={!rating} onClick={() => run(() => risk.capital(reference, actor), "Capital computed")}>{capital ? "Recompute" : "Compute capital"}</Button>}>
         {!capital ? <div className="muted">Rate the deal, then compute capital.</div> : <CapitalView reference={reference} capital={capital} />}
       </Card>
+      </section>
 
       {/* Pricing */}
+      <section id="ws-pricing" className="ws-anchor">
       <Card title="RAROC pricing" sub="Risk-adjusted price — advisory only; below-hurdle flagged for escalation (PRD §7)."
         right={<Button disabled={!capital} onClick={() => run(() => risk.pricing(reference, actor), "Pricing computed")}>{pricing ? "Reprice" : "Compute price"}</Button>}>
         {!pricing ? <div className="muted">Compute capital first.</div> : (
@@ -235,8 +343,10 @@ export default function DealWorkspace({ reference }: { reference: string }) {
           </div>
         )}
       </Card>
+      </section>
 
       {/* Approval */}
+      <section id="ws-approval" className="ws-anchor">
       <Card title="Approval workflow" sub="DoA routing on amount × rating × deviations; the decision is a named human action — AI never approves (PRD §8)."
         right={<Button disabled={!pricing || !rating?.confirmed} onClick={() => run(() => decision.route(reference, actor), "Routed for approval")}>{d ? "Re-route" : "Route for approval"}</Button>}>
         <CovenantsBlock reference={reference} grade={rating?.finalGrade} covs={covs.data || []} onChange={() => covs.reload()} />
@@ -254,22 +364,26 @@ export default function DealWorkspace({ reference }: { reference: string }) {
           </>
         )}
       </Card>
+      </section>
 
       {/* Covenant testing history */}
+      <section id="ws-covenants" className="ws-anchor">
       <Card title="Covenant testing"
         sub="Tests every active covenant against the latest spread ratios; observations persisted to history (PRD §7 sample covenant rule, §11 monitoring)."
         right={<Button kind="subtle" disabled={!(covs.data || []).length}
           onClick={() => run(() => decision.testCovenants(reference, actor), "Covenants tested")}>Run covenant tests</Button>}>
         {(covTests.data || []).length === 0 ? <div className="muted">No tests yet — set up covenants and run a test.</div> : (
+          <div className="table-scroll">
           <table><thead><tr><th>When</th><th>Metric</th><th>Test</th><th className="num">Observed</th><th>Pass</th><th>Severity</th></tr></thead>
             <tbody>{covTests.data!.slice(0, 12).map((t: any) => (
               <tr key={t.id}>
-                <td className="mono" style={{ whiteSpace: "nowrap" }}>{new Date(t.testedAt).toLocaleString()}</td>
+                <td className="mono" style={{ whiteSpace: "nowrap" }}>{fmt.dateTime(t.testedAt)}</td>
                 <td>{t.metric}</td><td className="mono">{t.operator} {t.threshold}</td>
                 <td className="num">{fmt.num(t.observed, 2)}</td>
                 <td>{t.passed ? <Badge kind="ok">pass</Badge> : <Badge kind="bad">breach</Badge>}</td>
                 <td><Badge kind={t.breachSeverity === "CRITICAL" ? "bad" : t.breachSeverity === "MAJOR" ? "warn" : "info"}>{t.breachSeverity}</Badge></td>
               </tr>))}</tbody></table>
+          </div>
         )}
       </Card>
 
@@ -278,8 +392,10 @@ export default function DealWorkspace({ reference }: { reference: string }) {
 
       {/* Covenant tracking workflow */}
       <CovenantTrackingBlock reference={reference} />
+      </section>
 
       {/* Credit proposal */}
+      <section id="ws-proposal" className="ws-anchor">
       <Card title="Credit proposal"
         sub="A formal committee memo grounded in this deal's data — every figure quoted from the engines, section-to-source citations stored (PRD §8 US-8.3, §13)."
         right={<Button onClick={() => run(() => decision.generateProposal(reference, actor), "Proposal generated")}>{proposalLatest.data ? "Re-generate" : "Generate proposal"}</Button>}>
@@ -287,7 +403,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
           <>
             <div className="btnrow" style={{ marginBottom: 10 }}>
               <Badge kind="info">v{proposalLatest.data.version}</Badge>
-              <small className="prov">Generated {new Date(proposalLatest.data.generatedAt).toLocaleString()} by {proposalLatest.data.generatedBy}</small>
+              <small className="prov">Generated {fmt.dateTime(proposalLatest.data.generatedAt)} by {proposalLatest.data.generatedBy}</small>
             </div>
             <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16, maxHeight: 460, overflow: "auto", fontSize: 13 }}
               dangerouslySetInnerHTML={{ __html: proposalLatest.data.html }} />
@@ -302,6 +418,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
           </>
         )}
       </Card>
+      </section>
 
       {/* RAROC tracking */}
       <Card title="Projected vs actual RAROC"
@@ -310,9 +427,11 @@ export default function DealWorkspace({ reference }: { reference: string }) {
       </Card>
 
       {/* Book & monitor */}
+      <section id="ws-booking" className="ws-anchor">
       <Card title="Book, provision & monitor" sub="ECL/IRAC provisioning, EWS — all human-gated for staging/remediation (PRD §11–12).">
         <BookBlock reference={reference} decided={d?.status === "DECIDED"} onChange={reload} signals={signals} />
       </Card>
+      </section>
 
       {/* Copilot, scoped to this deal */}
       <Card title="Ask the copilot about this deal" sub="Scoped to your role, grounded in this deal's data, non-binding (PRD §6.6).">
@@ -506,8 +625,11 @@ export default function DealWorkspace({ reference }: { reference: string }) {
             <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
               onClick={() => setAddingSublimit((s) => !s)}>{addingSublimit ? "Close" : "+ Sublimit"}</button>
             {!f.primary && (
-              <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
-                onClick={() => run(() => origination.removeFacility(f.id, actor), "Facility removed").then(onChange)}>Remove</button>
+              <button className="btn danger" style={{ fontSize: 11, padding: "3px 8px" }}
+                onClick={() => {
+                  if (!window.confirm(`Remove facility #${f.ordinal} ${f.facilityType} (${f.reference})?`)) return;
+                  run(() => origination.removeFacility(f.id, actor), "Facility removed").then(onChange);
+                }}>Remove</button>
             )}
           </div>
         </div>
@@ -521,7 +643,8 @@ export default function DealWorkspace({ reference }: { reference: string }) {
               </small>
             </div>
             {hasSublimits && (
-              <table style={{ marginBottom: 8 }}>
+              <div className="table-scroll" style={{ marginBottom: 8 }}>
+              <table>
                 <thead><tr><th>Code</th><th>Product</th><th className="num">Amount</th><th>Tenor</th><th>Interchangeable group</th><th>Purpose</th><th></th></tr></thead>
                 <tbody>{f.sublimits.map((s: any) => (
                   <tr key={s.id}>
@@ -533,10 +656,14 @@ export default function DealWorkspace({ reference }: { reference: string }) {
                       ? <Badge kind="ai">{s.interchangeableGroup}</Badge>
                       : <Badge>fixed (hard cap)</Badge>}</td>
                     <td>{s.purpose || "—"}</td>
-                    <td><button className="btn subtle" style={{ fontSize: 11, padding: "2px 6px" }}
-                      onClick={() => run(() => origination.removeSublimit(s.id, actor), "Sublimit removed").then(onChange)}>×</button></td>
+                    <td><button className="btn danger" style={{ fontSize: 11, padding: "2px 6px" }} title={`Remove sublimit ${s.code}`}
+                      onClick={() => {
+                        if (!window.confirm(`Remove sublimit ${s.code} (${s.productType})?`)) return;
+                        run(() => origination.removeSublimit(s.id, actor), "Sublimit removed").then(onChange);
+                      }}>×</button></td>
                   </tr>))}</tbody>
               </table>
+              </div>
             )}
             {(f.interchangeabilityGroups || []).length > 0 && (
               <div style={{ marginBottom: 8 }}>
@@ -623,6 +750,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
     const totalCover = cols.reduce((s, c) => s + (c.marketValue * (1 - c.haircut)), 0);
     return (
       <>
+        <div className="table-scroll">
         <table><thead><tr><th>Type</th><th>Description</th><th className="num">Market value</th><th>Haircut</th><th className="num">Effective</th><th>Perfection</th><th>Facility</th><th></th></tr></thead>
           <tbody>{cols.map((c: any) => (
             <tr key={c.id}>
@@ -637,6 +765,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
                 <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
                   onClick={() => run(() => origination.perfectCollateral(c.id, actor), "Charge perfected").then(onChange)}>Perfect</button>}</td>
             </tr>))}</tbody></table>
+        </div>
         <div style={{ marginTop: 8 }}><b>Total effective coverage:</b> {fmt.money(totalCover, "")}</div>
       </>
     );
@@ -701,6 +830,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
           <Button kind="ghost" disabled={(list.data || []).length === 0} onClick={runDue}>Test due</Button>
         </div>}>
         {(list.data || []).length === 0 ? <div className="muted">No schedules yet.</div> : (
+          <div className="table-scroll">
           <table>
             <thead><tr><th>Metric</th><th>Frequency</th><th>Next due</th><th>Status</th><th>Last tested</th><th>Actions</th></tr></thead>
             <tbody>
@@ -708,11 +838,11 @@ export default function DealWorkspace({ reference }: { reference: string }) {
                 <tr key={s.id}>
                   <td><b>{s.metric}</b></td>
                   <td>{s.testFrequency}</td>
-                  <td className="mono">{s.currentDueDate}</td>
+                  <td className="mono">{fmt.date(s.currentDueDate)}</td>
                   <td><Badge kind={s.status === "COMPLIANT" ? "ok"
                     : s.status === "BREACHED" || s.status === "OVERDUE" ? "bad"
                     : s.status === "WAIVED" || s.status === "EXTENDED" ? "info" : ""}>{s.status}</Badge></td>
-                  <td className="mono">{s.lastTestedAt || "—"}</td>
+                  <td className="mono">{fmt.dateTime(s.lastTestedAt)}</td>
                   <td>
                     {["BREACHED", "OVERDUE"].includes(s.status) && (
                       <div className="btnrow">
@@ -733,6 +863,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         <small className="prov">Tip: pending waivers/extensions are decided by credit team via <span className="mono">POST /actions/&#123;id&#125;/decision</span>. SoD enforced (requester ≠ approver).</small>
       </Card>
@@ -953,11 +1084,12 @@ function CollateralIntelBlock({ reference, cols, onChange }: { reference: string
         <div>
           <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Recent revaluations</div>
           {(revaluations.data || []).length === 0 ? <div className="muted">None yet.</div> : (
+            <div className="table-scroll">
             <table>
               <thead><tr><th>When</th><th>Col</th><th>MV</th><th>LTV</th><th>Severity</th><th>Status</th><th></th></tr></thead>
               <tbody>{revaluations.data!.slice(0, 8).map((r: any) => (
                 <tr key={r.id}>
-                  <td className="mono" style={{ whiteSpace: "nowrap" }}>{new Date(r.createdAt).toLocaleString()}</td>
+                  <td className="mono" style={{ whiteSpace: "nowrap" }}>{fmt.dateTime(r.createdAt)}</td>
                   <td>#{r.collateralId}</td>
                   <td className="mono">{fmt.money(r.previousMarketValue, "")} → {fmt.money(r.newMarketValue, "")}</td>
                   <td className="mono">{r.ltvBefore.toFixed(2)} → {r.ltvAfter.toFixed(2)}</td>
@@ -973,6 +1105,7 @@ function CollateralIntelBlock({ reference, cols, onChange }: { reference: string
                   )}</td>
                 </tr>))}</tbody>
             </table>
+            </div>
           )}
         </div>
       </div>

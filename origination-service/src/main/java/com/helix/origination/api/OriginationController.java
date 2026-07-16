@@ -11,6 +11,8 @@ import com.helix.origination.dto.Dtos.FacilityView;
 import com.helix.origination.dto.Dtos.OverrideRequest;
 import com.helix.origination.dto.Dtos.SpreadAnalysis;
 import com.helix.origination.dto.Dtos.SpreadRequest;
+import com.helix.origination.dto.Dtos.SpreadVersionDetail;
+import com.helix.origination.dto.Dtos.SpreadVersionView;
 import com.helix.origination.dto.Dtos.StatusUpdateRequest;
 import com.helix.origination.dto.Dtos.UploadDocumentRequest;
 import com.helix.origination.entity.Collateral;
@@ -112,6 +114,18 @@ public class OriginationController {
     @GetMapping("/{reference}/analysis")
     public SpreadAnalysis analysis(@PathVariable String reference) {
         return origination.analysis(reference);
+    }
+
+    /** Append-only spread version timeline — metadata only, oldest first (no snapshots). */
+    @GetMapping("/{reference}/spread/versions")
+    public List<SpreadVersionView> spreadVersions(@PathVariable String reference) {
+        return origination.spreadVersionsFor(reference);
+    }
+
+    /** A single archived spread version including its full analysis snapshot. */
+    @GetMapping("/{reference}/spread/versions/{versionNo}")
+    public SpreadVersionDetail spreadVersion(@PathVariable String reference, @PathVariable int versionNo) {
+        return origination.spreadVersionDetail(reference, versionNo);
     }
 
     @GetMapping("/{reference}/credit-inputs")

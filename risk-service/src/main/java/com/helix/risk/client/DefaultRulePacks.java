@@ -3,27 +3,70 @@ package com.helix.risk.client;
 import com.helix.risk.dto.RulePackDto;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
  * Conservative built-in rule packs used only when config-service is unreachable.
  * Marked version 0 so consumers can see a fallback was used in the audit trace.
  */
-final class DefaultRulePacks {
+public final class DefaultRulePacks {
 
     private DefaultRulePacks() {
     }
 
-    static RulePackDto fallback(String jurisdiction, String type) {
+    public static RulePackDto fallback(String jurisdiction, String type) {
         Map<String, Object> payload = switch (type) {
             case "CAPITAL_SA" -> capitalSa();
             case "ECRA_MAPPING" -> ecra();
             case "RATING_PD_MAP" -> pdMap();
             case "LGD_MAP" -> lgdMap();
             case "PRICING" -> pricing();
+            case "SCORECARD" -> scorecard();
             default -> Map.of();
         };
         return new RulePackDto(0L, "fallback_" + type.toLowerCase(), type, jurisdiction, 0, payload);
+    }
+
+    /**
+     * Built-in scorecard — the exact factor weights/bands and grade cut-points the
+     * RatingEngine shipped with (mirrors the seeded SCORECARD pack byte-for-byte),
+     * so a config-service outage or a malformed pack never moves a grade.
+     */
+    private static Map<String, Object> scorecard() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("factors", List.of(
+                factor("NET_LEVERAGE", 0.22, 1.0, 6.0, true, "RATIO"),
+                factor("INTEREST_COVERAGE", 0.18, 1.0, 6.0, false, "RATIO"),
+                factor("DSCR", 0.18, 1.0, 2.0, false, "RATIO"),
+                factor("EBITDA_MARGIN", 0.15, 0.02, 0.25, false, "RATIO"),
+                factor("CURRENT_RATIO", 0.10, 0.8, 2.0, false, "RATIO"),
+                factor("GEARING", 0.10, 0.5, 3.0, true, "RATIO"),
+                factor("REVENUE_GROWTH", 0.07, -0.10, 0.15, false, "TREND")));
+        m.put("gradeCutoffs", List.of(
+                cutoff(90.0, "AAA"), cutoff(82.0, "AA"), cutoff(74.0, "A"), cutoff(66.0, "BBB"),
+                cutoff(56.0, "BB"), cutoff(46.0, "B"), cutoff(36.0, "CCC"), cutoff(26.0, "CC"),
+                cutoff(16.0, "C"), cutoff(0.0, "D")));
+        return m;
+    }
+
+    private static Map<String, Object> factor(String key, double weight, double worst, double best,
+                                              boolean inverse, String source) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("key", key);
+        m.put("weight", weight);
+        m.put("worst", worst);
+        m.put("best", best);
+        m.put("inverse", inverse);
+        m.put("source", source);
+        return m;
+    }
+
+    private static Map<String, Object> cutoff(double minScore, String grade) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("minScore", minScore);
+        m.put("grade", grade);
+        return m;
     }
 
     private static Map<String, Object> capitalSa() {

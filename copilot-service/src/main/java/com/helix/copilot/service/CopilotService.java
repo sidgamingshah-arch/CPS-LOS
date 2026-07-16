@@ -369,8 +369,25 @@ public class CopilotService {
         return v instanceof Number n ? n.doubleValue() : 0.0;
     }
 
+    /**
+     * Compact rupee formatting for grounded answers: the Indian scale (Cr = crore =
+     * 1e7, L = lakh = 1e5) so a book-level figure reads as "₹26,084.6 Cr", not a
+     * 12-digit run. Trailing zero decimals are trimmed.
+     */
     private String money(Double v) {
-        return v == null ? "—" : String.format(Locale.UK, "%,.0f", v);
+        if (v == null) return "—";
+        double abs = Math.abs(v);
+        String sign = v < 0 ? "-" : "";
+        if (abs >= 1e7) return sign + "₹" + trim(abs / 1e7) + " Cr";
+        if (abs >= 1e5) return sign + "₹" + trim(abs / 1e5) + " L";
+        return sign + "₹" + String.format(Locale.UK, "%,.0f", abs);
+    }
+
+    /** Group with up to two decimals, dropping trailing zeros ("26,084.60" -> "26,084.6"). */
+    private String trim(double v) {
+        String s = String.format(Locale.UK, "%,.2f", v);
+        if (s.contains(".")) s = s.replaceAll("0+$", "").replaceAll("\\.$", "");
+        return s;
     }
 
     private String pct(Double v) {

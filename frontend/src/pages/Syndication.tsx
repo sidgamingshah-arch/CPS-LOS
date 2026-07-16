@@ -15,9 +15,9 @@ import { useApp } from "../app-context";
 import { Badge, Button, Card, DeterministicBadge, EmptyState, Field, Stat, useAsync } from "../ui";
 
 export default function Syndication() {
-  const { actor, notify } = useApp();
+  const { actor, notify, ref: ctxRef } = useApp();
   const apps = useAsync(() => origination.list(), []);
-  const [ref, setRef] = useState<string>("");
+  const [ref, setRef] = useState<string>(ctxRef ?? "");
 
   const book = useAsync(() => (ref ? safe(syndication.book(ref)) : Promise.resolve(null)), [ref]);
   const ledger = useAsync(() => (ref ? safe(syndication.allocations(ref)) : Promise.resolve([])), [ref]);

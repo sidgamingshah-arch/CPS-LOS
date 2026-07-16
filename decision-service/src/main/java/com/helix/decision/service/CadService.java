@@ -39,14 +39,34 @@ public class CadService {
     private final LimitClient limits;
     private final AuditService audit;
 
+    /**
+     * OPTIONAL, DEFAULT-OFF MOE-perfection gate on limit release. Inert unless the DOA_MATRIX
+     * config carries {@code perfectionRequired=true} for the flow — see
+     * {@link PerfectionService#limitReleaseBlocked(String)}.
+     */
+    private final PerfectionService perfection;
+
+    /**
+     * Optional best-effort case-management mirror; bean absent when the workflow-service
+     * URL isn't configured. The CAD case / deviation workflow (checklist, two-level SoD
+     * waiver, limit-release) is authoritative and completely unaffected — a mirror
+     * failure is swallowed by the client and never reaches this transaction.
+     */
+    private final com.helix.common.workflow.TaskClient taskClient;
+
     public CadService(CadCaseRepository cases, ChecklistItemRepository items, DeviationRepository deviations,
-                      UpstreamClient upstream, LimitClient limits, AuditService audit) {
+                      UpstreamClient upstream, LimitClient limits, AuditService audit,
+                      PerfectionService perfection,
+                      @org.springframework.beans.factory.annotation.Autowired(required = false)
+                      com.helix.common.workflow.TaskClient taskClient) {
         this.cases = cases;
         this.items = items;
         this.deviations = deviations;
         this.upstream = upstream;
         this.limits = limits;
         this.audit = audit;
+        this.perfection = perfection;
+        this.taskClient = taskClient;
     }
 
     /** Opens a CAD case and suggests the checklist from the CHECKLIST_MASTER. */
@@ -130,6 +150,15 @@ public class CadService {
         audit.human(actor, "CAD_DEVIATION_RAISED", "CadCase", String.valueOf(item.getCadCaseId()),
                 "%s on '%s': %s".formatted(d.getType(), item.getDescription(), req.reason()),
                 Map.of("type", d.getType()));
+        // Best-effort case-management mirror: a deviation/waiver approval task on the CAD
+        // deviations queue. Advisory task tracking only — the CadCase / Deviation above is
+        // authoritative and unchanged by this call.
+        if (taskClient != null) {
+            taskClient.createTask("CadCase", c.getApplicationRef(), "CAD_DEVIATION_APPROVAL",
+                    "CAD_DEVIATIONS", null, "DEV:" + saved.getId(), null, actor,
+                    Map.of("deviationId", saved.getId(), "cadCaseId", item.getCadCaseId(),
+                            "checklistItemId", itemId, "type", d.getType()));
+        }
         return saved;
     }
 
@@ -197,6 +226,13 @@ public class CadService {
         }
         if (!(req.processingFeeAmortised() && req.lienMarked())) {
             throw ApiException.badRequest("Limit-release checklist incomplete (processing fee / lien)");
+        }
+        // OPTIONAL, DEFAULT-OFF MOE-perfection gate. Returns false (no block) unless the flow's
+        // DOA_MATRIX config carries perfectionRequired=true — with the key absent (every seeded
+        // pack today) this is byte-identical to the prior behaviour.
+        if (perfection.limitReleaseBlocked(c.getApplicationRef())) {
+            throw ApiException.conflict("MOE security perfection required before limit release — "
+                    + "no COMPLETED PerfectionCase for " + c.getApplicationRef());
         }
         c.setStatus("LIMIT_RELEASED");
         cases.save(c);

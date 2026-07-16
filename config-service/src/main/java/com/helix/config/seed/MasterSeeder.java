@@ -33,9 +33,20 @@ public class MasterSeeder implements CommandLineRunner {
         // ---- Credit-initiation masters ----
         masters.seedActive("DEDUP_RULES", "default", null, map(
                 "strategy", "NAME_AND_IDENTIFIER",
-                "identifierFields", List.of("registrationNo"),
+                "identifierFields", List.of("registrationNo", "pan", "gstin", "lei", "cin"),
                 "nameMatchThreshold", 0.82,
                 "combineWith", "OR"));
+        // VALIDATION_PARAMETER — config-driven field-format rules (ConfigValidator in
+        // helix-common). recordKey = validation domain; rules apply to present-and-non-blank
+        // fields only (identifiers are optional), so this is additive to existing flows.
+        masters.seedActive("VALIDATION_PARAMETER", "COUNTERPARTY_IDENTIFIERS", null, map(
+                "rules", List.of(
+                        map("field", "pan", "type", "REGEX",
+                                "param", "^[A-Z]{5}[0-9]{4}[A-Z]$", "severity", "ERROR"),
+                        map("field", "gstin", "type", "CHECKSUM", "param", "GSTIN", "severity", "ERROR"),
+                        map("field", "lei", "type", "CHECKSUM", "param", "LEI", "severity", "ERROR"),
+                        map("field", "cin", "type", "REGEX",
+                                "param", "^[UL][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$", "severity", "ERROR"))));
         masters.seedActive("NEGATIVE_LIST", "country:CU", null, map("type", "COUNTRY", "value", "CU", "reason", "sanctions"));
         masters.seedActive("NEGATIVE_LIST", "country:KP", null, map("type", "COUNTRY", "value", "KP", "reason", "sanctions"));
         masters.seedActive("NEGATIVE_LIST", "country:IR", null, map("type", "COUNTRY", "value", "IR", "reason", "sanctions"));

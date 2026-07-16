@@ -1,0 +1,19 @@
+{
+  "name": "Helix — Governed AI for Wholesale Credit",
+  "short_name": "Helix",
+  "description": "Governed AI for wholesale credit: AI-first loan origination & lifecycle with deterministic figures and human-gated decisions.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#005b72",
+  "categories": ["finance", "business", "productivity"],
+  "icons": [
+    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ]
+}

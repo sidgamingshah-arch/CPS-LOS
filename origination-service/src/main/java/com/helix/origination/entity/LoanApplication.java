@@ -80,6 +80,11 @@ public class LoanApplication {
     /** True once the analyst confirms the spread; reset by any material override. */
     private boolean spreadConfirmed;
 
+    /** Set when this application was materialised by converting an approved In-Principle
+     *  note (IPN-…). Nullable — most applications are raised directly. */
+    @Column(length = 20)
+    private String ipNoteRef;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;

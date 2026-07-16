@@ -13,9 +13,9 @@ const fmtN = (v: any) =>
   typeof v === "number" ? v.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—";
 
 export default function Projections() {
-  const { actor, notify } = useApp();
+  const { actor, notify, ref: ctxRef } = useApp();
   const apps = useAsync(() => origination.list(), []);
-  const [ref, setRef] = useState("");
+  const [ref, setRef] = useState(ctxRef ?? "");
   const [view, setView] = useState<any>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);

@@ -26,6 +26,19 @@ import java.util.regex.Pattern;
  * the existing row. A missing template degrades to a raw fallback body (never throws), and
  * a transport failure marks the row FAILED without propagating. Callers should still wrap
  * {@code enqueue} in a try/catch so a notification never fails the business operation.</p>
+ *
+ * <p><b>Schedule-later</b>: the {@code enqueue(cmd, actor, scheduleAt)} overload persists a
+ * SCHEDULED row (no transport dispatch) when {@code scheduleAt} is in the future; the
+ * {@link NotificationSweeper} (or {@code POST /api/notifications/sweep}) dispatches it once
+ * due via {@link #dispatchDueScheduled()}. A null/past {@code scheduleAt} keeps the original
+ * immediate-dispatch behaviour byte-identical.</p>
+ *
+ * <p><b>Auto-reminders</b>: when the NOTIFICATION_ROUTE master payload for the eventType
+ * carries {@code {reminderEveryHours, maxReminders}} (or the caller passes them explicitly),
+ * the row is marked reminder-eligible and {@link #sweepReminders()} re-enqueues reminder
+ * notifications as NEW rows with the dedupeKey suffixed {@code #r<N>} — idempotent per
+ * suffix, capped by {@code maxReminders}. Reminder rows never carry reminder config
+ * themselves (no reminder-of-reminder chains).</p>
  */
 @Service
 public class NotificationService {
@@ -55,6 +68,32 @@ public class NotificationService {
 
     @Transactional
     public Notification enqueue(Enqueue cmd, String actor) {
+        return enqueue(cmd, actor, null);
+    }
+
+    /**
+     * Enqueue with optional deferred dispatch: a future {@code scheduleAt} persists the row
+     * SCHEDULED (transport dispatch deferred to the sweep); null/past dispatches immediately
+     * exactly as {@link #enqueue(Enqueue, String)} always has.
+     */
+    @Transactional
+    public Notification enqueue(Enqueue cmd, String actor, Instant scheduleAt) {
+        return enqueue(cmd, actor, scheduleAt, null, null);
+    }
+
+    /**
+     * Full overload: explicit {@code reminderEveryHours}/{@code maxReminders} (both required
+     * to take effect) override the NOTIFICATION_ROUTE master's reminder policy for this row.
+     */
+    @Transactional
+    public Notification enqueue(Enqueue cmd, String actor, Instant scheduleAt,
+                                Integer reminderEveryHours, Integer maxReminders) {
+        return enqueueInternal(cmd, actor, scheduleAt, reminderEveryHours, maxReminders, true);
+    }
+
+    private Notification enqueueInternal(Enqueue cmd, String actor, Instant scheduleAt,
+                                         Integer reminderEveryHours, Integer maxReminders,
+                                         boolean applyRouteReminderPolicy) {
         String idem = cmd.eventType() + "|" + safe(cmd.subjectRef()) + "|" + safe(cmd.dedupeKey());
         Notification existing = repo.findByIdempotencyKey(idem).orElse(null);
         if (existing != null) return existing;   // idempotent — never duplicate
@@ -101,19 +140,23 @@ public class NotificationService {
         n.setTransport(transport.name());
         n.setStatus("PENDING");
         n.setCreatedBy(actor == null ? "system" : actor);
-        Notification saved = repo.save(n);
+        applyReminderConfig(n, cmd, r, reminderEveryHours, maxReminders, applyRouteReminderPolicy);
 
-        try {
-            NotificationTransport.Result res = transport.dispatch(saved);
-            saved.setStatus(res.status());
-            saved.setProviderRef(res.providerRef());
-            saved.setFailureReason(res.failureReason());
-            if ("SENT".equals(res.status())) saved.setSentAt(Instant.now());
-        } catch (Exception e) {
-            saved.setStatus("FAILED");
-            saved.setFailureReason(e.getMessage());
-            log.warn("notification transport failed for {} ({})", idem, e.getMessage());
+        if (scheduleAt != null && scheduleAt.isAfter(Instant.now())) {
+            n.setStatus("SCHEDULED");
+            n.setScheduledFor(scheduleAt);
+            Notification scheduled = repo.save(n);
+            safeAudit("NOTIFICATION_SCHEDULED", cmd.subjectType(), cmd.subjectRef(),
+                    "%s notification SCHEDULED for %s via %s%s".formatted(cmd.eventType(), scheduleAt,
+                            scheduled.getTransport(), roles.isEmpty() ? "" : " to " + roles),
+                    Map.of("eventType", cmd.eventType(), "templateKey", String.valueOf(cmd.templateKey()),
+                            "status", scheduled.getStatus(), "scheduledFor", String.valueOf(scheduleAt),
+                            "recipientRoles", roles, "notificationId", scheduled.getId()));
+            return scheduled;
         }
+
+        Notification saved = repo.save(n);
+        dispatchAndRecord(saved);
         Notification done = repo.save(saved);
 
         safeAudit("NOTIFICATION_ENQUEUED", cmd.subjectType(), cmd.subjectRef(),
@@ -123,6 +166,119 @@ public class NotificationService {
                         "status", done.getStatus(), "transport", done.getTransport(),
                         "recipientRoles", roles, "notificationId", done.getId()));
         return done;
+    }
+
+    /** Runs the transport and records the outcome on the row. Never throws. */
+    private void dispatchAndRecord(Notification saved) {
+        try {
+            NotificationTransport.Result res = transport.dispatch(saved);
+            saved.setStatus(res.status());
+            saved.setProviderRef(res.providerRef());
+            saved.setFailureReason(res.failureReason());
+            if ("SENT".equals(res.status())) saved.setSentAt(Instant.now());
+        } catch (Exception e) {
+            saved.setStatus("FAILED");
+            saved.setFailureReason(e.getMessage());
+            log.warn("notification transport failed for {} ({})", saved.getIdempotencyKey(), e.getMessage());
+        }
+    }
+
+    /**
+     * Marks the row reminder-eligible when the caller passed an explicit cadence+cap, or —
+     * for non-reminder rows — when the NOTIFICATION_ROUTE payload carries
+     * {@code {reminderEveryHours, maxReminders}}. Both values are required; never throws.
+     */
+    private void applyReminderConfig(Notification n, Enqueue cmd, NotificationTemplateResolver r,
+                                     Integer reminderEveryHours, Integer maxReminders,
+                                     boolean applyRouteReminderPolicy) {
+        Integer every = reminderEveryHours;
+        Integer max = maxReminders;
+        if ((every == null || max == null) && applyRouteReminderPolicy && r != null) {
+            try {
+                var policy = r.reminderPolicy(cmd.eventType(), cmd.jurisdiction());
+                if (policy.isPresent()) {
+                    every = policy.get().reminderEveryHours();
+                    max = policy.get().maxReminders();
+                }
+            } catch (Exception e) {
+                log.warn("reminder policy lookup failed for {} ({})", cmd.eventType(), e.getMessage());
+            }
+        }
+        if (every == null || max == null || every < 0 || max <= 0) return;
+        n.setReminderEveryHours(every);
+        n.setMaxReminders(max);
+        n.setRemindersSent(0);
+    }
+
+    // =============================================================== sweep jobs
+
+    /**
+     * Sweep job (a): dispatch SCHEDULED rows whose {@code scheduledFor} has arrived through
+     * the normal transport path, flipping them to the normal recorded status (SENT/FAILED).
+     * Returns the number of rows dispatched. Short transaction; safe to re-run (a dispatched
+     * row leaves the SCHEDULED state, so re-running is a no-op).
+     */
+    @Transactional
+    public int dispatchDueScheduled() {
+        List<Notification> due = repo.findByStatusAndScheduledForLessThanEqualOrderByIdAsc(
+                "SCHEDULED", Instant.now());
+        int dispatched = 0;
+        for (Notification n : due) {
+            dispatchAndRecord(n);
+            Notification done = repo.save(n);
+            safeAudit("NOTIFICATION_DISPATCHED", done.getSubjectType(), done.getSubjectRef(),
+                    "Scheduled %s notification dispatched %s via %s".formatted(done.getEventType(),
+                            done.getStatus(), done.getTransport()),
+                    Map.of("eventType", done.getEventType(), "status", done.getStatus(),
+                            "scheduledFor", String.valueOf(done.getScheduledFor()),
+                            "notificationId", done.getId()));
+            dispatched++;
+        }
+        return dispatched;
+    }
+
+    /**
+     * Sweep job (b): for dispatched (SENT) rows explicitly marked reminder-eligible, enqueue
+     * a NEW reminder notification with the dedupeKey suffixed {@code #r<N>} once the cadence
+     * ({@code reminderEveryHours}; 0 = every sweep) has elapsed, capped by {@code maxReminders}.
+     * Idempotent — the suffixed dedupeKey dedupes re-runs, and the parent's counters advance
+     * only when a reminder is due. Reminder rows never carry reminder config themselves.
+     * Returns the number of reminders created.
+     */
+    @Transactional
+    public int sweepReminders() {
+        Instant now = Instant.now();
+        int created = 0;
+        for (Notification parent : repo.findByStatusAndReminderEveryHoursIsNotNullOrderByIdAsc("SENT")) {
+            Integer every = parent.getReminderEveryHours();
+            Integer max = parent.getMaxReminders();
+            if (every == null || max == null) continue;
+            int sent = parent.getRemindersSent() == null ? 0 : parent.getRemindersSent();
+            if (sent >= max) {                               // capped — retire from future scans
+                parent.setReminderEveryHours(null);
+                repo.save(parent);
+                continue;
+            }
+            Instant baseline = parent.getLastReminderAt() != null ? parent.getLastReminderAt()
+                    : (parent.getSentAt() != null ? parent.getSentAt() : parent.getCreatedAt());
+            if (baseline == null || baseline.plusSeconds(every * 3600L).isAfter(now)) continue; // not due
+            int seq = sent + 1;
+            Map<String, Object> vars = new LinkedHashMap<>(
+                    parent.getVars() == null ? Map.<String, Object>of() : parent.getVars());
+            vars.put("reminderNumber", seq);
+            vars.put("reminderOfNotificationId", parent.getId());
+            // Jurisdiction is not persisted on the row; reminders render the default-jurisdiction template.
+            Enqueue reminder = new Enqueue(parent.getEventType(), parent.getTemplateKey(),
+                    parent.getSubjectType(), parent.getSubjectRef(),
+                    safe(parent.getDedupeKey()) + "#r" + seq, null, vars, parent.getRecipientRoles());
+            enqueueInternal(reminder, "system", null, null, null, false);
+            parent.setRemindersSent(seq);
+            parent.setLastReminderAt(now);
+            if (seq >= max) parent.setReminderEveryHours(null);   // reached cap — retire from future scans
+            repo.save(parent);
+            created++;
+        }
+        return created;
     }
 
     @Transactional(readOnly = true)
@@ -143,6 +299,79 @@ public class NotificationService {
     @Transactional(readOnly = true)
     public Notification get(Long id) {
         return repo.findById(id).orElse(null);
+    }
+
+    // =============================================================== read-state (notification-center)
+
+    /**
+     * Count of unread notifications, optionally scoped to a {@code recipient} and/or {@code role}.
+     * With no scope this is a fast {@code COUNT(*) WHERE read_at IS NULL}; with a scope the unread
+     * rows are filtered in code because recipients/roles are persisted as JSON list columns.
+     * Purely additive — enqueue/dispatch/reminder paths are untouched.
+     */
+    @Transactional(readOnly = true)
+    public long unreadCount(String recipient, String role) {
+        boolean noScope = (recipient == null || recipient.isBlank()) && (role == null || role.isBlank());
+        if (noScope) return repo.countByReadAtIsNull();
+        return repo.findByReadAtIsNullOrderByIdDesc().stream()
+                .filter(n -> addressedTo(n, recipient, role))
+                .count();
+    }
+
+    /**
+     * Mark one notification read (human action, X-Actor). Idempotent — an already-read row keeps
+     * its original {@code readAt}/{@code readBy}. Never deletes; the row stays in the outbox list.
+     */
+    @Transactional
+    public Notification markRead(Long id, String actor) {
+        Notification n = repo.findById(id).orElse(null);
+        if (n == null) return null;
+        if (n.getReadAt() != null) return n;            // idempotent — already read stays read
+        String by = actor == null || actor.isBlank() ? "system" : actor;
+        n.setReadAt(Instant.now());
+        n.setReadBy(by);
+        Notification saved = repo.save(n);
+        safeHumanAudit(by, "NOTIFICATION_READ", saved.getSubjectType(), saved.getSubjectRef(),
+                "%s notification marked read".formatted(saved.getEventType()),
+                Map.of("eventType", String.valueOf(saved.getEventType()), "notificationId", saved.getId(),
+                        "readBy", by));
+        return saved;
+    }
+
+    /**
+     * Mark every unread notification read, optionally scoped to a {@code recipient} (matched against
+     * the row's recipients/roles). Returns how many rows flipped. Idempotent — already-read rows are
+     * skipped, so re-running returns 0.
+     */
+    @Transactional
+    public int markAllRead(String recipient, String actor) {
+        String by = actor == null || actor.isBlank() ? "system" : actor;
+        Instant now = Instant.now();
+        boolean scoped = recipient != null && !recipient.isBlank();
+        int count = 0;
+        for (Notification n : repo.findByReadAtIsNullOrderByIdDesc()) {
+            if (scoped && !addressedTo(n, recipient, recipient)) continue;
+            n.setReadAt(now);
+            n.setReadBy(by);
+            repo.save(n);
+            count++;
+        }
+        if (count > 0) {
+            safeHumanAudit(by, "NOTIFICATION_READ_ALL", "Notification", scoped ? recipient : "all",
+                    "%d notification(s) marked read".formatted(count),
+                    Map.of("count", count, "recipient", scoped ? recipient : ""));
+        }
+        return count;
+    }
+
+    /** True iff a row is addressed to {@code recipient} or {@code role} (either JSON list may carry it). */
+    private static boolean addressedTo(Notification n, String recipient, String role) {
+        if (listHas(n.getRecipients(), recipient) || listHas(n.getRecipientRoles(), recipient)) return true;
+        return listHas(n.getRecipientRoles(), role) || listHas(n.getRecipients(), role);
+    }
+
+    private static boolean listHas(List<String> list, String value) {
+        return value != null && !value.isBlank() && list != null && list.contains(value);
     }
 
     private String render(String template, Map<String, Object> vars) {
@@ -177,6 +406,16 @@ public class NotificationService {
                            Map<String, Object> detail) {
         try {
             audit.engine(eventType, subjectType, subjectRef, summary, detail);
+        } catch (Exception e) {
+            log.warn("could not stamp {} audit ({})", eventType, e.getMessage());
+        }
+    }
+
+    /** HUMAN-actor variant for the read-state gates (a named user clicked "read"). Never throws. */
+    private void safeHumanAudit(String actor, String eventType, String subjectType, String subjectRef,
+                                String summary, Map<String, Object> detail) {
+        try {
+            audit.human(actor, eventType, subjectType, subjectRef, summary, detail);
         } catch (Exception e) {
             log.warn("could not stamp {} audit ({})", eventType, e.getMessage());
         }

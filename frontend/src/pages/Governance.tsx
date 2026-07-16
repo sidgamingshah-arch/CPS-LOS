@@ -133,8 +133,10 @@ export default function Governance() {
                           disabled={isMaker} onClick={() => decide(rec, true)}>
                           Approve
                         </Button>{" "}
-                        <Button kind="ghost" busy={busy === `pending-${rec.id}`}
-                          disabled={isMaker} onClick={() => decide(rec, false)}>
+                        <Button kind="danger" busy={busy === `pending-${rec.id}`}
+                          disabled={isMaker} onClick={() => {
+                            if (window.confirm(`Reject pending toggle ${rec.recordKey}?`)) decide(rec, false);
+                          }}>
                           Reject
                         </Button>
                       </span>
@@ -157,6 +159,7 @@ export default function Governance() {
             sub="Config-service may still be starting up. The catalogue is /config/api/governance/ai/capabilities."
           />
         ) : (
+          <div className="table-scroll">
           <table>
             <thead>
               <tr>
@@ -196,6 +199,7 @@ export default function Governance() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
