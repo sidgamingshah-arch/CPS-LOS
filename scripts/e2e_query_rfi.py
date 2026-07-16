@@ -18,7 +18,10 @@ Proves:
   - addressee self-resolve -> 403 (SoD), thread untouched;
   - raiser resolves -> RESOLVED (+ resolution fields, QUERY_RESOLVED audit);
   - raise EXTERNAL_VENDOR -> OPEN and an RFI notification/outbox row is produced (façade);
-  - external-response appends an INBOUND message and flips the thread to RESPONDED;
+  - external-response appends an INBOUND message (author type EXTERNAL, never HUMAN) and flips
+    the thread to RESPONDED;
+  - external-response on an INTERNAL thread is REJECTED (4xx) and leaves the thread untouched
+    (forgery hardening — a fake inbound "HUMAN" reply can't flip an internal thread);
   - a schedule-later query starts SCHEDULED (dispatch deferred to the sweep).
 """
 import json
@@ -146,6 +149,28 @@ inbound = [m for m in v["messages"] if m.get("inbound") is True]
 check("an inbound message was appended", len(inbound) == 1, v["messages"])
 check("inbound message carries the sender", inbound and inbound[0].get("author") == "acme.valuers",
       inbound[0].get("author") if inbound else "none")
+# Fix 1: a forged/callback inbound reply is stamped EXTERNAL, never HUMAN — it is not a
+# named-human action inside the bank, so it can never be recorded as one.
+check("inbound message author type is EXTERNAL (never HUMAN)",
+      inbound and inbound[0].get("authorType") == "EXTERNAL",
+      inbound[0].get("authorType") if inbound else "none")
+
+print("== 7b. external-response is REJECTED on an INTERNAL thread (forgery hardening)")
+int_body = {"channel": "INTERNAL", "subjectType": "Application", "subjectRef": f"APP-INT-{NONCE}",
+            "topic": "Internal note", "question": "Internal-only question.",
+            "addressee": ADDRESSEE, "addresseeRole": "credit.analyst"}
+st, iv = call("POST", f"{SVC}/api/queries", int_body, actor=RAISER)
+iv = must(st, iv, "raise internal for forgery check")
+int_ref = iv["thread"]["queryRef"]
+st, b = call("POST", f"{SVC}/api/queries/{int_ref}/external-response",
+             {"body": "forged inbound reply", "from": "attacker"}, actor="attacker")
+check("external-response on an INTERNAL thread is rejected (4xx)", 400 <= st < 500, f"HTTP {st} {b}")
+st, iv2 = call("GET", f"{SVC}/api/queries/{int_ref}")
+iv2 = must(st, iv2, "get internal after forged external-response")
+check("INTERNAL thread untouched by the forged call (still OPEN)",
+      iv2["thread"]["status"] == "OPEN", iv2["thread"]["status"])
+check("no forged inbound message appended to the INTERNAL thread",
+      all(m.get("inbound") is False for m in iv2["messages"]), iv2["messages"])
 
 print("== 8. schedule-later query starts SCHEDULED (dispatch deferred to the sweep)")
 sched_body = {"channel": "EXTERNAL_CUSTOMER", "subjectType": "Application", "subjectRef": f"APP-S-{NONCE}",

@@ -241,16 +241,31 @@ public class QueryService {
     /**
      * Simulated inbound callback from a customer portal / vendor reply (the external-lane
      * façade — no real transport). Appends an inbound message and flips the thread to RESPONDED.
+     *
+     * <p><b>Hardening.</b> This is the return path for external evidence (perfection / stock-audit
+     * vendor reports), so it is deliberately constrained: it is only accepted on an
+     * {@code EXTERNAL_CUSTOMER}/{@code EXTERNAL_VENDOR} thread that is still expecting a response
+     * (non-terminal). An INTERNAL thread is a {@code 400} and a terminal thread is a {@code 409}.
+     * The appended message is stamped author type {@code EXTERNAL} (never {@code HUMAN}), so a
+     * forged/callback message is never recorded as a human action. A full per-thread inbound token
+     * is a noted residual — this hardening removes the trivial forgery (any INTERNAL thread flipped
+     * to RESPONDED with an arbitrary fake human author) without changing the legitimate flow.</p>
      */
     @Transactional
     public View externalResponse(String ref, String body, String from, String actor) {
         QueryThread t = require(ref);
-        String author = (from != null && !from.isBlank()) ? from : "external";
-        appendMessage(ref, author, "HUMAN", body, true);
-        if (t.getStatus() != QueryStatus.RESOLVED && t.getStatus() != QueryStatus.CANCELLED) {
-            t.setStatus(QueryStatus.RESPONDED);
-            threads.save(t);
+        if (t.getChannel() == QueryChannel.INTERNAL) {
+            throw ApiException.badRequest("external-response is only valid on an EXTERNAL_CUSTOMER/"
+                    + "EXTERNAL_VENDOR thread; query " + ref + " is INTERNAL");
         }
+        if (t.getStatus() == QueryStatus.RESOLVED || t.getStatus() == QueryStatus.CANCELLED) {
+            throw ApiException.conflict("Query " + ref + " is " + t.getStatus()
+                    + " — not expecting an inbound external response");
+        }
+        String author = (from != null && !from.isBlank()) ? from : "external";
+        appendMessage(ref, author, "EXTERNAL", body, true);
+        t.setStatus(QueryStatus.RESPONDED);
+        threads.save(t);
         audit.human(actor, "QUERY_EXTERNAL_RESPONSE", SUBJECT, ref,
                 "Inbound external response received on " + ref + " from " + author,
                 Map.of("from", author, "channel", t.getChannel().name(), "status", t.getStatus().name()));

@@ -33,7 +33,11 @@ public class QueryMessage {
     @Column(nullable = false, length = 120)
     private String author;
 
-    /** HUMAN | AI | SYSTEM — the governance signal on who authored the message. */
+    /**
+     * HUMAN | AI | SYSTEM | EXTERNAL — the governance signal on who authored the message.
+     * {@code EXTERNAL} marks an inbound reply that arrived through the external-lane façade
+     * callback: it is not a named-human action inside the bank, so it is never recorded as HUMAN.
+     */
     @Column(nullable = false, length = 20)
     private String authorType;
 

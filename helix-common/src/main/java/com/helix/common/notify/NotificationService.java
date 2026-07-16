@@ -1,6 +1,7 @@
 package com.helix.common.notify;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.web.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -321,13 +322,22 @@ public class NotificationService {
     /**
      * Mark one notification read (human action, X-Actor). Idempotent — an already-read row keeps
      * its original {@code readAt}/{@code readBy}. Never deletes; the row stays in the outbox list.
+     *
+     * <p><b>Recipient ownership.</b> An enumerable id is not enough: to flip an unread row to read
+     * the actor must be one of the row's {@code recipients} or hold one of its {@code recipientRoles}
+     * (else {@code 403}). An already-read row is returned unchanged for any caller — there is no
+     * read-state to flip, so idempotency is preserved without opening a forgery surface.</p>
      */
     @Transactional
     public Notification markRead(Long id, String actor) {
         Notification n = repo.findById(id).orElse(null);
         if (n == null) return null;
-        if (n.getReadAt() != null) return n;            // idempotent — already read stays read
+        if (n.getReadAt() != null) return n;            // idempotent — already read stays read (no flip to guard)
         String by = actor == null || actor.isBlank() ? "system" : actor;
+        if (!addressedTo(n, by, by)) {
+            throw ApiException.forbiddenAutonomy("Actor '" + by + "' is not a recipient of notification "
+                    + id + " and cannot mark it read");
+        }
         n.setReadAt(Instant.now());
         n.setReadBy(by);
         Notification saved = repo.save(n);
@@ -339,9 +349,10 @@ public class NotificationService {
     }
 
     /**
-     * Mark every unread notification read, optionally scoped to a {@code recipient} (matched against
-     * the row's recipients/roles). Returns how many rows flipped. Idempotent — already-read rows are
-     * skipped, so re-running returns 0.
+     * Mark every unread notification read that the {@code actor} is actually a recipient of (by id
+     * or by one of its {@code recipientRoles}) — never someone else's inbox. An optional
+     * {@code recipient} param can narrow further within the actor's own notifications. Returns how
+     * many rows flipped. Idempotent — already-read rows are skipped, so re-running returns 0.
      */
     @Transactional
     public int markAllRead(String recipient, String actor) {
@@ -350,7 +361,8 @@ public class NotificationService {
         boolean scoped = recipient != null && !recipient.isBlank();
         int count = 0;
         for (Notification n : repo.findByReadAtIsNullOrderByIdDesc()) {
-            if (scoped && !addressedTo(n, recipient, recipient)) continue;
+            if (!addressedTo(n, by, by)) continue;                       // actor may only clear its own
+            if (scoped && !addressedTo(n, recipient, recipient)) continue; // optional caller narrowing
             n.setReadAt(now);
             n.setReadBy(by);
             repo.save(n);
