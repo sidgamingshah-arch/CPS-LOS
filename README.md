@@ -213,11 +213,18 @@ Delivery is fail-soft (a transport error records `FAILED` on the outbox row and 
 > O365/SharePoint tenant. Default `none` returns the local artifact and makes **no external call**.
 
 ### LLM endpoint — `helix.llm.provider` = `none` (default, deterministic) · `openai` · `anthropic` · `azure-openai`
-The AI capabilities (copilot, document-intelligence drafting, narrative commentary, screening rationale)
-are **deterministic by default** — grounded/templated, no model call. Point them at a model to make the
-drafting generative, **without changing the governance contract**: LLM output stays **advisory + human-gated**
-and **never writes an authoritative figure/grade/price/decision** (extractions remain human-confirm; the
-figure path stays deterministic). This config is maintained separately from every other integration.
+**Every** AI capability across the platform routes through this one governed client — copilot,
+document classification / extraction / language-normalisation / translation / consistency-check
+narratives, collateral extraction + revaluation narratives, financial-spreading extraction,
+screening rationale, group identification, UBO resolution narrative, RAG & macro-impact &
+pricing-optimiser & EWS rationales, client-planning-template & credit-proposal & group-insights
+drafts, covenant extraction, compliance-certificate assessment, and document-generation clause
+polishing. All of them are **deterministic/grounded by default** (no model call). Point them at a
+model to make the drafting generative, **without changing the governance contract**: LLM output
+stays **advisory + human-gated** and **never writes an authoritative figure/grade/price/decision**
+(deterministic engines — rating, capital, ECL, RAROC/pricing math, LTV, covenant recompute,
+match/ownership scores — are untouched; extractions remain human-confirm). This config is
+maintained separately from every other integration.
 | Key / env | Default | Purpose |
 |---|---|---|
 | `helix.llm.provider` (`HELIX_LLM_PROVIDER`) | `none` | `none` \| `openai` \| `anthropic` \| `azure-openai` |
@@ -227,7 +234,7 @@ figure path stays deterministic). This config is maintained separately from ever
 | `helix.llm.timeout-ms` / `max-tokens` / `temperature` | 20000 / 1024 / 0.2 | request bounds (connect+read timeout, token cap, sampling) |
 | `helix.llm.anthropic-version` | `2023-06-01` | `anthropic-version` header (API version, not a model) — `anthropic` provider only |
 | `helix.llm.azure-api-version` | `2024-02-15-preview` | `api-version` query param (API version, not a model) — `azure-openai` provider only |
-| `helix.llm.capability-models.<capability>` | — | per-capability model override (`copilot`, `doc-extract`, `commentary`, `screening-rationale`, `translation`) |
+| `helix.llm.capability-models.<capability>` | — | per-capability model override — one key per AI capability (`copilot`, `doc-extract`, `doc-classify`, `spreading-extract`, `language-normalise`, `translation`, `doc-checks`, `collateral-extract`, `collateral-monitor`, `screening-rationale`, `group-identification`, `ubo-narrative`, `rag-narrative`, `macro-narrative`, `pricing-narrative`, `ews-narrative`, `commentary`, `cpt-draft`, `proposal-draft`, `group-insights`, `covenant-extract`, `covenant-certificate`, `docgen-clause`); a missing key uses `helix.llm.model` |
 
 A model outage or timeout **falls back to the deterministic path** — a configured LLM is an enhancement, never a hard dependency.
 
