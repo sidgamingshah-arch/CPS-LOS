@@ -9,15 +9,25 @@ noting in decision-service); and approved under segregation of duties + credit a
 On approval the programme limit is registered into limit-service's OWN governed limit
 tree (best-effort — SCF never writes an authoritative figure itself).
 
+Credit authority is a ROLE held per the ACTOR_ROLE master (resolved server-side via
+ActorDirectory), never a literal-username whitelist: a privileged-LOOKING username with
+no credit role is denied, and a role reassignment takes effect at once.
+
 Asserts:
-  0. Seed the SCF_ELIGIBILITY master (generic master API — maker != checker for SoD).
+  0. Seed the SCF_ELIGIBILITY master (generic master API — maker != checker for SoD),
+     and grant credit.head the CREDIT_HEAD role in ACTOR_ROLE (maker != checker).
   1. create programme -> DRAFT with an SCF- reference; eligibility snapshot pinned.
   2. add spoke within bounds -> PASS (deterministic); over the per-spoke cap -> FAIL + reasons.
+  2b. aggregate cap: spokes that each pass per-spoke checks but whose cumulative approved cap
+      exceeds programLimit -> the over-the-line spoke FAILs with the programme-limit reason;
+      approvedCapTotal never exceeds programLimit.
   3. submit -> PENDING_APPROVAL AND a linked PRODUCT_PAPER noting is created in
      decision-service (notingRef stored; the noting is retrievable + subject-linked).
   4. approve by the RAISER -> 403 (segregation of duties).
-  5. approve by a NON-authority actor -> 403 (credit-authority gate).
-  6. approve by a credit authority -> APPROVED; limit registration is best-effort.
+  5. approve by a NON-authority actor -> 403 (credit-authority gate), INCLUDING a
+     privileged-LOOKING username (chief.credit.officer) that holds no credit role.
+  6. approve by a genuine credit-role holder (credit.head/CREDIT_HEAD) -> APPROVED;
+     limit registration is best-effort.
   7. reject path: SoD (raiser -> 403) then a credit authority rejects -> REJECTED.
   8. withdraw is raiser-only (non-raiser -> 403; raiser -> WITHDRAWN).
   9. every SCF_* audit event is stamped HUMAN (no AI/SYSTEM in the SCF write path).
@@ -74,6 +84,20 @@ def seed_eligibility(key, payload):
     must(st, _, f"approve SCF_ELIGIBILITY {key}")
 
 
+# ---- ACTOR_ROLE grant (actor -> roles) through the master API (maker != checker for SoD) ----
+def seed_role(actor_key, display_name, roles):
+    st, rec = call("POST", "/config/api/masters/ACTOR_ROLE",
+                   {"recordKey": actor_key, "jurisdiction": None,
+                    "payload": {"displayName": display_name, "roles": roles}},
+                   actor="config.admin")
+    rec = must(st, rec, f"submit ACTOR_ROLE {actor_key}")
+    st, _ = call("POST", f"/config/api/masters/records/{rec['id']}/approve", actor="config.checker")
+    must(st, _, f"approve ACTOR_ROLE {actor_key}")
+    # Drop the origination-service directory snapshot so the grant takes effect at once
+    # (rather than waiting out the ActorDirectory cache TTL).
+    call("POST", "/origination/api/governance/rbac/cache/invalidate")
+
+
 print("== 0. Seed the SCF_ELIGIBILITY master (generic master API — NO code change) ==")
 seed_eligibility("DEFAULT", {
     "minSpokeAmount": 1_000_000,
@@ -82,6 +106,11 @@ seed_eligibility("DEFAULT", {
     "allowedProgramTypes": ["VENDOR", "DEALER"],
 })
 print("    SCF_ELIGIBILITY/DEFAULT ACTIVE")
+
+# The SCF approver (credit.head) must actually HOLD a credit role — authority is
+# resolved from ACTOR_ROLE, not a static username whitelist. Grant CREDIT_HEAD.
+seed_role("credit.head", "Credit Head", ["CREDIT_HEAD"])
+print("    ACTOR_ROLE/credit.head -> [CREDIT_HEAD] ACTIVE")
 
 
 print("\n== 1. Create the anchor + a DRAFT SCF programme ==")
@@ -133,6 +162,34 @@ check("spoke over the per-spoke cap -> FAIL with reasons + zero approved cap",
 check("roll-ups: 2 spokes, 1 eligible", v["spokeCount"] == 2 and v["eligibleCount"] == 1, str(v))
 
 
+print("\n== 2b. Aggregate programme-limit cap (individually eligible, breach in aggregate) ==")
+# A tight programme: limit 100M, per-spoke cap 40M. Each 28M spoke passes every per-spoke
+# check (>= 1M min, <= 50M max, <= 40M per-spoke cap, 28% <= 30% ceiling) — but four of them
+# sum to 112M, breaching the 100M envelope that would later be registered into limit-service.
+st, va = call("POST", "/origination/api/scf/programs", {
+    "anchorRef": anchor_ref, "anchorName": "Meridian Steel Ltd", "programType": "VENDOR",
+    "programLimit": 100_000_000, "perSpokeCap": 40_000_000, "currency": "INR"}, actor="rm.user")
+va = must(st, va, "create aggregate-cap programme")
+scf_agg = va["program"]["scfRef"]
+last = None
+for i, ref in enumerate(["AGG-1", "AGG-2", "AGG-3", "AGG-4"]):
+    st, last = call("POST", f"/origination/api/scf/programs/{scf_agg}/spokes", {
+        "spokeRef": ref, "spokeName": f"Aggregate spoke {i + 1}",
+        "requestedAmount": 28_000_000}, actor="rm.user")
+    last = must(st, last, f"add {ref}")
+agg = {s["spokeRef"]: s for s in last["spokes"]}
+check("first three 28M spokes each PASS per-spoke checks (84M <= 100M so far)",
+      all(agg[r]["eligibilityResult"] == "PASS" for r in ("AGG-1", "AGG-2", "AGG-3")),
+      str({r: agg[r]["eligibilityResult"] for r in ("AGG-1", "AGG-2", "AGG-3")}))
+check("the over-the-line 4th spoke FAILs with the programme-limit reason",
+      agg["AGG-4"]["eligibilityResult"] == "FAIL"
+      and any("programme limit" in str(x).lower() for x in agg["AGG-4"]["reasons"]),
+      str(agg.get("AGG-4")))
+check("approvedCapTotal never exceeds programLimit (84M <= 100M)",
+      last["approvedCapTotal"] == 84_000_000
+      and last["approvedCapTotal"] <= va["program"]["programLimit"], str(last["approvedCapTotal"]))
+
+
 print("\n== 3. Submit -> PENDING_APPROVAL + a linked PRODUCT_PAPER noting is created ==")
 st, v = call("POST", f"/origination/api/scf/programs/{scf_ref}/submit", actor="rm.user")
 v = must(st, v, "submit programme")
@@ -151,12 +208,18 @@ print("\n== 4-6. Approval: SoD + credit-authority gate, then a real approval =="
 st, b = call("POST", f"/origination/api/scf/programs/{scf_ref}/approve", {}, actor="rm.user")
 check("approve by the RAISER -> 403 (segregation of duties)", st == 403, f"{st} {b}")
 st, b = call("POST", f"/origination/api/scf/programs/{scf_ref}/approve", {}, actor="analyst.user")
-check("approve by a NON-authority actor -> 403 (credit-authority gate)", st == 403, f"{st} {b}")
+check("approve by a NON-authority actor (ANALYST) -> 403 (credit-authority gate)", st == 403, f"{st} {b}")
+# The fix: authority is a ROLE, not a username. A privileged-LOOKING username that holds no
+# credit role in ACTOR_ROLE is denied (under the old static whitelist it would have approved).
+st, b = call("POST", f"/origination/api/scf/programs/{scf_ref}/approve", {}, actor="chief.credit.officer")
+check("privileged-looking username with NO credit role -> 403 (role check, not username whitelist)",
+      st == 403, f"{st} {b}")
+# A genuine credit-role holder (credit.head holds CREDIT_HEAD, seeded in section 0) approves.
 st, v = call("POST", f"/origination/api/scf/programs/{scf_ref}/approve",
              {"note": "credit committee ok"}, actor="credit.head")
 v = must(st, v, "approve programme")
-check("approve by a credit authority -> APPROVED", v["program"]["status"] == "APPROVED"
-      and v["program"]["decidedBy"] == "credit.head", str(v["program"]))
+check("approve by a genuine credit-role holder (credit.head/CREDIT_HEAD) -> APPROVED",
+      v["program"]["status"] == "APPROVED" and v["program"]["decidedBy"] == "credit.head", str(v["program"]))
 
 # Best-effort limit registration: assert what is deterministic (approval stands regardless);
 # if a limit node WAS registered, verify it is retrievable via limit-service.

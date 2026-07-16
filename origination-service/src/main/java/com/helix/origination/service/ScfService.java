@@ -1,6 +1,7 @@
 package com.helix.origination.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.rbac.ActorDirectory;
 import com.helix.common.web.ApiException;
 import com.helix.origination.client.ScfEligibilityClient;
 import com.helix.origination.client.ScfLimitClient;
@@ -44,26 +45,33 @@ public class ScfService {
 
     private static final Set<String> PROGRAM_TYPES = Set.of("VENDOR", "DEALER");
 
-    /** Actors carrying credit authority to approve/reject an SCF product paper. */
+    /**
+     * ROLES carrying credit authority to approve/reject an SCF product paper. Authority is
+     * resolved from the {@code ACTOR_ROLE} master via {@link ActorDirectory} — NOT a static
+     * username whitelist — so an ACTOR_ROLE reassignment takes effect and a well-known default
+     * username grants nothing unless it actually holds one of these roles. Mirrors the credit-
+     * approval tier used by the sibling {@link IpNoteService}.
+     */
     private static final Set<String> APPROVAL_AUTHORITIES = Set.of(
-            "credit.officer", "credit.head", "credit.committee", "sanctioning.authority",
-            "chief.credit.officer", "cro");
+            "CREDIT_OFFICER", "CREDIT_HEAD", "CREDIT_COMMITTEE", "CRO", "BOARD_COMMITTEE");
 
     private final ScfProgramRepository programs;
     private final ScfSpokeRepository spokes;
     private final ScfEligibilityClient eligibility;
     private final ScfNotingClient notings;
     private final ScfLimitClient limits;
+    private final ActorDirectory roles;
     private final AuditService audit;
 
     public ScfService(ScfProgramRepository programs, ScfSpokeRepository spokes,
                       ScfEligibilityClient eligibility, ScfNotingClient notings,
-                      ScfLimitClient limits, AuditService audit) {
+                      ScfLimitClient limits, ActorDirectory roles, AuditService audit) {
         this.programs = programs;
         this.spokes = spokes;
         this.eligibility = eligibility;
         this.notings = notings;
         this.limits = limits;
+        this.roles = roles;
         this.audit = audit;
     }
 
@@ -118,7 +126,15 @@ public class ScfService {
         double requested = nz(req.requestedAmount());
         if (requested <= 0) throw ApiException.badRequest("requestedAmount must be positive");
 
-        Eligibility e = evaluate(p, requested);
+        // Running envelope: the sum of approved caps across the spokes already judged PASS
+        // (FAIL spokes carry a zero cap, so they never consume the programme limit). A new
+        // request must fit under the sanctioned programmeLimit ON TOP of this committed total,
+        // otherwise many individually-eligible spokes could sum past the envelope registered
+        // into limit-service on approval.
+        double committedApprovedCap = spokes.findByProgramRefOrderByIdAsc(p.getScfRef()).stream()
+                .filter(s -> "PASS".equals(s.getEligibilityResult()))
+                .mapToDouble(ScfSpoke::getApprovedCap).sum();
+        Eligibility e = evaluate(p, requested, committedApprovedCap);
         ScfSpoke s = new ScfSpoke();
         s.setProgramRef(p.getScfRef());
         s.setSpokeRef(req.spokeRef());
@@ -135,10 +151,13 @@ public class ScfService {
     }
 
     /**
-     * Deterministic per-spoke eligibility against the programme's pinned snapshot + caps.
-     * No GenAI: the same inputs always yield the same PASS/FAIL + reasons + approved cap.
+     * Deterministic per-spoke eligibility against the programme's pinned snapshot + caps, PLUS
+     * the aggregate programme-limit envelope: {@code committedApprovedCap} is the running sum of
+     * approved caps across already-PASSing spokes, and a request that would push the total past
+     * {@link ScfProgram#getProgramLimit()} FAILs with a clear reason. No GenAI: the same inputs
+     * (including the committed total) always yield the same PASS/FAIL + reasons + approved cap.
      */
-    private Eligibility evaluate(ScfProgram p, double requested) {
+    private Eligibility evaluate(ScfProgram p, double requested, double committedApprovedCap) {
         Map<String, Object> crit = p.getEligibilitySnapshot() == null || p.getEligibilitySnapshot().isEmpty()
                 ? ScfEligibilityClient.builtInDefaults() : p.getEligibilitySnapshot();
         double min = num(crit, "minSpokeAmount", 0.0);
@@ -165,6 +184,11 @@ public class ScfService {
             if (pct > maxPct + 1e-9) {
                 reasons.add("Requested is %.1f%% of the programme limit, above the %.1f%% ceiling".formatted(pct, maxPct));
             }
+        }
+        // Aggregate envelope: the running PASS total + this request may not breach programmeLimit.
+        if (p.getProgramLimit() > 0 && committedApprovedCap + requested > p.getProgramLimit() + 1e-9) {
+            reasons.add(("Requested %.0f on top of %.0f already approved across eligible spokes would breach "
+                    + "the programme limit %.0f").formatted(requested, committedApprovedCap, p.getProgramLimit()));
         }
         boolean pass = reasons.isEmpty();
         double approvedCap = pass ? requested : 0.0;
@@ -278,7 +302,14 @@ public class ScfService {
         return view(p.getScfRef());
     }
 
-    /** SoD (decider ≠ raiser) + credit-authority gate — {@link ApiException#forbiddenAutonomy} (403) on violation. */
+    /**
+     * SoD (decider ≠ raiser) + credit-authority gate — {@link ApiException#forbiddenAutonomy} (403)
+     * on violation. Authority is a ROLE held by the actor per the {@code ACTOR_ROLE} master
+     * (resolved via {@link ActorDirectory}), never a literal username: a privileged-looking
+     * username with no credit role is denied, and a role reassignment takes effect at once.
+     * A directory outage fails open with a WARN (ActorDirectory parity); the name-equality SoD
+     * above always applies regardless.
+     */
     private void guardApprovalAuthority(ScfProgram p, String actor) {
         if (actor == null || actor.isBlank()) {
             throw ApiException.forbiddenAutonomy("A named human actor is required to decide an SCF programme");
@@ -288,9 +319,19 @@ public class ScfService {
                     "Segregation of duties — the decision must be made by a different actor than the raiser ("
                     + p.getRaisedBy() + ")");
         }
-        if (!APPROVAL_AUTHORITIES.contains(actor)) {
+        Set<String> actorRoles = roles.rolesFor(actor);
+        if (actorRoles == null) {
+            // Directory outage — fail open with a WARN (ActorDirectory parity); SoD above still applies.
+            log.warn("ACTOR_ROLE directory unavailable — allowing '{}' to decide SCF programme (fail-open)", actor);
+            return;
+        }
+        boolean authorised = actorRoles.stream()
+                .map(r -> r == null ? "" : r.toUpperCase())
+                .anyMatch(APPROVAL_AUTHORITIES::contains);
+        if (!authorised) {
             throw ApiException.forbiddenAutonomy(
-                    "Actor '" + actor + "' lacks the credit authority to decide an SCF product paper");
+                    "SCF product-paper approval requires one of " + APPROVAL_AUTHORITIES + " — actor '"
+                    + actor + "' holds " + actorRoles + " (insufficient); see the ACTOR_ROLE master");
         }
     }
 
