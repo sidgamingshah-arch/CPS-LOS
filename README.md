@@ -223,8 +223,10 @@ figure path stays deterministic). This config is maintained separately from ever
 | `helix.llm.provider` (`HELIX_LLM_PROVIDER`) | `none` | `none` \| `openai` \| `anthropic` \| `azure-openai` |
 | `helix.llm.base-url` (`HELIX_LLM_BASE_URL`) | — | model API base URL (public API or a private gateway) |
 | `helix.llm.api-key` (`HELIX_LLM_API_KEY`) | — | credential (never logged) |
-| `helix.llm.model` (`HELIX_LLM_MODEL`) | — | default model id |
-| `helix.llm.timeout-ms` / `max-tokens` / `temperature` | 20000 / — / — | request bounds |
+| `helix.llm.model` (`HELIX_LLM_MODEL`) | — | default model id / Azure deployment name |
+| `helix.llm.timeout-ms` / `max-tokens` / `temperature` | 20000 / 1024 / 0.2 | request bounds (connect+read timeout, token cap, sampling) |
+| `helix.llm.anthropic-version` | `2023-06-01` | `anthropic-version` header (API version, not a model) — `anthropic` provider only |
+| `helix.llm.azure-api-version` | `2024-02-15-preview` | `api-version` query param (API version, not a model) — `azure-openai` provider only |
 | `helix.llm.capability-models.<capability>` | — | per-capability model override (`copilot`, `doc-extract`, `commentary`, `screening-rationale`, `translation`) |
 
 A model outage or timeout **falls back to the deterministic path** — a configured LLM is an enhancement, never a hard dependency.
