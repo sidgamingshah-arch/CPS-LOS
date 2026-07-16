@@ -37,6 +37,7 @@ public class NotificationTestEnqueueController {
     public record TestEnqueueRequest(String eventType, String templateKey, String subjectType,
                                      String subjectRef, String dedupeKey, String jurisdiction,
                                      Map<String, Object> vars, List<String> recipientRoles,
+                                     List<String> recipients,
                                      String scheduleAt, Long scheduleInSeconds,
                                      Integer reminderEveryHours, Integer maxReminders) {
     }
@@ -52,7 +53,7 @@ public class NotificationTestEnqueueController {
         }
         NotificationService.Enqueue cmd = new NotificationService.Enqueue(req.eventType(),
                 req.templateKey(), req.subjectType(), req.subjectRef(), req.dedupeKey(),
-                req.jurisdiction(), req.vars(), req.recipientRoles());
+                req.jurisdiction(), req.vars(), req.recipientRoles(), req.recipients());
         return notifications.enqueue(cmd, actor, scheduleAt, req.reminderEveryHours(), req.maxReminders());
     }
 }

@@ -1,6 +1,9 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.CollateralViewDto;
@@ -37,13 +40,15 @@ public class CommentaryService {
     private final UpstreamClient upstream;
     private final AuditService audit;
     private final com.helix.common.governance.AiGovernanceClient governance;
+    private final LlmClient llm;
 
     public CommentaryService(ProposalCommentaryRepository repo, UpstreamClient upstream, AuditService audit,
-                             com.helix.common.governance.AiGovernanceClient governance) {
+                             com.helix.common.governance.AiGovernanceClient governance, LlmClient llm) {
         this.repo = repo;
         this.upstream = upstream;
         this.audit = audit;
         this.governance = governance;
+        this.llm = llm;
     }
 
     @Transactional
@@ -68,7 +73,16 @@ public class CommentaryService {
             case "risk_commentary" -> draftRisk(env, rs, sources, bullets);
             default -> "";
         };
-        if (hint != null && !hint.isBlank()) {
+        // Optional advisory LLM draft: when a bank has configured an external model, it drafts
+        // the section prose grounded in the SAME sources/bullets. It is still a DRAFT that a
+        // named human must review-confirm (SoD below), still advisory, and never touches the
+        // authoritative figure path. Provider 'none' (default) → deterministic draft, and the
+        // hint handling is byte-identical to today.
+        String llmNarrative = llmDraft(s, sources, bullets, narrative, hint);
+        boolean llmDrafted = llmNarrative != null;
+        if (llmDrafted) {
+            narrative = llmNarrative;
+        } else if (hint != null && !hint.isBlank()) {
             narrative = narrative + " Reviewer hint: " + hint + ".";
             sources.put("reviewer_hint", hint);
         }
@@ -85,10 +99,58 @@ public class CommentaryService {
         c.setDraftedBy(actor);
         ProposalCommentary saved = repo.save(c);
 
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("section", s);
+        detail.put("advisory", true);
+        detail.put("confidence", c.getConfidence());
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+        }
         audit.ai("proposal-commentary", "COMMENTARY_DRAFTED", "Application", reference,
-                "Drafted '%s' commentary (advisory, %d bullet point(s))".formatted(s, bullets.size()),
-                Map.of("section", s, "advisory", true, "confidence", c.getConfidence()));
+                "Drafted '%s' commentary (advisory, %d bullet point(s))".formatted(s, bullets.size()), detail);
         return saved;
+    }
+
+    /**
+     * Advisory LLM draft of a section narrative, grounded in the deterministically-assembled
+     * {@code sources} + {@code bullets}. The model may improve the wording but is instructed to
+     * quote every figure/ratio/grade verbatim and to invent nothing; the result stays a DRAFT
+     * requiring human review. Returns {@code null} when not configured / failed / empty, so the
+     * caller keeps the deterministic narrative (fail-soft, byte-identical default).
+     */
+    private String llmDraft(String section, Map<String, Object> sources, List<String> bullets,
+                            String deterministic, String hint) {
+        String system = "You are drafting an ADVISORY narrative paragraph for the '" + section
+                + "' section of a wholesale-credit proposal. Write grounded, professional prose using ONLY "
+                + "the facts provided. Never invent or alter any figure, ratio, grade, PD or amount — quote "
+                + "them exactly as given. This draft is advisory and will be reviewed and confirmed by a named "
+                + "human before use. Reply with 2-4 sentences.";
+        StringBuilder user = new StringBuilder();
+        user.append("Grounded facts (JSON, source of truth): ").append(sources).append('\n');
+        user.append("Key bullet points: ").append(bullets).append('\n');
+        user.append("Deterministic draft for reference (improve the wording, not the facts): ")
+                .append(deterministic);
+        if (hint != null && !hint.isBlank()) {
+            user.append("\nReviewer hint: ").append(hint);
+        }
+        LlmResult r = safeComplete(LlmRequest.of("commentary", system, user.toString()));
+        if (!r.usable()) {
+            return null;
+        }
+        if (hint != null && !hint.isBlank()) {
+            sources.put("reviewer_hint", hint);
+        }
+        sources.put("llm_model", r.model());
+        return r.text().strip();
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
     }
 
     @Transactional

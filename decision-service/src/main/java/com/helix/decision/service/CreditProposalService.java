@@ -1,6 +1,9 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.DealEnvelopeDto;
@@ -37,16 +40,19 @@ public class CreditProposalService {
     private final UpstreamClient upstream;
     private final GroupInsightsService groupInsights;
     private final AuditService audit;
+    private final LlmClient llm;
 
     public CreditProposalService(CreditProposalRepository proposals, CovenantRepository covenants,
                                  CreditDecisionRepository decisions, UpstreamClient upstream,
-                                 GroupInsightsService groupInsights, AuditService audit) {
+                                 GroupInsightsService groupInsights, AuditService audit,
+                                 LlmClient llm) {
         this.proposals = proposals;
         this.covenants = covenants;
         this.decisions = decisions;
         this.upstream = upstream;
         this.groupInsights = groupInsights;
         this.audit = audit;
+        this.llm = llm;
     }
 
     @Transactional
@@ -59,10 +65,22 @@ public class CreditProposalService {
         List<Covenant> covs = covenants.findByApplicationReference(reference);
         CreditDecision dec = decisions.findFirstByApplicationReferenceOrderByCreatedAtDesc(reference).orElse(null);
 
+        // Optional advisory LLM narrative, grounded in the SAME figures rendered below (every figure
+        // quoted verbatim in the prompt). When a provider is configured it adds ONE extra executive-
+        // narrative prose section; the deterministic sections, structured citations, versioning and
+        // the confirm gate are unchanged. Provider 'none' (default) → no section, markdown/html
+        // byte-identical to today.
+        LlmResult proposalDraft = llmNarrative(env, rs, covs, dec);
+        boolean llmDrafted = proposalDraft.usable();
+
         Md md = new Md();
         md.h1("Credit proposal · " + env.applicationReference());
         md.muted("Prepared by Helix · grounded in platform data · awaiting named human review and sign-off");
         md.spacer();
+        if (llmDrafted) {
+            md.h2("Executive narrative (AI-drafted, advisory)");
+            md.line(proposalDraft.text().strip());
+        }
 
         // 1) Executive summary
         md.h2("1. Executive summary");
@@ -229,10 +247,17 @@ public class CreditProposalService {
                 "Routing & decision", "Provenance"));
         p.setGeneratedBy(actor);
         CreditProposal saved = proposals.save(p);
+        Map<String, Object> propDetail = new LinkedHashMap<>();
+        propDetail.put("version", version);
+        propDetail.put("facilities", env.facilities() == null ? 0 : env.facilities().size());
+        propDetail.put("collaterals", env.collaterals() == null ? 0 : env.collaterals().size());
+        if (llmDrafted) {
+            propDetail.put("llmDrafted", true);
+            propDetail.put("llmModel", proposalDraft.model());
+        }
         audit.ai("proposal-generator", "CREDIT_PROPOSAL_GENERATED", "Application", reference,
                 "Generated credit proposal v%d (%d sections, grounded)".formatted(version, p.getSections().size()),
-                Map.of("version", version, "facilities", env.facilities() == null ? 0 : env.facilities().size(),
-                        "collaterals", env.collaterals() == null ? 0 : env.collaterals().size()));
+                propDetail);
         return saved;
     }
 
@@ -411,6 +436,62 @@ public class CreditProposalService {
                         "membersBelowHurdle", insights.membersBelowHurdle(),
                         "advisory", true));
         return saved;
+    }
+
+    // ----------------------------------------------------------- advisory LLM narrative
+
+    /**
+     * Advisory LLM narrative for the per-deal proposal, grounded strictly in the deterministic
+     * figures the report renders (amount, grade, PD, pricing, ratios, routing). The model is told
+     * to quote every figure verbatim and invent nothing, and never to recommend a decision. Returns
+     * the {@link LlmResult} so the caller keeps the deterministic render on {@code none}/failure/empty.
+     */
+    private LlmResult llmNarrative(DealEnvelopeDto env, RiskSummaryDto rs, List<Covenant> covs, CreditDecision dec) {
+        String system = "You are drafting an ADVISORY executive narrative for a wholesale-credit proposal "
+                + "(capability=proposal-draft). Write grounded, professional prose using ONLY the facts supplied. "
+                + "Quote every figure (amount, grade, PD, rate, RAROC, hurdle, ratios) exactly as given and never "
+                + "invent, estimate or change a value. Do not approve, reject or recommend a decision; a named human "
+                + "at the required authority signs. Reply with 3-5 sentences of plain prose.";
+        StringBuilder user = new StringBuilder();
+        user.append("Borrower: ").append(nv(env.counterpartyName())).append("; jurisdiction/segment: ")
+                .append(nv(env.jurisdiction())).append(" / ").append(nv(env.segment())).append(".\n");
+        user.append("Proposed total exposure: ").append(money(env.totalProposedAmount(), env.currency()))
+                .append(" over ").append(env.tenorMonths()).append(" months across ")
+                .append(env.facilities() == null ? 0 : env.facilities().size()).append(" facility line(s).\n");
+        if (rs.rating() != null) {
+            user.append("Rating: model ").append(nv(rs.rating().modelGrade())).append(", final ")
+                    .append(nv(rs.rating().finalGrade())).append(", PD ").append(pct(rs.rating().pd()))
+                    .append(rs.rating().overridden() ? " (override applied)" : "").append(".\n");
+        }
+        if (rs.capital() != null) {
+            user.append("Capital projection: exposure class ").append(nv(rs.capital().exposureClass()))
+                    .append(", RWA ").append(money(rs.capital().rwa(), env.currency())).append(".\n");
+        }
+        if (rs.pricing() != null) {
+            user.append("Pricing (advisory): rate ").append(pct(rs.pricing().recommendedRate()))
+                    .append(", RAROC ").append(pct(rs.pricing().raroc())).append(" vs hurdle ")
+                    .append(pct(rs.pricing().hurdleRaroc()))
+                    .append(rs.pricing().belowHurdle() ? " (below hurdle)" : "").append(".\n");
+        }
+        if (env.ratios() != null && !env.ratios().isEmpty()) {
+            user.append("Key ratios: ").append(env.ratios()).append(".\n");
+        }
+        user.append("Covenants set: ").append(covs.size()).append(".\n");
+        if (dec != null) {
+            user.append("Routing: required authority ").append(nv(dec.getRequiredAuthority()))
+                    .append(", status ").append(nv(dec.getStatus()))
+                    .append(dec.getOutcome() == null ? "" : (", outcome " + dec.getOutcome())).append(".\n");
+        }
+        return safeComplete(LlmRequest.of("proposal-draft", system, user.toString()));
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
     }
 
     // ----------------------------------------------------------- helpers

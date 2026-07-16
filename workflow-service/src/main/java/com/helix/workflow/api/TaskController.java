@@ -40,23 +40,46 @@ public class TaskController {
     @PostMapping
     public WorkItem create(@RequestBody CreateTaskRequest body,
                            @RequestHeader(value = "X-Actor", required = false) String actor) {
-        return tasks.create(body, actor);
+        // Derive actorType server-side — a request body cannot forge SYSTEM/AI over the
+        // public HTTP boundary (the trusted in-process stage-entry mirror keeps its own).
+        return tasks.create(withDerivedActorType(body, actor), actor);
     }
 
     @PostMapping("/fanout")
     public FanoutResult fanout(@RequestBody FanoutRequest body,
                                @RequestHeader(value = "X-Actor", required = false) String actor) {
-        return tasks.fanout(body, actor);
+        return tasks.fanout(withDerivedActorType(body, actor), actor);
     }
 
     @GetMapping("/inbox")
-    public List<WorkItem> inbox(@RequestParam("assignee") String assignee) {
-        return tasks.inbox(assignee);
+    public List<WorkItem> inbox(@RequestParam("assignee") String assignee,
+                                @RequestHeader(value = "X-Actor", required = false) String actor) {
+        return tasks.inbox(assignee, actor);
     }
 
     @GetMapping("/queue/{key}")
-    public List<WorkItem> queue(@PathVariable("key") String queueKey) {
-        return tasks.queue(queueKey);
+    public List<WorkItem> queue(@PathVariable("key") String queueKey,
+                                @RequestHeader(value = "X-Actor", required = false) String actor) {
+        return tasks.queue(queueKey, actor);
+    }
+
+    /** Server-derived actorType: SYSTEM for a system principal, HUMAN otherwise (never trust the body). */
+    private static String derivedActorType(String actor) {
+        return (actor == null || actor.isBlank()
+                || "system".equalsIgnoreCase(actor) || "engine".equalsIgnoreCase(actor))
+                ? "SYSTEM" : "HUMAN";
+    }
+
+    private static CreateTaskRequest withDerivedActorType(CreateTaskRequest b, String actor) {
+        if (b == null) return null;
+        return new CreateTaskRequest(b.subjectType(), b.subjectRef(), b.taskType(), b.queueKey(),
+                b.assignee(), b.priority(), b.slaHours(), b.dedupeKey(), derivedActorType(actor), b.payload());
+    }
+
+    private static FanoutRequest withDerivedActorType(FanoutRequest b, String actor) {
+        if (b == null) return null;
+        return new FanoutRequest(b.subjectType(), b.subjectRef(), b.taskType(),
+                b.joinPolicy(), derivedActorType(actor), b.members());
     }
 
     @GetMapping("/subject")

@@ -1,6 +1,9 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.AuditEventDto;
@@ -52,14 +55,17 @@ public class ClientPlanningTemplateService {
     private final UpstreamClient upstream;
     private final AuditService audit;
     private final com.helix.common.governance.AiGovernanceClient governance;
+    private final LlmClient llm;
 
     public ClientPlanningTemplateService(ClientPlanningTemplateRepository templates,
                                          UpstreamClient upstream, AuditService audit,
-                                         com.helix.common.governance.AiGovernanceClient governance) {
+                                         com.helix.common.governance.AiGovernanceClient governance,
+                                         LlmClient llm) {
         this.templates = templates;
         this.upstream = upstream;
         this.audit = audit;
         this.governance = governance;
+        this.llm = llm;
     }
 
     @Transactional
@@ -139,11 +145,23 @@ public class ClientPlanningTemplateService {
         // ---------- completeness nudges ----------
         List<String> nudges = composeNudges(cp, apps, withApp, exposureByCcy);
 
+        // ---------- optional advisory LLM narrative ----------
+        // Grounded in the SAME structured figures assembled above — every figure stays in its own
+        // structured field and is quoted verbatim in the prompt. When a provider is configured the
+        // model drafts an executive narrative (client overview · cross-sell whitespace · industry
+        // headwinds/tailwinds · wallet commentary) that is woven in as ONE extra prose section; the
+        // deterministic sections, all structured fields, and the RM-confirm gate are unchanged.
+        // Provider 'none' (default) → no section is added and the markdown/html are byte-identical.
+        LlmResult cptDraft = llmNarrative(cp, exposureByCcy, weightedPd, weightedRaroc, latestGrade,
+                facCount, currentFacilityTypes, potentialCrossSell, walletSizing, industryInsights, peerInsights);
+        boolean llmDrafted = cptDraft.usable();
+        String llmNarrative = llmDrafted ? cptDraft.text().strip() : null;
+
         // ---------- render markdown + html ----------
         Md md = new Md();
         renderCpt(md, cp, apps.size(), withApp, exposureByCcy, weightedPd, weightedRaroc,
                 latestGrade, facCount, currentFacilityTypes, potentialCrossSell,
-                walletSizing, industryInsights, peerInsights, nudges, groupRef, groupName);
+                walletSizing, industryInsights, peerInsights, nudges, groupRef, groupName, llmNarrative);
 
         Map<String, Object> citations = new LinkedHashMap<>();
         citations.put("counterparty",
@@ -185,11 +203,19 @@ public class ClientPlanningTemplateService {
         t.setHtml(md.html());
         t.setGeneratedBy("ai:cpt-generator");
         ClientPlanningTemplate saved = templates.save(t);
+        Map<String, Object> cptDetail = new LinkedHashMap<>();
+        cptDetail.put("version", version);
+        cptDetail.put("applicationCount", apps.size());
+        cptDetail.put("nudgeCount", nudges.size());
+        cptDetail.put("advisory", true);
+        if (llmDrafted) {
+            cptDetail.put("llmDrafted", true);
+            cptDetail.put("llmModel", cptDraft.model());
+        }
         audit.ai("cpt-generator", "CPT_GENERATED", "Counterparty", counterpartyReference,
                 "Generated CPT v%d for %s — %d application(s), %d nudge(s)"
                         .formatted(version, cp.legalName(), apps.size(), nudges.size()),
-                Map.of("version", version, "applicationCount", apps.size(),
-                        "nudgeCount", nudges.size(), "advisory", true));
+                cptDetail);
         return saved;
     }
 
@@ -222,6 +248,67 @@ public class ClientPlanningTemplateService {
                         t.getCounterpartyName()),
                 Map.of("cptId", id, "version", t.getVersion()));
         return saved;
+    }
+
+    // ============================================================ advisory LLM narrative
+
+    /**
+     * Advisory LLM narrative for the CPT, grounded strictly in the deterministic figures already
+     * assembled (exposure, PD, RAROC, grade, wallet, cross-sell, industry signals). The model is
+     * told to quote every figure verbatim and invent nothing; the result is woven in as one extra
+     * prose section and never changes a structured field or the RM-confirm gate. Returns the
+     * {@link LlmResult} so the caller keeps the deterministic render on {@code none}/failure/empty.
+     */
+    private LlmResult llmNarrative(CounterpartyDto cp, Map<String, Double> exposureByCcy,
+                                   Double weightedPd, Double weightedRaroc, String latestGrade,
+                                   int facCount, List<String> currentFacilityTypes, List<String> crossSell,
+                                   Map<String, Object> walletSizing, Map<String, Object> industryInsights,
+                                   List<String> peerInsights) {
+        String system = "You are drafting an ADVISORY relationship-planning narrative for a wholesale-credit "
+                + "Client Planning Template (capability=cpt-draft). Write a short executive narrative covering the "
+                + "client overview, cross-sell whitespace, industry headwinds/tailwinds and wallet commentary, using "
+                + "ONLY the facts supplied. Quote every figure (exposure, PD, RAROC, grade, revenue, wallet) exactly "
+                + "as given and never invent, estimate or change a value. This draft is advisory and a named RM must "
+                + "review and confirm it before use. Reply with 3-5 sentences of plain prose.";
+        StringBuilder user = new StringBuilder();
+        user.append("Client: ").append(nv(cp.legalName())).append(" (").append(cp.reference()).append(").\n");
+        user.append("Segment: ").append(nv(cp.segment())).append("; sector/industry: ").append(nv(cp.sector()))
+                .append(" / ").append(nv(cp.industry())).append("; country: ").append(nv(cp.country()))
+                .append("; borrower type: ").append(nv(cp.borrowerType())).append("; RM: ").append(nv(cp.rmId())).append(".\n");
+        if (!exposureByCcy.isEmpty()) {
+            user.append("Proposed exposure by currency: ").append(exposureByCcy.entrySet().stream()
+                    .map(e -> String.format(Locale.UK, "%,.0f", e.getValue()) + " " + e.getKey())
+                    .reduce((a, b) -> a + ", " + b).orElse("—")).append(".\n");
+        }
+        if (latestGrade != null) user.append("Latest grade: ").append(latestGrade).append(".\n");
+        if (weightedPd != null) user.append("Weighted-average PD: ").append(pct3(weightedPd)).append(".\n");
+        if (weightedRaroc != null) user.append("Weighted-average RAROC: ").append(pct(weightedRaroc)).append(".\n");
+        user.append("Facilities on the relationship: ").append(facCount).append("; current facility types: ")
+                .append(currentFacilityTypes.isEmpty() ? "none" : String.join(", ", currentFacilityTypes)).append(".\n");
+        if (crossSell != null && !crossSell.isEmpty()) {
+            user.append("Cross-sell whitespace (products not yet held): ").append(String.join(", ", crossSell)).append(".\n");
+        }
+        Object headwinds = industryInsights.get("headwinds");
+        Object tailwinds = industryInsights.get("tailwinds");
+        if (headwinds != null) user.append("Industry headwinds: ").append(headwinds).append(".\n");
+        if (tailwinds != null) user.append("Industry tailwinds: ").append(tailwinds).append(".\n");
+        Object baseRevenue = walletSizing.get("baseRevenue");
+        Object indicativeWallet = walletSizing.get("indicativeWallet");
+        if (baseRevenue != null) user.append("Wallet-sizing base revenue: ").append(baseRevenue).append(".\n");
+        if (indicativeWallet != null) user.append("Indicative wallet: ").append(indicativeWallet).append(".\n");
+        if (peerInsights != null && !peerInsights.isEmpty()) {
+            user.append("Peer observations: ").append(String.join("; ", peerInsights)).append(".\n");
+        }
+        return safeComplete(LlmRequest.of("cpt-draft", system, user.toString()));
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
     }
 
     // ============================================================ enrichment
@@ -398,11 +485,18 @@ public class ClientPlanningTemplateService {
                                   String latestGrade, int facCount, List<String> currentFacTypes,
                                   List<String> crossSell, Map<String, Object> wallet,
                                   Map<String, Object> industry, List<String> peer, List<String> nudges,
-                                  String groupRef, String groupName) {
+                                  String groupRef, String groupName, String llmNarrative) {
         md.h1("Client planning template · " + cp.legalName() + " (" + cp.reference() + ")");
         md.muted("Grounded in counterparty + applications + risk data. Advisory; "
                 + "deterministic figures (grade / capital / pricing) are quoted verbatim, never recomputed.");
         md.spacer();
+
+        // 0. Executive narrative (AI-drafted, advisory) — present only when an LLM provider is
+        // configured; the numbered deterministic sections below are unaffected either way.
+        if (llmNarrative != null && !llmNarrative.isBlank()) {
+            md.h2("Executive narrative (AI-drafted, advisory)");
+            md.line(llmNarrative);
+        }
 
         // 1. Client overview
         md.h2("1. Client overview");

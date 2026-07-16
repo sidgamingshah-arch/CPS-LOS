@@ -38,7 +38,24 @@ export const auth = {
     call<LoginResult>("/config/api/auth/login", "POST", { username, password }),
   me: () => call<{ actor: string; roles: string[]; expiresAtMillis: number }>(
     "/config/api/auth/me", "GET"),
-  mode: () => call<{ mode: string; enforced: boolean }>("/auth/mode", "GET"),
+  mode: () => call<{ mode: string; enforced: boolean; securityMode?: string }>("/auth/mode", "GET"),
+};
+
+// ---- SSO / real authentication (helix.security.mode: none | oidc | ldap) ----
+// `mode` is UNAUTHENTICATED so the SPA can read it before login to decide between the
+// mock/actor-selector login (none) and the Authorization-Code + PKCE SSO redirect (oidc).
+export type OidcClientConfig = {
+  authorizationUri?: string; tokenUri?: string; clientId?: string;
+  scopes?: string; redirectUri?: string;
+};
+export type SecurityMode = {
+  mode: string; oidc: boolean; ldap: boolean; secured: boolean;
+  oidcClient?: OidcClientConfig;
+};
+export const security = {
+  mode: () => call<SecurityMode>("/config/api/security/mode", "GET"),
+  whoami: () => call<{ actor: string; roles: string[]; authenticated: boolean; mode: string }>(
+    "/config/api/security/whoami", "GET"),
 };
 
 // ---- config / abstraction layer ----
@@ -1002,14 +1019,18 @@ export const tasks = {
 // The inbox for a role dashboard reads the decision-service shared surface (the
 // primary collaboration lane); `svc` overridable for other services if needed.
 export const queries = {
-  list: (q?: { subjectRef?: string; addressee?: string }, svc = "decision") => {
+  // Pass `actor` so the server-side, caller-scoped listing (Fix 2) reflects the signed-in
+  // user (a token, when present, still wins at the gateway). subjectRef/addressee narrow
+  // WITHIN the caller's visible set; they never widen it.
+  list: (q?: { subjectRef?: string; addressee?: string }, svc = "decision", actor?: string) => {
     const p = new URLSearchParams();
     if (q?.subjectRef) p.set("subjectRef", q.subjectRef);
     if (q?.addressee) p.set("addressee", q.addressee);
     const qs = p.toString();
-    return call<any[]>(`/${svc}/api/queries` + (qs ? `?${qs}` : ""), "GET");
+    return call<any[]>(`/${svc}/api/queries` + (qs ? `?${qs}` : ""), "GET", undefined, actor);
   },
-  get: (ref: string, svc = "decision") => call<any>(`/${svc}/api/queries/${ref}`, "GET"),
+  get: (ref: string, svc = "decision", actor?: string) =>
+    call<any>(`/${svc}/api/queries/${ref}`, "GET", undefined, actor),
 };
 
 // ---- print / PDF rendering (dependency-free print pipeline) ----
@@ -1037,12 +1058,22 @@ export const printing = {
     fetchText(`/decision/api/decisions/${encodeURIComponent(ref)}/credit-proposal/print`, actor),
   // Open a loaded standalone-HTML string in a new window; the page auto-invokes the
   // browser print dialog so the user can "Save as PDF". Pop-up-blocker aware.
+  //
+  // Security: the HTML is served from a Blob URL opened with `noopener`, so the new
+  // window gets NO `window.opener` handle back to this app (no reverse-tabnabbing) and
+  // is NOT same-origin with us. We never `document.write` fetched HTML into a live,
+  // opener-retaining, same-origin window. The blob page still auto-prints via its own
+  // embedded <script>. The object URL is revoked after a short delay so the browser has
+  // time to load it.
   openHtmlWindow: (html: string, notify?: (m: string, err?: boolean) => void): boolean => {
-    const w = window.open("", "_blank");
-    if (!w) { notify?.("Enable pop-ups for this site to download the PDF.", true); return false; }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const w = window.open(blobUrl, "_blank", "noopener");
+    if (!w) {
+      URL.revokeObjectURL(blobUrl);
+      notify?.("Enable pop-ups for this site to download the PDF.", true);
+      return false;
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
     return true;
   },
   // Convenience: fetch + open in one call, surfacing errors through `notify`.

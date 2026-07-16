@@ -22,7 +22,6 @@ export default function Coi() {
   const { ref: ctxRef, actor } = useApp();
   const apps = useAsync(() => origination.list(), []);
   const [ref, setRef] = useState(ctxRef ?? "");
-  const [attester, setAttester] = useState(actor ?? "credit.officer");
   const [role, setRole] = useState("CREDIT_OFFICER");
   const [declaration, setDeclaration] = useState("NONE");
   const [note, setNote] = useState("");
@@ -42,9 +41,9 @@ export default function Coi() {
     try {
       await coi.attest(
         { subjectType: "application", subjectRef: ref, role, declaration, note: note || undefined },
-        attester,
+        actor,
       );
-      setToast({ text: `COI attestation recorded by ${attester} (${declaration})` });
+      setToast({ text: `COI attestation recorded by ${actor} (${declaration})` });
       setNote("");
       reload();
     } catch (e: any) {
@@ -83,8 +82,8 @@ export default function Coi() {
       {ref && (
         <Card title="Record my attestation" right={<HumanBadge label="X-ACTOR RECORDS OWN DECLARATION" />}>
           <div className="coi-form">
-            <Field label="Attester (X-Actor)" hint="The signed-in human records their own declaration">
-              <input value={attester} onChange={(e) => setAttester(e.target.value)} />
+            <Field label="Attester (X-Actor)" hint="The verified signed-in human records their own declaration — cannot be overridden">
+              <div className="coi-actor">Acting as <b>{actor}</b></div>
             </Field>
             <Field label="Role (claimed)">
               <input value={role} onChange={(e) => setRole(e.target.value)} />

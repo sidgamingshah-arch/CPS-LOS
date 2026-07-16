@@ -55,6 +55,17 @@ def call_text(path, actor="test.user"):
         return e.code, e.read().decode()
 
 
+def call_text_full(path, actor="test.user"):
+    """Like call_text but also returns response headers (headers.get() is case-insensitive)."""
+    req = urllib.request.Request(GW + path, method="GET")
+    req.add_header("X-Actor", actor)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status, r.read().decode(), r.headers
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode(), e.headers
+
+
 def check(name, cond, detail=""):
     global PASS, FAIL
     if cond:
@@ -167,8 +178,10 @@ sanction_id = letter["id"]
 
 # ------------------------------------------------------------------ print: confirmed document
 print("== docpdf 2. Print endpoint — confirmed generated document ==")
-st, page = call_text(f"/decision/api/docs/{doc_id}/print", actor="cad.officer")
+st, page, hdrs = call_text_full(f"/decision/api/docs/{doc_id}/print", actor="cad.officer")
 check("document print returns 200", st == 200, f"{st}")
+check("document print sets Cache-Control: no-store (rendered figures never disk/shared-cached)",
+      "no-store" in ((hdrs.get("Cache-Control") or "")).lower(), str(hdrs.get("Cache-Control")))
 is_pdf = page.startswith("%PDF")
 is_html = page.lstrip().startswith("<!DOCTYPE html")
 check("document print is a standalone document (PDF magic bytes or standalone HTML)", is_pdf or is_html,
@@ -188,8 +201,10 @@ if is_html:
 
 # ------------------------------------------------------------------ print: credit proposal
 print("== docpdf 3. Print endpoint — credit proposal ==")
-st, ppage = call_text(f"/decision/api/decisions/{ref}/credit-proposal/print", actor="analyst.user")
+st, ppage, phdrs = call_text_full(f"/decision/api/decisions/{ref}/credit-proposal/print", actor="analyst.user")
 check("proposal print returns 200", st == 200, f"{st}")
+check("proposal print sets Cache-Control: no-store",
+      "no-store" in ((phdrs.get("Cache-Control") or "")).lower(), str(phdrs.get("Cache-Control")))
 p_html = ppage.lstrip().startswith("<!DOCTYPE html")
 check("proposal print is a standalone document", ppage.startswith("%PDF") or p_html, ppage[:60])
 if p_html:
@@ -248,6 +263,30 @@ rendered = [e for e in (events or []) if e.get("eventType") == "DOCUMENT_RENDERE
 check("DOCUMENT_RENDERED audit event(s) present", st == 200 and len(rendered) >= 1, f"{st} {len(rendered)}")
 check("render audit actor is the requesting human (X-Actor), not AI",
       all(e.get("actorType") == "HUMAN" for e in rendered) if rendered else False, str(rendered[:1]))
+
+# ------------------------------------------------------------------ XSS: clause free text is escaped
+print("== docpdf 8. Defense-in-depth — human/AI clause free text is HTML-escaped in the print output ==")
+st, xdoc = call("POST", f"/decision/api/docs/applications/{ref}/generate",
+                {"templateKey": "FACILITY_AGREEMENT", "variables": {}}, actor="cad.officer")
+die_if_none("xss doc generate", xdoc)
+check("clean draft generated for XSS check", st == 200 and xdoc.get("status") == "DRAFT", f"{st}")
+xdoc_id = xdoc["id"]
+XSS = "<script>alert('pwn')</script> and <img src=x onerror=alert(1)>"
+st, xadd = call("POST", f"/decision/api/docs/{xdoc_id}/clauses",
+                {"clauseRef": "injected_clause", "customTitle": "Injected", "customText": XSS}, actor="cad.officer")
+check("custom clause with embedded HTML/script added",
+      st == 200 and "injected_clause" in (xadd.get("clauseOrder") or []), f"{st} {xadd.get('clauseOrder') if xadd else xadd}")
+# The stored authoritative html must already carry the escaped form (defense at the source)…
+check("generated document html escapes the injected <script> (not raw)",
+      "&lt;script&gt;" in (xadd.get("html") or "") and "<script>alert" not in (xadd.get("html") or ""),
+      "raw <script> present in stored document html")
+# …and so must the standalone print rendering.
+st, xpage = call_text(f"/decision/api/docs/{xdoc_id}/print", actor="cad.officer")
+check("clause print returns 200", st == 200, f"{st}")
+check("print output escapes the injected <script> tag (rendered inert)",
+      "&lt;script&gt;" in xpage and "<script>alert" not in xpage, "raw <script> present in print output")
+check("print output escapes the injected onerror <img> tag",
+      "&lt;img src=x onerror" in xpage and "<img src=x onerror" not in xpage, "raw <img onerror> present in print output")
 
 summary()
 sys.exit(1 if FAIL else 0)

@@ -1,6 +1,9 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.DealEnvelopeDto;
@@ -44,14 +47,17 @@ public class DocGenService {
     private final AuditService audit;
     private final CreditDecisionRepository decisions;
     private final ConditionPrecedentRepository conditionsPrecedent;
+    private final LlmClient llm;
 
     public DocGenService(GeneratedDocumentRepository docs, UpstreamClient upstream, AuditService audit,
-                         CreditDecisionRepository decisions, ConditionPrecedentRepository conditionsPrecedent) {
+                         CreditDecisionRepository decisions, ConditionPrecedentRepository conditionsPrecedent,
+                         LlmClient llm) {
         this.docs = docs;
         this.upstream = upstream;
         this.audit = audit;
         this.decisions = decisions;
         this.conditionsPrecedent = conditionsPrecedent;
+        this.llm = llm;
     }
 
     @Transactional(readOnly = true)
@@ -119,7 +125,8 @@ public class DocGenService {
         for (String key : clauseKeys) {
             String body = renderTemplateClause(key, vars);
             order.add(key);
-            clauses.put(key, clauseRow(humanise(key), body, "template:" + templateKey));
+            // Template clauses are system-authored trusted HTML (see renderTemplateClause).
+            clauses.put(key, clauseRow(humanise(key), body, "template:" + templateKey, true));
         }
 
         GeneratedDocument d = new GeneratedDocument();
@@ -215,6 +222,8 @@ public class DocGenService {
         String title;
         String text;
         String source;
+        boolean llmDrafted = false;
+        String llmModel = null;
         if (req.tncRecordKey() != null && !req.tncRecordKey().isBlank()) {
             MasterRecordDto tnc = findTnc(req.tncRecordKey());
             if (tnc == null) throw ApiException.notFound("No TNC_MASTER: " + req.tncRecordKey());
@@ -228,6 +237,19 @@ public class DocGenService {
             title = req.customTitle() != null ? req.customTitle() : humanise(clauseRef);
             text = req.customText();
             source = "custom:" + actor;
+            // Optional advisory LLM polish of the analyst's custom clause text. When a provider is
+            // configured the model tightens the wording into formal clause prose without changing its
+            // meaning; the result is still human/AI free text (HTML-escaped at render), still lands in
+            // a DRAFT document, and the confirm-lock + SoD gate are unchanged. Provider 'none' (default)
+            // → the custom text is used verbatim, byte-identical to today. The canonical TNC_MASTER
+            // text (above) is never rewritten.
+            LlmResult polished = llmPolishClause(title, text);
+            if (polished.usable()) {
+                text = polished.text().strip();
+                llmDrafted = true;
+                llmModel = polished.model();
+                source = source + " · llm-polished";
+            }
         }
         Map<String, Object> row = clauseRow(title, text, source);
         row.put("addedBy", actor);
@@ -238,10 +260,44 @@ public class DocGenService {
         d.setClauseOrder(order);
         d.setHtml(renderHtml(d));
         GeneratedDocument saved = docs.save(d);
+        Map<String, Object> clauseDetail = new LinkedHashMap<>();
+        clauseDetail.put("clauseRef", clauseRef);
+        clauseDetail.put("source", source);
+        if (llmDrafted) {
+            clauseDetail.put("llmDrafted", true);
+            clauseDetail.put("llmModel", llmModel);
+        }
         audit.ai("doc-generator", "DOCUMENT_CLAUSE_ADDED", "GeneratedDocument", String.valueOf(docId),
                 "Added clause '%s' from %s".formatted(clauseRef, source),
-                Map.of("clauseRef", clauseRef, "source", source));
+                clauseDetail);
         return saved;
+    }
+
+    /**
+     * Advisory LLM polish of an analyst's custom clause text, grounded strictly in the supplied text.
+     * The model is told to preserve meaning, parties and every figure and to invent nothing; the
+     * polished text remains an advisory suggestion inside a DRAFT document behind the confirm-lock +
+     * SoD gate. Returns the {@link LlmResult} so the caller keeps the verbatim custom text on
+     * {@code none}/failure/empty — the byte-identical default.
+     */
+    private LlmResult llmPolishClause(String title, String text) {
+        String system = "You are polishing a single ADVISORY clause for a wholesale-credit facility/sanction "
+                + "document (capability=docgen-clause). Rewrite the supplied clause text into clear, formal legal "
+                + "prose WITHOUT changing its meaning. Preserve every party name, amount, rate, date and defined "
+                + "term exactly as given and never invent, add or remove an obligation or a figure. This is an "
+                + "advisory suggestion inside a DRAFT document that a named human must confirm. Reply with only the "
+                + "revised clause text.";
+        String user = "Clause title: " + (title == null ? "" : title) + "\nClause text to polish:\n" + text;
+        return safeComplete(LlmRequest.of("docgen-clause", system, user));
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
     }
 
     @Transactional
@@ -269,6 +325,8 @@ public class DocGenService {
         if (row == null) throw ApiException.notFound("No clause '" + clauseRef + "' on document");
         row.put("text", text);
         row.put("editedBy", actor);
+        // Edited text is human free text — never trust it as raw HTML (escape at render).
+        row.put("trustedHtml", false);
         row.put("source", row.getOrDefault("source", "template") + " · edited");
         d.setHtml(renderHtml(d));
         GeneratedDocument saved = docs.save(d);
@@ -341,10 +399,22 @@ public class DocGenService {
     }
 
     private Map<String, Object> clauseRow(String title, String text, String source) {
+        return clauseRow(title, text, source, false);
+    }
+
+    /**
+     * Builds a clause row. {@code trustedHtml=true} marks a system-authored template
+     * clause whose body is intentional HTML (bold, per-facility tables, ordered lists)
+     * and is emitted verbatim. Human/AI-authored free text (TNC clauses, custom text,
+     * edited clauses) leaves the flag off so {@link #renderHtml} HTML-escapes it — a
+     * {@code <script>} in clause text is rendered inert.
+     */
+    private Map<String, Object> clauseRow(String title, String text, String source, boolean trustedHtml) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("title", title);
         row.put("text", text);
         row.put("source", source);
+        row.put("trustedHtml", trustedHtml);
         return row;
     }
 
@@ -455,9 +525,14 @@ public class DocGenService {
         for (String key : d.getClauseOrder()) {
             Map<String, Object> row = (Map<String, Object>) d.getClauses().get(key);
             if (row == null) continue;
+            // System-authored template clauses carry intentional HTML (bold, tables) and are
+            // emitted verbatim; human/AI-authored free text is HTML-escaped so injected markup
+            // (e.g. a <script>) is rendered inert. Defense-in-depth at the source of the body.
+            String text = String.valueOf(row.getOrDefault("text", ""));
+            String body = Boolean.TRUE.equals(row.get("trustedHtml")) ? text : mdToHtml(text);
             sb.append("<section><h2>").append(i++).append(". ")
                     .append(escape(String.valueOf(row.getOrDefault("title", key)))).append("</h2>")
-                    .append("<p>").append(String.valueOf(row.getOrDefault("text", "")))
+                    .append("<p>").append(body)
                     .append("</p><p class=\"prov\"><small>source: ")
                     .append(escape(String.valueOf(row.getOrDefault("source", "template"))))
                     .append("</small></p></section>");
@@ -486,5 +561,15 @@ public class DocGenService {
 
     private String escape(String s) {
         return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /**
+     * Escape human/AI-authored free text, then re-enable a tiny, safe Markdown subset
+     * ({@code **bold**} / {@code _italic_}). Mirrors CreditProposalService's {@code mdToHtml}
+     * so a {@code <script>} in the text becomes {@code &lt;script&gt;} (inert) while ordinary
+     * emphasis still renders.
+     */
+    private String mdToHtml(String s) {
+        return escape(s).replaceAll("\\*\\*(.+?)\\*\\*", "<b>$1</b>").replaceAll("_(.+?)_", "<i>$1</i>");
     }
 }

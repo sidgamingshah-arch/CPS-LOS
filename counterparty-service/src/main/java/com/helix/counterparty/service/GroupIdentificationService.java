@@ -1,6 +1,9 @@
 package com.helix.counterparty.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.common.web.ApiException;
 import com.helix.counterparty.dto.InitiationDtos.GroupCandidate;
 import com.helix.counterparty.dto.InitiationDtos.GroupSuggestionResult;
@@ -16,7 +19,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -51,14 +56,17 @@ public class GroupIdentificationService {
     private final CounterpartyGroupRepository groups;
     private final AuditService audit;
     private final com.helix.common.governance.AiGovernanceClient governance;
+    private final LlmClient llm;
 
     public GroupIdentificationService(CounterpartyRepository counterparties,
                                       CounterpartyGroupRepository groups, AuditService audit,
-                                      com.helix.common.governance.AiGovernanceClient governance) {
+                                      com.helix.common.governance.AiGovernanceClient governance,
+                                      LlmClient llm) {
         this.counterparties = counterparties;
         this.groups = groups;
         this.audit = audit;
         this.governance = governance;
+        this.llm = llm;
     }
 
     @Transactional
@@ -134,6 +142,16 @@ public class GroupIdentificationService {
         } else {
             recommendation = "NO_STRONG_MATCH";
         }
+        double topScore = Math.max(topGroup, siblings.isEmpty() ? 0.0 : siblings.get(0).score());
+
+        // Optional advisory LLM rationale per suggestion: when a bank has configured an external
+        // model it appends one human-readable sentence to each candidate's signals, grounded ONLY
+        // in the computed signals + similarity score. It never adds or removes a candidate and
+        // never changes a similarity score, the recommendation or topScore — the human still tags
+        // the group. Provider 'none' (default) → signals byte-identical to today.
+        List<String> llmModels = new ArrayList<>();
+        List<GroupCandidate> groupOut = draftGroupRationales(groupMatches, llmModels);
+        List<SiblingCandidate> siblingOut = draftSiblingRationales(siblings, llmModels);
 
         CounterpartyGroup current = subject.getGroupId() == null ? null
                 : groupById.get(subject.getGroupId());
@@ -142,19 +160,91 @@ public class GroupIdentificationService {
                 subject.getId(), subject.getReference(), subject.getLegalName(),
                 subject.getGroupId(),
                 current == null ? null : current.getReference(),
-                groupMatches, siblings, recommendation,
-                Math.max(topGroup, siblings.isEmpty() ? 0.0 : siblings.get(0).score()),
+                groupOut, siblingOut, recommendation,
+                topScore,
                 true);
 
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("recommendation", recommendation);
+        detail.put("groupMatches", groupOut.size());
+        detail.put("siblings", siblingOut.size());
+        detail.put("topScore", result.topScore());
+        detail.put("advisory", true);
+        if (!llmModels.isEmpty()) {
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmModels.get(llmModels.size() - 1));
+        }
         audit.ai("group-identification", "GROUP_SUGGESTED", "Counterparty", subject.getReference(),
                 "Suggested %d group(s) + %d ungrouped sibling(s); recommendation=%s; top=%.3f"
-                        .formatted(groupMatches.size(), siblings.size(), recommendation, result.topScore()),
-                Map.of("recommendation", recommendation,
-                        "groupMatches", groupMatches.size(),
-                        "siblings", siblings.size(),
-                        "topScore", result.topScore(),
-                        "advisory", true));
+                        .formatted(groupOut.size(), siblingOut.size(), recommendation, result.topScore()),
+                detail);
         return result;
+    }
+
+    // ------------------------------------------------------- advisory LLM rationale
+
+    private List<GroupCandidate> draftGroupRationales(List<GroupCandidate> in, List<String> llmModels) {
+        List<GroupCandidate> out = new ArrayList<>(in.size());
+        for (GroupCandidate g : in) {
+            List<String> sig = llmRationale("parent group", g.name() + " (" + g.reference() + ")",
+                    g.score(), g.signals(), llmModels);
+            out.add(sig == g.signals() ? g
+                    : new GroupCandidate(g.groupId(), g.reference(), g.name(), g.groupRm(),
+                            g.memberCount(), g.score(), sig));
+        }
+        return out;
+    }
+
+    private List<SiblingCandidate> draftSiblingRationales(List<SiblingCandidate> in, List<String> llmModels) {
+        List<SiblingCandidate> out = new ArrayList<>(in.size());
+        for (SiblingCandidate s : in) {
+            List<String> sig = llmRationale("sibling counterparty", s.legalName() + " (" + s.reference() + ")",
+                    s.score(), s.signals(), llmModels);
+            out.add(sig == s.signals() ? s
+                    : new SiblingCandidate(s.counterpartyId(), s.reference(), s.legalName(),
+                            s.country(), s.sector(), s.score(), sig));
+        }
+        return out;
+    }
+
+    /**
+     * Advisory LLM rationale for ONE candidate suggestion, grounded ONLY in the already-computed
+     * deterministic signals + similarity score. On a usable result it returns the signals with one
+     * plain-prose rationale sentence appended; it NEVER changes the similarity score and (being a
+     * per-candidate augmentation) NEVER adds or removes a candidate. Returns the ORIGINAL signals
+     * list unchanged when not configured / failed / empty — fail-soft, byte-identical default.
+     */
+    private List<String> llmRationale(String kind, String label, double score,
+                                      List<String> signals, List<String> llmModels) {
+        if (signals == null || signals.isEmpty()) {
+            return signals;
+        }
+        String system = "You are drafting an ADVISORY one-sentence rationale for a suggested borrower-group "
+                + "link in a wholesale-credit onboarding workflow. capability=group-identification. In ONE plain-"
+                + "prose sentence, summarise WHY this " + kind + " is a candidate, using ONLY the similarity "
+                + "signals and score supplied. Reuse the similarity score and every signal value verbatim — never "
+                + "invent or change a value, and never add or drop a candidate. This is a suggestion only: a named "
+                + "human still tags the group.";
+        String user = "Candidate " + kind + ": " + label
+                + "\nSimilarity score (0..1 — do not change): " + String.format(Locale.UK, "%.3f", score)
+                + "\nComputed signals (source of truth): " + String.join("; ", signals);
+        LlmResult r = safeComplete(LlmRequest.of("group-identification", system, user));
+        if (!r.usable()) {
+            return signals;
+        }
+        llmModels.add(r.model());
+        List<String> augmented = new ArrayList<>(signals);
+        augmented.add("AI rationale: " + r.text().strip());
+        return augmented;
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
     }
 
     // ------------------------------------------------------- scoring internals

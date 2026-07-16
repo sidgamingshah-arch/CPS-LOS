@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fmt, origination, perfection } from "../api";
+import { fmt, masters, origination, perfection } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Col, DataTable, EmptyState, Field, HumanBadge, statusTone, useAsync } from "../ui";
 
@@ -97,6 +97,10 @@ function NewCase({ apps, actor, notify, onDone }: { apps: any[]; actor: string; 
 function CaseDetail({ perfRef, onChange }: { perfRef: string; onChange: () => void }) {
   const { actor, notify } = useApp();
   const view = useAsync(() => perfection.view(perfRef), [perfRef]);
+  // Vendors for VENDOR-step RFQs come from the VENDOR_MASTER — the human selects one,
+  // never a hardcoded literal (config-as-data, mirrors MonitoringArtifacts).
+  const vendors = useAsync(() => masters.list("VENDOR_MASTER").catch(() => [] as any[]), []);
+  const [vendorSel, setVendorSel] = useState<Record<string, string>>({});
   const run = async (fn: () => Promise<any>, ok: string) => {
     try { await fn(); notify(ok); view.reload(); onChange(); }
     catch (e: any) { notify(e.message, true); }
@@ -137,9 +141,23 @@ function CaseDetail({ perfRef, onChange }: { perfRef: string; onChange: () => vo
                             { role: s.ownerRole, notes: reason }, actor), "Step waived");
                         }}>Waive…</button>
                       {s.ownerRole === "VENDOR" && !s.vendorQueryRef && (
-                        <button className="btn subtle perf-btn"
-                          onClick={() => run(() => perfection.vendorRfq(perfRef, s.stepKey,
-                            { vendorId: "acme.valuers" }, actor), "Vendor RFQ raised")}>Vendor RFQ</button>
+                        <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                          <select
+                            style={{ width: "auto", minWidth: 130, padding: "3px 6px", fontSize: 11 }}
+                            value={vendorSel[s.stepKey] ?? ""}
+                            onChange={(e) => setVendorSel({ ...vendorSel, [s.stepKey]: e.target.value })}>
+                            <option value="">— select vendor —</option>
+                            {(vendors.data ?? []).map((v: any) => (
+                              <option key={v.recordKey} value={v.recordKey}>
+                                {v.payload?.name ? `${v.recordKey} · ${v.payload.name}` : v.recordKey}
+                              </option>
+                            ))}
+                          </select>
+                          <button className="btn subtle perf-btn"
+                            disabled={!vendorSel[s.stepKey]}
+                            onClick={() => run(() => perfection.vendorRfq(perfRef, s.stepKey,
+                              { vendorId: vendorSel[s.stepKey] }, actor), "Vendor RFQ raised")}>Vendor RFQ</button>
+                        </span>
                       )}
                     </div>
                   )}

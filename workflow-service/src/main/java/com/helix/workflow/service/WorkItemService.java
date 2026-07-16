@@ -238,15 +238,27 @@ public class WorkItemService {
 
     @Transactional
     public CompleteResult complete(String taskRef, String note, String actor) {
-        WorkItem wi = require(taskRef);
+        // The task ref may be a random TSK- ref (direct completion) OR a dedupeKey
+        // (the TaskClient mirror-complete path — callers pass e.g. "NTG:<ref>"). Resolve
+        // the direct ref first, then fall back to the newest still-open WorkItem for that key.
+        Optional<WorkItem> direct = items.findByTaskRef(taskRef);
+        boolean resolvedByDedupe = direct.isEmpty();
+        WorkItem wi = direct.orElseGet(() ->
+                items.findFirstByDedupeKeyAndStatusInOrderByIdDesc(taskRef, OPEN_STATES)
+                        .orElseThrow(() -> ApiException.notFound("No task: " + taskRef)));
+        String ref = wi.getTaskRef();
         if (TERMINAL.contains(wi.getStatus())) {
-            throw ApiException.conflict("Task " + taskRef + " is already " + wi.getStatus());
+            throw ApiException.conflict("Task " + ref + " is already " + wi.getStatus());
         }
         PoolSpec pool = resolvePool(wi.getQueueKey());
         boolean isAssignee = !blank(wi.getAssignee()) && wi.getAssignee().equalsIgnoreCase(actor);
-        if (!isAssignee && !isSupervisor(pool, actor)) {
+        // A mirror task holds no human assignee; when it is resolved via its dedupeKey (the
+        // originating SYSTEM/TaskClient mirror-complete path) closing it carries no ownership,
+        // so a pool role is not required. A CLAIMED task keeps its assignee/supervisor gate.
+        boolean systemMirror = resolvedByDedupe && blank(wi.getAssignee());
+        if (!isAssignee && !isSupervisor(pool, actor) && !systemMirror) {
             throw ApiException.forbiddenAutonomy(
-                    "Only the current assignee or a pool supervisor may complete task " + taskRef);
+                    "Only the current assignee or a pool supervisor may complete task " + ref);
         }
         Instant now = Instant.now();
         if (wi.getDueAt() != null && now.isAfter(wi.getDueAt())) {
@@ -254,8 +266,8 @@ public class WorkItemService {
         }
         wi.setStatus("COMPLETED");
         WorkItem saved = items.save(wi);
-        appendEvent(taskRef, "COMPLETED", actor, normalizeActorType(null, actor), note);
-        audit.human(actor == null ? "system" : actor, "TASK_COMPLETED", "WorkItem", taskRef,
+        appendEvent(ref, "COMPLETED", actor, normalizeActorType(null, actor), note);
+        audit.human(actor == null ? "system" : actor, "TASK_COMPLETED", "WorkItem", ref,
                 "Completed " + wi.getTaskType() + " for " + wi.getSubjectRef(),
                 Map.of("subjectRef", str(wi.getSubjectRef()), "slaBreached", wi.isSlaBreached()));
 
@@ -274,9 +286,19 @@ public class WorkItemService {
 
     @Transactional
     public SendBackResult sendBack(String taskRef, String note, String actor) {
+        if (blank(actor)) {
+            throw ApiException.forbiddenAutonomy("A named actor (X-Actor) is required to send a task back");
+        }
         WorkItem wi = require(taskRef);
         if (TERMINAL.contains(wi.getStatus())) {
             throw ApiException.conflict("Cannot send back a " + wi.getStatus() + " task");
+        }
+        // Authorize like complete(): only the current assignee or a pool supervisor may send back.
+        PoolSpec pool = resolvePool(wi.getQueueKey());
+        boolean isAssignee = !blank(wi.getAssignee()) && wi.getAssignee().equalsIgnoreCase(actor);
+        if (!isAssignee && !isSupervisor(pool, actor)) {
+            throw ApiException.forbiddenAutonomy(
+                    "Only the current assignee or a pool supervisor may send back task " + taskRef);
         }
         wi.setStatus("SENT_BACK");
         WorkItem original = items.save(wi);
@@ -313,7 +335,7 @@ public class WorkItemService {
             appendEvent(rework.getTaskRef(), "ASSIGNED", actor, normalizeActorType(null, actor),
                     "Returned to originator " + originator);
         }
-        audit.human(actor == null ? "system" : actor, "TASK_SENT_BACK", "WorkItem", taskRef,
+        audit.human(actor, "TASK_SENT_BACK", "WorkItem", taskRef,
                 "Sent back %s; opened rework %s (cycle %d)".formatted(wi.getTaskType(), rework.getTaskRef(), cycle),
                 Map.of("reworkTaskRef", rework.getTaskRef(), "reworkCycle", cycle, "reason", str(note)));
         return new SendBackResult(original, rework);
@@ -323,14 +345,25 @@ public class WorkItemService {
 
     @Transactional
     public WorkItem withdraw(String taskRef, String note, String actor) {
+        if (blank(actor)) {
+            throw ApiException.forbiddenAutonomy("A named actor (X-Actor) is required to withdraw a task");
+        }
         WorkItem wi = require(taskRef);
         if (TERMINAL.contains(wi.getStatus())) {
             throw ApiException.conflict("Task " + taskRef + " is already " + wi.getStatus());
         }
+        // Authorize to the current assignee, the task creator, or a pool supervisor.
+        PoolSpec pool = resolvePool(wi.getQueueKey());
+        boolean isAssignee = !blank(wi.getAssignee()) && wi.getAssignee().equalsIgnoreCase(actor);
+        boolean isCreator = !blank(wi.getCreatedBy()) && wi.getCreatedBy().equalsIgnoreCase(actor);
+        if (!isAssignee && !isCreator && !isSupervisor(pool, actor)) {
+            throw ApiException.forbiddenAutonomy(
+                    "Only the assignee, the task creator, or a pool supervisor may withdraw task " + taskRef);
+        }
         wi.setStatus("WITHDRAWN");
         WorkItem saved = items.save(wi);
         appendEvent(taskRef, "WITHDRAWN", actor, normalizeActorType(null, actor), note);
-        audit.human(actor == null ? "system" : actor, "TASK_WITHDRAWN", "WorkItem", taskRef,
+        audit.human(actor, "TASK_WITHDRAWN", "WorkItem", taskRef,
                 "Withdrew " + wi.getTaskType() + " for " + wi.getSubjectRef(), Map.of("reason", str(note)));
         return saved;
     }
@@ -344,13 +377,37 @@ public class WorkItemService {
     }
 
     @Transactional(readOnly = true)
-    public List<WorkItem> inbox(String assignee) {
+    public List<WorkItem> inbox(String assignee, String actor) {
         if (blank(assignee)) throw ApiException.badRequest("assignee is required");
-        return items.findByAssigneeIgnoreCaseAndStatusInOrderByPriorityAscIdAsc(assignee, OPEN_STATES);
+        if (blank(actor)) {
+            throw ApiException.forbiddenAutonomy("A named actor (X-Actor) is required to read an inbox");
+        }
+        List<WorkItem> mine =
+                items.findByAssigneeIgnoreCaseAndStatusInOrderByPriorityAscIdAsc(assignee, OPEN_STATES);
+        if (actor.equalsIgnoreCase(assignee)) return mine;   // own inbox
+        // Otherwise only a supervisor of a pool owning any of the assignee's open tasks may look.
+        boolean supervises = mine.stream()
+                .map(WorkItem::getQueueKey)
+                .filter(q -> !blank(q))
+                .distinct()
+                .anyMatch(q -> isSupervisor(resolvePool(q), actor));
+        if (!supervises) {
+            throw ApiException.forbiddenAutonomy(
+                    "Actor '" + actor + "' may not read the inbox of '" + assignee + "'");
+        }
+        return mine;
     }
 
     @Transactional(readOnly = true)
-    public List<WorkItem> queue(String queueKey) {
+    public List<WorkItem> queue(String queueKey, String actor) {
+        if (blank(actor)) {
+            throw ApiException.forbiddenAutonomy("A named actor (X-Actor) is required to read a queue");
+        }
+        PoolSpec pool = resolvePool(queueKey);
+        if (!isMember(pool, actor) && !isSupervisor(pool, actor)) {
+            throw ApiException.forbiddenAutonomy(
+                    "Actor '" + actor + "' is not a member or supervisor of the '" + queueKey + "' pool");
+        }
         return items.findByQueueKeyAndStatusOrderByPriorityAscIdAsc(queueKey, "OPEN");
     }
 

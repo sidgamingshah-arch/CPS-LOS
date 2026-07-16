@@ -1,5 +1,6 @@
 package com.helix.common.rbac;
 
+import com.helix.common.security.AuthContext;
 import com.helix.common.web.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +69,14 @@ public class ActorDirectory {
      * throws a 403 so the outage denies. A healthy directory is never affected either way.
      */
     public Set<String> rolesFor(String actor) {
+        // Real-auth override (helix.security.mode=oidc|ldap): when the request carries a verified
+        // credential, that identity's roles ARE the truth and win over the ACTOR_ROLE directory —
+        // no config-service round-trip needed. Inert in the default 'none' profile (current()==null),
+        // so the existing directory-resolution behaviour is preserved byte-identical.
+        AuthContext.Identity authed = AuthContext.current();
+        if (authed != null && authed.actor() != null && authed.actor().equals(actor)) {
+            return new TreeSet<>(authed.roles());
+        }
         List<Map<String, Object>> recs = records();
         if (recs == null) {
             if (failClosed()) {

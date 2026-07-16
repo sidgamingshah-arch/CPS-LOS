@@ -1,7 +1,11 @@
 package com.helix.origination.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.common.model.Enums.ApplicationStatus;
+import com.helix.common.model.Enums.DocumentType;
 import com.helix.common.util.References;
 import com.helix.common.web.ApiException;
 import com.helix.common.workflow.WorkflowClient;
@@ -42,6 +46,7 @@ import com.helix.origination.repo.SpreadVersionRepository;
 import com.helix.origination.repo.SublimitRepository;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -57,6 +62,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -91,6 +97,8 @@ public class OriginationService {
     private final com.helix.origination.client.FinancialTemplateClient financialTemplates;
     /** Borrower sector lookup (counterparty-service) — pinned on the application at create. */
     private final com.helix.origination.client.CounterpartyClient counterparties;
+    /** Governed LLM SPI (default {@code none} → deterministic fallback everywhere). */
+    private final LlmClient llm;
 
     public OriginationService(LoanApplicationRepository applications, DocumentRepository documents,
                               FinancialPeriodRepository periods, SpreadCellRepository cells,
@@ -100,8 +108,10 @@ public class OriginationService {
                               com.helix.origination.client.FxRatesClient fx,
                               com.helix.origination.client.FinancialTemplateClient financialTemplates,
                               com.helix.origination.client.CounterpartyClient counterparties,
+                              LlmClient llm,
                               @Autowired(required = false) WorkflowClient workflow) {
         this.counterparties = counterparties;
+        this.llm = llm;
         this.applications = applications;
         this.documents = documents;
         this.periods = periods;
@@ -229,18 +239,47 @@ public class OriginationService {
     public Document uploadDocument(String reference, UploadDocumentRequest req, String actor) {
         LoanApplication app = get(reference);
         DocumentClassifier.Classification c = classifier.classify(req.fileName(), req.declaredType());
+        // The type LABEL and confidence come from the deterministic keyword classifier. When the
+        // classifier is UNSURE (confidence below the auto-route threshold — i.e. the document is
+        // already routed to human review) and an external model is configured, the model may
+        // suggest a better label from the EXISTING DocumentType set. The confidence and the
+        // needs-review routing stay 100% deterministic; the model only ever picks an allowed
+        // label. Provider 'none' (default) or an invalid/unusable reply → the keyword label,
+        // byte-identical to today.
+        String classifiedType = c.type().name();
+        boolean llmDrafted = false;
+        String llmModel = null;
+        if (c.confidence() < DocumentClassifier.AUTO_ROUTE_THRESHOLD) {
+            LlmResult r = llmClassify(req.fileName(), req.declaredType(), c.type());
+            if (r.usable()) {
+                DocumentType picked = parseDocumentType(r.text());
+                if (picked != null) {
+                    classifiedType = picked.name();
+                    llmDrafted = true;
+                    llmModel = r.model();
+                }
+            }
+        }
         Document doc = new Document();
         doc.setApplicationId(app.getId());
         doc.setFileName(req.fileName());
         doc.setDeclaredType(req.declaredType());
-        doc.setClassifiedType(c.type().name());
+        doc.setClassifiedType(classifiedType);
         doc.setClassificationConfidence(c.confidence());
         doc.setNeedsReview(c.confidence() < DocumentClassifier.AUTO_ROUTE_THRESHOLD);
         Document saved = documents.save(doc);
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("type", classifiedType);
+        detail.put("confidence", c.confidence());
+        detail.put("needsReview", saved.isNeedsReview());
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmModel);
+        }
         audit.ai("document-intelligence", "DOCUMENT_CLASSIFIED", "Application", reference,
-                "Classified %s as %s (%.2f)%s".formatted(req.fileName(), c.type(), c.confidence(),
+                "Classified %s as %s (%.2f)%s".formatted(req.fileName(), classifiedType, c.confidence(),
                         saved.isNeedsReview() ? " — routed to review" : " — auto-routed"),
-                Map.of("type", c.type().name(), "confidence", c.confidence(), "needsReview", saved.isNeedsReview()));
+                detail);
         return saved;
     }
 
@@ -403,13 +442,40 @@ public class OriginationService {
         boolean multiCurrency = req.periods().stream()
                 .map(pp -> pp.currency() == null ? "" : pp.currency().toUpperCase())
                 .distinct().count() > 1;
+        // Advisory pre-confirm LLM suggestion of candidate line items. When an external model is
+        // configured it drafts a candidate extraction from the SAME analyst-supplied source lines.
+        // This is advisory ONLY: it is never written into the persisted cells, the deterministic
+        // ratios, or the returned SpreadAnalysis, and the analyst's confirm gate is unchanged — the
+        // suggestion is recorded on the audit trail. Provider 'none' (default) → no call, byte-identical.
+        boolean llmDrafted = false;
+        String llmModel = null;
+        Integer aiCandidateLines = null;
+        if (!req.periods().isEmpty()) {
+            LlmResult r = llmSpreadingSuggest(reference, req);
+            if (r.usable()) {
+                llmDrafted = true;
+                llmModel = r.model();
+                Map<String, Object> parsed = parseJsonObject(r.text());
+                aiCandidateLines = parsed == null ? null : parsed.size();
+            }
+        }
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("periods", req.periods().size());
+        detail.put("sourceLines", lineCount);
+        detail.put("presentationCurrency", presentationCurrency == null ? "" : presentationCurrency);
+        detail.put("multiCurrency", multiCurrency);
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmModel);
+            if (aiCandidateLines != null) {
+                detail.put("aiCandidateLines", aiCandidateLines);
+            }
+        }
         audit.ai("financial-spreading", "SPREAD_GENERATED", "Application", reference,
                 "Spread %d period(s), %d source lines into the canonical chart%s".formatted(
                         req.periods().size(), lineCount,
                         multiCurrency ? " (normalised to " + presentationCurrency + ")" : ""),
-                Map.of("periods", req.periods().size(), "sourceLines", lineCount,
-                        "presentationCurrency", presentationCurrency == null ? "" : presentationCurrency,
-                        "multiCurrency", multiCurrency));
+                detail);
         SpreadAnalysis result = analysis(reference);
         recordSpreadVersion(app, reference, req, result, actor);
         return result;
@@ -1007,5 +1073,116 @@ public class OriginationService {
                 f.getPurpose(), f.getIndicativeRate(),
                 f.getRateType(), f.getBenchmarkCode(), f.getSpreadBps(), f.getResetFrequencyMonths(),
                 subViews, groupViews, sublimitTotal, headroom);
+    }
+
+    // ---------------------------------------------------- advisory LLM hooks
+
+    /**
+     * Advisory document-classification. Label capability: the reply is validated STRICTLY against
+     * the {@link DocumentType} set (see {@link #parseDocumentType}); anything else falls back to the
+     * keyword classifier. The prompt lists the allowed labels and is prose (never a JSON object).
+     */
+    private LlmResult llmClassify(String fileName, String declaredType, DocumentType deterministic) {
+        String system = "You are an ADVISORY document classifier for wholesale-credit intake. Classify the "
+                + "described document into EXACTLY ONE of these allowed types: " + allowedDocTypeLabels() + ". "
+                + "This is an advisory suggestion for a human reviewer and never sets a figure, score or "
+                + "decision. Reply with ONLY the single type label from the allowed list, nothing else. "
+                + "capability=doc-classify";
+        String user = "File name: " + nz(fileName)
+                + (declaredType == null || declaredType.isBlank() ? "" : "\nDeclared type hint: " + declaredType)
+                + "\nDeterministic keyword guess: " + deterministic.name();
+        return safeComplete(LlmRequest.of("doc-classify", system, user));
+    }
+
+    private static String allowedDocTypeLabels() {
+        return java.util.Arrays.stream(DocumentType.values()).map(Enum::name).collect(Collectors.joining(", "));
+    }
+
+    /** Strictly validate a model reply against the {@link DocumentType} set (trim/uppercase-normalise). */
+    private static DocumentType parseDocumentType(String reply) {
+        if (reply == null) {
+            return null;
+        }
+        String t = reply.strip()
+                .replaceAll("^[`'\"\\s]+", "")
+                .replaceAll("[`'\".\\s]+$", "")
+                .toUpperCase(Locale.ROOT);
+        for (DocumentType dt : DocumentType.values()) {
+            if (dt.name().equals(t)) {
+                return dt;
+            }
+        }
+        // Tolerate a label wrapped in a short phrase ("Type: FACILITY_DOC") — accept only when
+        // exactly one allowed label appears as a whole token; ambiguous / none → deterministic fallback.
+        Set<DocumentType> found = new java.util.LinkedHashSet<>();
+        for (String tok : t.split("[^A-Z_]+")) {
+            for (DocumentType dt : DocumentType.values()) {
+                if (dt.name().equals(tok)) {
+                    found.add(dt);
+                }
+            }
+        }
+        return found.size() == 1 ? found.iterator().next() : null;
+    }
+
+    /**
+     * Advisory pre-confirm suggestion of candidate line items, grounded in the analyst-supplied
+     * source lines. Extraction capability: the prompt asks for a JSON object. The reply is only ever
+     * parsed to count candidate lines for the audit trail — never written into the spread.
+     */
+    private LlmResult llmSpreadingSuggest(String reference, SpreadRequest req) {
+        SpreadRequest.PeriodInput latest = req.periods().get(0);
+        StringBuilder lines = new StringBuilder();
+        for (var e : latest.lines().entrySet()) {
+            lines.append(e.getKey()).append('=').append(e.getValue().value()).append('\n');
+        }
+        String system = "You are an ADVISORY financial-spreading assistant. From the described source "
+                + "financial lines, suggest the candidate canonical line items and their values as a flat "
+                + "JSON object of lineKey -> value. This is a SUGGESTION only: the analyst-entered spread and "
+                + "every deterministic ratio remain authoritative and are never replaced by your output. "
+                + "Reuse the supplied figures verbatim and never invent values. Return ONLY a JSON object. "
+                + "capability=spreading-extract";
+        String user = "Application: " + reference + "\nPeriod: " + nz(latest.label())
+                + "\nCurrency: " + nz(latest.currency()) + "\nSource lines:\n" + lines;
+        return safeComplete(LlmRequest.of("spreading-extract", system, user));
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
+    }
+
+    /** Lenient JSON-object parse: strips code fences / prose wrapping; returns null on any failure. */
+    private Map<String, Object> parseJsonObject(String text) {
+        if (text == null) {
+            return null;
+        }
+        String t = text.strip();
+        if (t.startsWith("```")) {
+            int nl = t.indexOf('\n');
+            if (nl > 0) {
+                t = t.substring(nl + 1);
+            }
+            if (t.endsWith("```")) {
+                t = t.substring(0, t.length() - 3);
+            }
+            t = t.strip();
+        }
+        if (!t.startsWith("{")) {
+            return null;
+        }
+        try {
+            return json.readValue(t, new TypeReference<LinkedHashMap<String, Object>>() { });
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private static String nz(String s) {
+        return s == null ? "" : s;
     }
 }

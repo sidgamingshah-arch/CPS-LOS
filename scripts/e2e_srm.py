@@ -8,13 +8,18 @@ raises a linked NOTING_TYPE=SRM_RENEWAL noting via NotingService (in-process). T
 approval runs through /api/notings. When that noting reaches AUTHORIZED, a minimal, additive
 MER hook advances the subject's next review / renewal due date.
 
+This exercises an OBLIGOR-level SRM (subjectType=Counterparty) whose applicationRef — the MER key —
+DIFFERS from the counterparty subjectRef (a different ID namespace). Driving the MER hook with the
+counterparty ref (the old behaviour) would look up 0 items and silently "advance 0"; the hook must
+key off the applicationRef instead.
+
 Asserts:
   0. seed SRM_CHECKLIST + SRM_RENEWAL (cadRequired) masters via the generic master API.
-  1. set up the MER register: a RENEWAL_REVIEW for the subject (should advance), a
-     CONDITION_SUBSEQUENT for the same subject and a RENEWAL_REVIEW for a DIFFERENT subject
-     (both must stay unchanged — proving the hook is type- and subject-scoped).
-  2. create SRM review -> checklist materialised from the master + a linked SRM_RENEWAL
-     noting created in DRAFT.
+  1. set up the MER register keyed by the APPLICATION ref: a RENEWAL_REVIEW (should advance), a
+     CONDITION_SUBSEQUENT on the SAME application and a RENEWAL_REVIEW on a DIFFERENT application
+     (both must stay unchanged — proving the hook is type- and application-scoped).
+  2. create SRM review (subjectRef = counterparty ref, applicationRef = the distinct MER key) ->
+     checklist materialised from the master + a linked SRM_RENEWAL noting created in DRAFT.
   3. mark a checklist item -> persisted on the review.
   4. submit the renewal noting (delegated to the Noting engine) -> PENDING_APPROVAL,
      cadRequired resolved from the master.
@@ -92,8 +97,13 @@ def find_item(rows, item_type):
     return next((m for m in rows if m["itemType"] == item_type), None)
 
 
-SUBJECT = "SRM-SUBJ-A"
-OTHER = "SRM-SUBJ-B"
+# An obligor-level SRM's subjectRef is a COUNTERPARTY ref; the MER register is keyed by the
+# APPLICATION ref — a different ID namespace. They are deliberately DIFFERENT here so the fix is
+# proven: driving the MER hook with the counterparty subjectRef (the old behaviour) would look up
+# 0 items and silently "advance 0". The hook must key off the application ref instead.
+CP_SUBJECT = "SRM-CP-A"     # counterparty ref (the SRM subjectRef)
+APP = "SRM-APP-A"           # application ref (the MER key) — DIFFERENT from the subjectRef
+OTHER = "SRM-APP-B"         # a different application ref (its RENEWAL_REVIEW must NOT move)
 
 print("== 0. Seed SRM_CHECKLIST + SRM_RENEWAL masters (generic master API — NO code change) ==")
 CHECKLIST_ITEMS = [
@@ -112,17 +122,17 @@ print("    SRM_CHECKLIST/STANDARD + NOTING_TYPE/SRM_RENEWAL(cadRequired) ACTIVE"
 
 print("\n== 1. Seed the MER register (renewal to advance + two controls that must NOT move) ==")
 st, review_a = call("POST", "/decision/api/mer/raise", {
-    "applicationRef": SUBJECT, "counterpartyName": "Helios Cements Ltd", "itemType": "RENEWAL_REVIEW",
+    "applicationRef": APP, "counterpartyName": "Helios Cements Ltd", "itemType": "RENEWAL_REVIEW",
     "category": "RENEWAL", "description": "Annual facility review", "criticality": "HIGH",
     "dueDate": "2026-09-01", "recurring": True, "renewalFrequency": "ANNUAL", "owner": "rm.alice"},
     actor="rm.alice")
-review_a = must(st, review_a, "raise RENEWAL_REVIEW for subject")
+review_a = must(st, review_a, "raise RENEWAL_REVIEW for the application")
 DUE_BEFORE = review_a["dueDate"]
-check("subject RENEWAL_REVIEW seeded (recurring, ANNUAL)",
+check("application RENEWAL_REVIEW seeded (recurring, ANNUAL)",
       review_a["itemType"] == "RENEWAL_REVIEW" and DUE_BEFORE == "2026-09-01", str(review_a))
 
 st, cond_a = call("POST", "/decision/api/mer/raise", {
-    "applicationRef": SUBJECT, "counterpartyName": "Helios Cements Ltd", "itemType": "CONDITION_SUBSEQUENT",
+    "applicationRef": APP, "counterpartyName": "Helios Cements Ltd", "itemType": "CONDITION_SUBSEQUENT",
     "category": "CONDITION", "description": "Post-sanction CP: mortgage perfection", "criticality": "MEDIUM",
     "dueDate": "2026-10-15", "recurring": False, "owner": "rm.alice"}, actor="rm.alice")
 cond_a = must(st, cond_a, "raise CONDITION_SUBSEQUENT for subject")
@@ -140,12 +150,15 @@ print(f"    review(A)={DUE_BEFORE}  condition(A)={COND_DUE_BEFORE}  review(B,oth
 
 print("\n== 2. Create the SRM review -> checklist materialised + SRM_RENEWAL noting raised (DRAFT) ==")
 st, srm = call("POST", "/decision/api/srm/reviews", {
-    "subjectType": "Counterparty", "subjectRef": SUBJECT, "counterpartyName": "Helios Cements Ltd",
+    "subjectType": "Counterparty", "subjectRef": CP_SUBJECT, "applicationRef": APP,
+    "counterpartyName": "Helios Cements Ltd",
     "checklistKey": "STANDARD", "title": "FY2026 structured review"}, actor="rm.user")
 srm = must(st, srm, "create SRM review")
 sid = srm["id"]
 items = (srm.get("checklist") or {}).get("items") or []
 check("SRM created OPEN with SRM- ref", srm["status"] == "OPEN" and srm["srmRef"].startswith("SRM-"), str(srm))
+check("SRM pins an applicationRef distinct from the counterparty subjectRef (different ID namespaces)",
+      srm.get("applicationRef") == APP and srm["subjectRef"] == CP_SUBJECT and APP != CP_SUBJECT, str(srm))
 check("checklist materialised from the SRM_CHECKLIST master",
       len(items) == len(CHECKLIST_ITEMS) and items[0]["label"] == CHECKLIST_ITEMS[0], str(items))
 check("linked SRM_RENEWAL noting created in DRAFT",
@@ -201,9 +214,9 @@ check("SRM COMPLETED, noting AUTHORIZED, renewal date carried",
       done["status"] == "COMPLETED" and done["notingStatus"] == "AUTHORIZED"
       and done["renewalDueDate"] == EXPECTED, str(done))
 
-rows_a = mer_items(SUBJECT)
+rows_a = mer_items(APP)
 rev_after = find_item(rows_a, "RENEWAL_REVIEW")
-check("subject RENEWAL_REVIEW due date ADVANCED (+1 cycle)",
+check("application RENEWAL_REVIEW ADVANCED via the applicationRef, NOT a silent 0 (+1 cycle)",
       rev_after and rev_after["dueDate"] == EXPECTED and rev_after["dueDate"] > DUE_BEFORE
       and rev_after["cycleCount"] == 1 and rev_after["status"] == "OPEN",
       f"{rev_after.get('dueDate') if rev_after else None} vs {DUE_BEFORE}")
@@ -211,12 +224,12 @@ check("subject RENEWAL_REVIEW due date ADVANCED (+1 cycle)",
 
 print("\n== 8. INVARIANT: the non-SRM MER entries are UNCHANGED (type + subject scoped) ==")
 cond_after = find_item(rows_a, "CONDITION_SUBSEQUENT")
-check("same-subject CONDITION_SUBSEQUENT unchanged (item-type scoped)",
+check("same-application CONDITION_SUBSEQUENT unchanged (item-type scoped)",
       cond_after and cond_after["dueDate"] == COND_DUE_BEFORE and cond_after["cycleCount"] == 0,
       f"{cond_after.get('dueDate') if cond_after else None} vs {COND_DUE_BEFORE}")
 rows_b = mer_items(OTHER)
 other_after = find_item(rows_b, "RENEWAL_REVIEW")
-check("different-subject RENEWAL_REVIEW unchanged (subject scoped)",
+check("different-application RENEWAL_REVIEW unchanged (application scoped)",
       other_after and other_after["dueDate"] == OTHER_DUE_BEFORE and other_after["cycleCount"] == 0,
       f"{other_after.get('dueDate') if other_after else None} vs {OTHER_DUE_BEFORE}")
 
@@ -224,7 +237,7 @@ check("different-subject RENEWAL_REVIEW unchanged (subject scoped)",
 print("\n== 9. Idempotent: a second refresh does NOT advance the date again ==")
 st, again = call("POST", f"/decision/api/srm/reviews/{sid}/refresh", actor="rm.user")
 again = must(st, again, "refresh SRM again")
-rev_again = find_item(mer_items(SUBJECT), "RENEWAL_REVIEW")
+rev_again = find_item(mer_items(APP), "RENEWAL_REVIEW")
 check("re-refresh is a no-op for the hook (date + cycle unchanged)",
       rev_again and rev_again["dueDate"] == EXPECTED and rev_again["cycleCount"] == 1,
       f"{rev_again.get('dueDate') if rev_again else None} cycle={rev_again.get('cycleCount') if rev_again else None}")

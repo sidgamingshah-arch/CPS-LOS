@@ -2,6 +2,7 @@ package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
 import com.helix.common.query.QueryService;
+import com.helix.common.rbac.ActorDirectory;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.MasterVersionDto;
@@ -22,6 +23,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -65,14 +67,17 @@ public class PerfectionService {
     private final PerfectionStepRepository steps;
     private final UpstreamClient upstream;
     private final QueryService queries;
+    private final ActorDirectory roles;
     private final AuditService audit;
 
     public PerfectionService(PerfectionCaseRepository cases, PerfectionStepRepository steps,
-                             UpstreamClient upstream, QueryService queries, AuditService audit) {
+                             UpstreamClient upstream, QueryService queries, ActorDirectory roles,
+                             AuditService audit) {
         this.cases = cases;
         this.steps = steps;
         this.upstream = upstream;
         this.queries = queries;
+        this.roles = roles;
         this.audit = audit;
     }
 
@@ -161,8 +166,9 @@ public class PerfectionService {
         if (TERMINAL.contains(step.getStatus())) {
             throw ApiException.conflict("Step " + stepKey + " is already " + step.getStatus());
         }
-        // Role gate — the acting role context must match the step's owner role.
-        requireRole(step, req == null ? null : req.role());
+        // Role gate — the ACTUAL X-Actor must HOLD the step's owner role (resolved server-side
+        // from the ACTOR_ROLE directory). The request-body role is a display hint only, never trusted.
+        requireRole(step, actor, req == null ? null : req.role());
         // MOE-vetting SoD — the vetting actor must differ from the MOE-execution actor.
         if (MOE_VETTING.equalsIgnoreCase(step.getStepKey())) {
             enforceVettingSoD(perfRef, actor);
@@ -250,11 +256,29 @@ public class PerfectionService {
 
     // =============================================================== internals
 
-    private void requireRole(PerfectionStep step, String declaredRole) {
-        if (declaredRole == null || declaredRole.isBlank()
-                || !declaredRole.trim().equalsIgnoreCase(step.getOwnerRole())) {
+    /**
+     * Role gate for a step transition. The acting {@code actor} must actually HOLD the step's
+     * {@code ownerRole} per the {@link ActorDirectory} (ACTOR_ROLE master), resolved server-side —
+     * the client-supplied {@code declaredRole} in the request body is NOT trusted (a display hint
+     * only). A directory outage fails open with a WARN (matching {@link NotingService} /
+     * {@code DecisionService}); the MOE-vetting name-equality SoD layer applies on top regardless.
+     * An actor absent from a HEALTHY directory, or one lacking the owner role, is denied (403).
+     */
+    private void requireRole(PerfectionStep step, String actor, String declaredRole) {
+        if (actor == null || actor.isBlank()) {
+            throw ApiException.forbiddenAutonomy("A named human actor is required to act on a perfection step");
+        }
+        String owner = step.getOwnerRole();
+        Set<String> actorRoles = roles.rolesFor(actor);
+        if (actorRoles == null) {
+            return;   // directory outage — fail open (ActorDirectory logs WARN)
+        }
+        boolean holds = owner != null && actorRoles.stream().anyMatch(r -> r.equalsIgnoreCase(owner));
+        if (!holds) {
             throw ApiException.forbiddenAutonomy("Step '" + step.getStepKey() + "' is owned by role "
-                    + step.getOwnerRole() + " — actor declared role '" + declaredRole + "'");
+                    + owner + " — actor '" + actor + "' holds " + actorRoles
+                    + " (insufficient); the request-body role '" + declaredRole
+                    + "' is not trusted — see the ACTOR_ROLE master");
         }
     }
 

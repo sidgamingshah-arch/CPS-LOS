@@ -16,6 +16,13 @@ public interface WorkItemRepository extends JpaRepository<WorkItem, Long> {
     Optional<WorkItem> findFirstBySubjectTypeAndSubjectRefAndTaskTypeAndDedupeKey(
             String subjectType, String subjectRef, String taskType, String dedupeKey);
 
+    /**
+     * Mirror-completion lookup — the TaskClient mirror path completes a task by its
+     * {@code dedupeKey} (e.g. {@code NTG:<ref>} / {@code IPN:<ref>}) rather than its
+     * random {@code TSK-} ref. Resolves the newest still-open WorkItem for that key.
+     */
+    Optional<WorkItem> findFirstByDedupeKeyAndStatusInOrderByIdDesc(String dedupeKey, List<String> statuses);
+
     List<WorkItem> findByAssigneeIgnoreCaseAndStatusInOrderByPriorityAscIdAsc(
             String assignee, List<String> statuses);
 

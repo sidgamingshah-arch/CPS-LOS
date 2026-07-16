@@ -2,6 +2,8 @@ package com.helix.common.util;
 
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -42,15 +44,25 @@ import java.util.Base64;
  * <p><b>Key.</b> Read once from the {@code HELIX_FIELD_KEY} environment variable — a
  * Base64-encoded 32-byte (AES-256) key. When it is unset the {@linkplain
  * #DEV_DEFAULT_KEY_B64 documented dev-default key} is used so local dev and the
- * regression harness work with no configuration. Production MUST set
- * {@code HELIX_FIELD_KEY}. An explicitly-set key that is not valid Base64 or not exactly
- * 32 bytes fails fast rather than silently falling back.
+ * regression harness work with no configuration, and a loud one-time WARN banner is logged
+ * (the built-in key is public and provides no confidentiality). To prevent a silent
+ * false at-rest assurance in production, an unset {@code HELIX_FIELD_KEY} while a
+ * <em>production</em> profile is active ({@code SPRING_PROFILES_ACTIVE} contains
+ * {@code prod}/{@code production}) <b>fails closed</b> at startup — unless the operator
+ * explicitly opts in to the dev key with {@code HELIX_ALLOW_DEV_KEY=true}. An explicitly-set
+ * key that is not valid Base64 or not exactly 32 bytes fails fast rather than silently
+ * falling back.
  */
 @Converter
 public class EncryptedStringConverter implements AttributeConverter<String, String> {
 
+    private static final Logger log = LoggerFactory.getLogger(EncryptedStringConverter.class);
+
     /** Environment variable carrying a Base64-encoded 32-byte AES-256 key. */
     public static final String KEY_ENV = "HELIX_FIELD_KEY";
+
+    /** Opt-in that permits the built-in dev key even under a production profile ({@code true}). */
+    public static final String ALLOW_DEV_KEY_ENV = "HELIX_ALLOW_DEV_KEY";
 
     /**
      * Documented dev-default key used only when {@link #KEY_ENV} is unset — it is the
@@ -71,7 +83,26 @@ public class EncryptedStringConverter implements AttributeConverter<String, Stri
     private static SecretKeySpec loadKey() {
         String configured = System.getenv(KEY_ENV);
         boolean explicit = configured != null && !configured.isBlank();
-        String b64 = explicit ? configured.trim() : DEV_DEFAULT_KEY_B64;
+        if (explicit) {
+            return decodeKey(configured.trim());
+        }
+        // No key configured — the built-in, publicly-known dev-default would be used.
+        // Fail closed under a production profile unless the operator explicitly opts in.
+        if (isProductionProfile() && !devKeyOptIn()) {
+            throw new IllegalStateException(KEY_ENV + " is not set but a production profile is active "
+                    + "(SPRING_PROFILES_ACTIVE); refusing to start with the built-in, publicly-known dev "
+                    + "field key (false at-rest assurance). Set " + KEY_ENV + " to a Base64-encoded 32-byte "
+                    + "AES-256 key, or explicitly opt in with " + ALLOW_DEV_KEY_ENV + "=true (NOT for production).");
+        }
+        log.warn("============================================================================");
+        log.warn("{} is not set — using the BUILT-IN DEV FIELD KEY for at-rest field encryption.", KEY_ENV);
+        log.warn("This key is public (documented dev-default) and provides NO confidentiality.");
+        log.warn("NOT for production — set {} (Base64 32-byte AES-256 key) in any real deployment.", KEY_ENV);
+        log.warn("============================================================================");
+        return decodeKey(DEV_DEFAULT_KEY_B64);
+    }
+
+    private static SecretKeySpec decodeKey(String b64) {
         byte[] key;
         try {
             key = Base64.getDecoder().decode(b64);
@@ -84,6 +115,18 @@ public class EncryptedStringConverter implements AttributeConverter<String, Stri
                     KEY_ENV + " must decode to exactly 32 bytes (AES-256); got " + key.length);
         }
         return new SecretKeySpec(key, "AES");
+    }
+
+    /** True when a production Spring profile is active (SPRING_PROFILES_ACTIVE contains prod/production). */
+    private static boolean isProductionProfile() {
+        String profiles = System.getenv("SPRING_PROFILES_ACTIVE");
+        return profiles != null && profiles.toLowerCase().contains("prod");
+    }
+
+    /** True when the operator has explicitly opted in to the dev key ({@code HELIX_ALLOW_DEV_KEY=true}). */
+    private static boolean devKeyOptIn() {
+        String v = System.getenv(ALLOW_DEV_KEY_ENV);
+        return v != null && "true".equalsIgnoreCase(v.trim());
     }
 
     @Override
@@ -113,19 +156,30 @@ public class EncryptedStringConverter implements AttributeConverter<String, Stri
         if (dbData == null || dbData.isBlank()) {
             return dbData;
         }
+        byte[] blob;
         try {
-            byte[] blob = Base64.getDecoder().decode(dbData);
-            if (blob.length < MIN_BLOB_LENGTH) {
-                return dbData; // too short to be one of our IV||ct||tag blobs -> legacy plaintext
-            }
+            blob = Base64.getDecoder().decode(dbData);
+        } catch (IllegalArgumentException e) {
+            // Not valid Base64 -> a pre-existing plaintext value written before this converter
+            // was applied. Expected legacy path; stay silent and return it verbatim.
+            return dbData;
+        }
+        if (blob.length < MIN_BLOB_LENGTH) {
+            // Too short to be one of our IV||ct||tag blobs -> legacy plaintext. Expected; silent.
+            return dbData;
+        }
+        try {
             byte[] iv = Arrays.copyOfRange(blob, 0, IV_LENGTH);
             byte[] ciphertext = Arrays.copyOfRange(blob, IV_LENGTH, blob.length);
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.DECRYPT_MODE, KEY, new GCMParameterSpec(GCM_TAG_BITS, iv));
             return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
         } catch (Exception e) {
-            // Not valid Base64 / not our ciphertext / wrong key -> return stored value
-            // verbatim. Tolerates already-plaintext legacy rows; a read never crashes.
+            // Valid-length Base64 that FAILED GCM authentication — not a plausible legacy-plaintext
+            // (which would rarely be valid Base64 of this length). Signals a key mismatch or
+            // tampering, so log a WARN. Still return the stored value verbatim; a read never crashes.
+            log.warn("field decryption failed the GCM authentication tag on a {}-byte at-rest blob "
+                    + "(key mismatch or tampering?) — returning the stored value verbatim", blob.length);
             return dbData;
         }
     }

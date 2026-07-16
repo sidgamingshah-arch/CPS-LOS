@@ -25,12 +25,13 @@ Proves:
     before and after the whole artifact lifecycle.
 """
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 
-GW = "http://localhost:8080"
+GW = os.environ.get("HELIX_GW", "http://localhost:8080")
 PASS, FAIL = 0, 0
 NONCE = str(int(time.time()))
 
@@ -254,8 +255,9 @@ QREF = sv.get("vendorQueryRef")
 check("vendorRef + vendorQueryRef pinned on the artifact",
       sv.get("vendorRef") == VENDOR and str(QREF).startswith("QRY-"), f"{sv.get('vendorRef')} / {QREF}")
 
-# A real EXTERNAL_VENDOR query row exists (in portfolio-service's own query lane).
-st, threads = call("GET", f"/portfolio/api/queries?subjectRef={SREF}")
+# A real EXTERNAL_VENDOR query row exists (in portfolio-service's own query lane). The listing
+# is caller-scoped (Fix 2), so read it as the OWNER who raised the RFQ thread.
+st, threads = call("GET", f"/portfolio/api/queries?subjectRef={SREF}", actor=OWNER)
 must(st, threads, "list queries by subject")
 qrow = [t for t in threads if t.get("queryRef") == QREF]
 check("an EXTERNAL_VENDOR query row was raised for the RFQ",
@@ -268,8 +270,11 @@ check("an RFI notification/outbox façade row was produced", len(notes) == 1, [n
 check("RFI row rendered + dispatched via the notification lane",
       notes and notes[0].get("status") in ("SENT", "PENDING") and notes[0].get("renderedBody") is not None, notes)
 
-# The vendor reply arrives via the Query module's external-response callback.
-st, ev = call("POST", f"/portfolio/api/queries/{QREF}/external-response",
+# Fix 1: the vendor reply arrives via the tokenised external-response callback. The one-time
+# token is embedded in the outbound RFI notification (the raiser's flow reads it from there).
+vtoken = (notes[0].get("vars") or {}).get("responseToken") if notes else None
+check("RFI notification carries the one-time response token", bool(vtoken), notes)
+st, ev = call("POST", f"/portfolio/api/queries/{QREF}/external-response?token={vtoken}",
               {"body": "Stock-audit report attached; drawing power holds.", "from": VENDOR}, actor="portal.callback")
 ev = must(st, ev, "external response")
 check("external-response -> RESPONDED", ev["thread"]["status"] == "RESPONDED", ev["thread"]["status"])

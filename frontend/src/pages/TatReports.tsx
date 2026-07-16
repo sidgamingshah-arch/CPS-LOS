@@ -57,7 +57,9 @@ export default function TatReports() {
   }
 
   const data = report.data as any;
-  const t = data?.totals;
+  // Degrade gracefully if a malformed/edge response omits `totals` — the field helpers
+  // (n / hrs / rate) already render "—" for null/undefined, so an empty object is safe.
+  const t = (data?.totals ?? {}) as any;
 
   const groupCols: Col<any>[] = [
     { key: "count", header: "Tasks", align: "right", value: (r) => r.count },

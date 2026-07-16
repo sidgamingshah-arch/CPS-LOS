@@ -5,7 +5,9 @@ Mortgage / MOE security-perfection — e2e (decision-service, via the gateway).
 Proves the Wave-2 perfection module end-to-end:
   1. Seed the CHECKLIST_MASTER PERFECTION_MOE row (maker → checker, SoD).
   2. Create a case → steps are materialised IN ORDER from the master (version pinned).
-  3. Steps are role-gated to their ownerRole (wrong role → 403; correct role → DONE).
+  3. Steps are role-gated SERVER-SIDE: the actual X-Actor must HOLD the step's ownerRole in the
+     ACTOR_ROLE directory — a spoofed request-body role that merely MATCHES the ownerRole is still
+     rejected (403); the genuine role-holder completes it. The body role is a display hint only.
   4. A VENDOR step raises an EXTERNAL_VENDOR QueryThread; the vendor report returns via
      the existing external-response callback.
   5. MOE-vetting SoD: vetting by the MOE-execution actor → 403 forbiddenAutonomy.
@@ -14,12 +16,13 @@ Proves the Wave-2 perfection module end-to-end:
      releases exactly as before — even with an INCOMPLETE perfection case linked to the deal.
 """
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 
-GW = "http://localhost:8080"
+GW = os.environ.get("HELIX_GW", "http://localhost:8080")
 PASS, FAIL = 0, 0
 NONCE = str(int(time.time()))
 
@@ -82,6 +85,29 @@ appr = must(st, appr, "approve PERFECTION_MOE")
 check("PERFECTION_MOE ACTIVE after checker approval", appr["status"] == "ACTIVE", appr.get("status"))
 master_version = appr["version"]
 
+
+def seed_actor_role(actor, roles):
+    """Grant an actor its step-owner role(s) via the ACTOR_ROLE master (maker -> checker, SoD)."""
+    st, rec = call("POST", "/config/api/masters/ACTOR_ROLE",
+                   {"recordKey": actor, "jurisdiction": None,
+                    "payload": {"displayName": actor, "roles": roles}}, actor="config.admin")
+    rec = must(st, rec, f"submit ACTOR_ROLE {actor}")
+    st, _ = call("POST", f"/config/api/masters/records/{rec['id']}/approve", actor="config.checker")
+    must(st, _, f"approve ACTOR_ROLE {actor}")
+
+
+print("== 1b. Seed step-owner ACTOR_ROLE grants — role is verified server-side, the body role is NOT trusted ==")
+# The step actors must actually HOLD the step's ownerRole in the ACTOR_ROLE directory. legal.counsel
+# already holds LEGAL (seeded). lmo.user is granted LMO AND CAD_OPS so it can PASS the MOE-vetting
+# role gate — that isolates the MOE-vetting SoD (§5) from the role gate (it is blocked because it
+# performed the execution, not for lacking the role).
+seed_actor_role("cad.ops", ["CAD_OPS"])
+seed_actor_role("lmo.user", ["LMO", "CAD_OPS"])
+seed_actor_role("vendor.user", ["VENDOR"])
+st, inv = call("POST", "/decision/api/governance/rbac/cache/invalidate")
+check("decision-service RBAC cache invalidated so the grants take effect",
+      st == 200 and inv.get("invalidated") is True, f"{st} {inv}")
+
 print("== 2. Create a perfection case -> steps materialised IN ORDER from the master ==")
 subject = f"COL-{NONCE}"
 st, cv = call("POST", "/decision/api/perfection/cases",
@@ -105,12 +131,16 @@ check("step order 0..5", [s["stepOrder"] for s in steps] == list(range(6)),
 check("master version pinned onto the case", case.get("masterVersion") == master_version,
       f"{case.get('masterVersion')} vs {master_version}")
 
-print("== 3. Steps are role-gated to their ownerRole ==")
-# Wrong role on TITLE_SEARCH (LEGAL) -> 403
+print("== 3. Steps are role-gated to the ACTOR's real ACTOR_ROLE (the request-body role is NOT trusted) ==")
+# NEGATIVE (the crux of the fix): an actor who does NOT hold the owner role is rejected EVEN WHEN the
+# request-body role string matches the step's ownerRole. rm.user holds RM only, not LEGAL — a spoofed
+# body role "LEGAL" must not let it through.
 st, wr = call("POST", f"/decision/api/perfection/cases/{perf_ref}/steps/TITLE_SEARCH/complete",
-              {"role": "LMO", "evidence": "x"}, actor="legal.counsel")
-check("wrong-role completion rejected (403)", st == 403, f"{st} {wr}")
-# Correct role -> DONE
+              {"role": "LEGAL", "evidence": "spoofed"}, actor="rm.user")
+check("actor lacking the role rejected despite a MATCHING body role (403)", st == 403, f"{st} {wr}")
+check("403 is a real ACTOR_ROLE denial (body role not trusted)",
+      ("ACTOR_ROLE" in str(wr)) or ("not trusted" in str(wr)), str(wr)[:220])
+# Correct role -> DONE (the body role is only a display hint; the actor genuinely holds LEGAL)
 st, ok = call("POST", f"/decision/api/perfection/cases/{perf_ref}/steps/TITLE_SEARCH/complete",
               {"role": "LEGAL", "evidence": "DMS-TS-1"}, actor="legal.counsel")
 ok = must(st, ok, "complete TITLE_SEARCH")
@@ -135,8 +165,14 @@ st, q = call("GET", f"/decision/api/queries/{q_ref}")
 q = must(st, q, "get vendor query")
 check("query is an EXTERNAL_VENDOR thread, OPEN", q["thread"]["channel"] == "EXTERNAL_VENDOR"
       and q["thread"]["status"] == "OPEN", q["thread"])
-# Vendor report returns via the existing external-response callback
-st, q = call("POST", f"/decision/api/queries/{q_ref}/external-response",
+# Fix 1: external-response now requires the one-time token from the RFI callback link. The
+# vendor RFQ raised the thread internally, so we read the token off the outbound RFI notification.
+st, notes = call("GET", f"/decision/api/notifications?eventType=RFI_REQUEST&subjectRef={q_ref}")
+notes = must(st, notes, "list vendor RFI notification")
+vtoken = (notes[0].get("vars") or {}).get("responseToken") if notes else None
+check("vendor RFI notification carries the one-time response token", bool(vtoken), notes)
+# Vendor report returns via the tokenised external-response callback
+st, q = call("POST", f"/decision/api/queries/{q_ref}/external-response?token={vtoken}",
              {"body": "Valuation INR 4.2cr, valid to 2027.", "from": "acme.valuers"}, actor="portal.callback")
 q = must(st, q, "external response")
 check("external-response flips the query to RESPONDED", q["thread"]["status"] == "RESPONDED", q["thread"]["status"])
@@ -153,10 +189,12 @@ st, ok = call("POST", f"/decision/api/perfection/cases/{perf_ref}/steps/MOE_EXEC
 ok = must(st, ok, "complete MOE_EXECUTION")
 check("MOE_EXECUTION DONE by LMO (lmo.user)",
       next(s for s in ok["steps"] if s["stepKey"] == "MOE_EXECUTION")["completedBy"] == "lmo.user")
-# SoD: the MOE-execution actor cannot also vet (role declared correctly as CAD_OPS to isolate the SoD)
+# SoD isolated from the role gate: lmo.user ALSO holds CAD_OPS (seeded above), so it PASSES the
+# vetting role gate — yet is still blocked because it performed the MOE execution (segregation of duties).
 st, sod = call("POST", f"/decision/api/perfection/cases/{perf_ref}/steps/MOE_VETTING/complete",
                {"role": "CAD_OPS", "evidence": "x"}, actor="lmo.user")
-check("MOE-vetting by the execution actor -> 403 (SoD)", st == 403, f"{st} {sod}")
+check("MOE-vetting by the execution actor -> 403 (SoD, not merely the role gate)",
+      st == 403 and "segregation" in str(sod).lower(), f"{st} {sod}")
 # A different CAD_OPS actor vets successfully
 st, ok = call("POST", f"/decision/api/perfection/cases/{perf_ref}/steps/MOE_VETTING/complete",
               {"role": "CAD_OPS", "evidence": "DMS-VET-1"}, actor="cad.ops")

@@ -97,8 +97,11 @@ must(*call("POST", f"/workflow/api/tasks/{t2['taskRef']}/complete", {"note": "ok
 # One APPROVAL left open (ASSIGNED).
 t3 = create_task("APPROVAL", carol)
 # One APPROVAL sent back → opens a rework task (reworkCycle=1) back to the originator (rm.user).
+# The assignee (dave) sends it back — authorized under the case-layer rule (assignee or pool
+# supervisor); this run-unique queue has no ASSIGNMENT_POOL, so a non-assignee/non-supervisor
+# would (correctly) be 403'd.
 t4 = create_task("APPROVAL", dave, actor="rm.user")
-sb = must(*call("POST", f"/workflow/api/tasks/{t4['taskRef']}/send-back", {"note": "fix figures"}, actor=sup), "send-back t4")
+sb = must(*call("POST", f"/workflow/api/tasks/{t4['taskRef']}/send-back", {"note": "fix figures"}, actor=dave), "send-back t4")
 check("send-back opened a rework task with reworkCycle=1",
       sb["rework"]["reworkCycle"] == 1 and sb["original"]["status"] == "SENT_BACK",
       f"{sb.get('rework', {}).get('reworkCycle')} / {sb.get('original', {}).get('status')}")

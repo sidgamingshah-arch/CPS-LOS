@@ -1,0 +1,1750 @@
+{
+  "run_started": "2026-07-16T13:21:28+00:00",
+  "total_duration_sec": 364.0721914768219,
+  "java_version": "Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/root/.ccr/java-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=42793 -Dhttp.nonProxyHosts=localhost|127.0.0.1|::1|127.*|0.*|::|169.254.*|anthropic.com|*.anthropic.com|*.anthropic.com|registry.npmjs.org|jsr.io|npm.jsr.io|pypi.org|files.pythonhosted.org|index.crates.io|proxy.golang.org|host.docker.internal|10.*|172.16.*|172.17.*|172.18.*|172.19.*|172.20.*|172.21.*|172.22.*|172.23.*|172.24.*|172.25.*|172.26.*|172.27.*|172.28.*|172.29.*|172.30.*|172.31.*|192.168.*|100.64.0.0/10|*.svc.cluster.local|*.svc.cluster.local -Djdk.http.auth.tunneling.disabledSchemes= -Djdk.http.auth.proxying.disabledSchemes=",
+  "git_sha": "cf205e42a575",
+  "git_branch": "main",
+  "reference_data": {
+    "jurisdictions": [
+      {
+        "code": "IN-RBI",
+        "name": "India \u2014 Reserve Bank of India (SA Directions 2026 / IRAC)",
+        "effectiveFrom": "2027-04-01",
+        "capitalApproach": "SA",
+        "capitalRuleset": "rbi_sa_directions_2026",
+        "ecraMapping": "rbi_ecra_2026",
+        "odrAdjustment": "rbi_odr_band",
+        "dueDiligenceRequired": true,
+        "saccrEnabled": true,
+        "cvaApproach": "BA-CVA",
+        "provisioningFrameworks": [
+          "ind_as_109",
+          "irac"
+        ],
+        "reportedProvisionPolicy": "max(ecl,irac)",
+        "sicrRules": "ind_as_109_sicr_v2",
+        "exposureLimits": "rbi_large_exposure_framework",
+        "kycCddRules": "rbi_kyc_md_tiers",
+        "reportingPack": "rbi_returns_2027",
+        "dataResidency": "in-region-only",
+        "active": true
+      },
+      {
+        "code": "AE-CBUAE",
+        "name": "UAE \u2014 Central Bank of the UAE (Basel III)",
+        "effectiveFrom": "2024-01-01",
+        "capitalApproach": "SA",
+        "capitalRuleset": "cbuae_sa_basel3",
+        "ecraMapping": "cbuae_ecra",
+        "odrAdjustment": null,
+        "dueDiligenceRequired": false,
+        "saccrEnabled": true,
+        "cvaApproach": "SA-CVA",
+        "provisioningFrameworks": [
+          "ifrs_9"
+        ],
+        "reportedProvisionPolicy": "ecl",
+        "sicrRules": "ifrs_9_sicr_v1",
+        "exposureLimits": "cbuae_large_exposure",
+        "kycCddRules": "cbuae_aml_tiers",
+        "reportingPack": "cbuae_returns",
+        "dataResidency": "in-region-only",
+        "active": true
+      }
+    ],
+    "rule_packs_IN": [
+      {
+        "id": 1,
+        "code": "rbi_sa_directions_2026",
+        "type": "CAPITAL_SA",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "unrated_risk_weights": {
+            "SOVEREIGN": 0.0,
+            "BANK": 0.4,
+            "CORPORATE": 1.0,
+            "SME_CORPORATE": 0.85,
+            "SPECIALISED_LENDING": 1.0,
+            "EQUITY": 2.5,
+            "OTHER": 1.0
+          },
+          "below_investment_grade_corporate_rw": 1.5,
+          "slotting_risk_weights": {
+            "STRONG": 0.7,
+            "GOOD": 0.9,
+            "SATISFACTORY": 1.15,
+            "WEAK": 2.5,
+            "DEFAULT": 0.0
+          },
+          "ccf_undrawn_commitment": 0.4,
+          "ccf_trade_contingent": 0.2,
+          "ccf_direct_credit_substitute": 1.0,
+          "crm_collateral_haircuts": {
+            "CASH": 0.0,
+            "GOVT_SECURITIES": 0.02,
+            "EQUITY_LISTED": 0.25,
+            "PROPERTY": 0.4,
+            "RECEIVABLES": 0.5
+          },
+          "due_diligence_uplift": 0.25,
+          "capital_ratio_min": 0.09
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.087Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.087Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.089Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 2,
+        "code": "rbi_ecra_2026",
+        "type": "ECRA_MAPPING",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "corporate": {
+            "AAA_AA": 0.2,
+            "A": 0.5,
+            "BBB": 1.0,
+            "BB": 1.0,
+            "B_AND_BELOW": 1.5,
+            "UNRATED": 1.0
+          },
+          "bank": {
+            "AAA_AA": 0.2,
+            "A": 0.3,
+            "BBB": 0.5,
+            "BB": 1.0,
+            "B_AND_BELOW": 1.5,
+            "UNRATED": 0.4
+          },
+          "internal_grade_to_bucket": {
+            "AAA": "AAA_AA",
+            "AA": "AAA_AA",
+            "A": "A",
+            "BBB": "BBB",
+            "BB": "BB",
+            "B": "B_AND_BELOW",
+            "CCC": "B_AND_BELOW",
+            "CC": "B_AND_BELOW",
+            "C": "B_AND_BELOW",
+            "D": "B_AND_BELOW"
+          }
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.100Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.100Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.101Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 3,
+        "code": "rbi_rating_pd_v3",
+        "type": "RATING_PD_MAP",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "AAA": 0.0003,
+          "AA": 0.0005,
+          "A": 0.001,
+          "BBB": 0.003,
+          "BB": 0.01,
+          "B": 0.035,
+          "CCC": 0.12,
+          "CC": 0.25,
+          "C": 0.4,
+          "D": 1.0
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.111Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.111Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.113Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 5,
+        "code": "rbi_lgd_foundation",
+        "type": "LGD_MAP",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "SENIOR_UNSECURED": 0.45,
+          "SENIOR_SECURED": 0.25,
+          "SUBORDINATED": 0.75,
+          "FULLY_COLLATERALISED": 0.15
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.136Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.136Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.137Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 6,
+        "code": "ind_as_109_sicr_v2",
+        "type": "PROVISIONING",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "sicr_dpd_stage2": 30,
+          "sicr_dpd_stage3": 90,
+          "sicr_notch_downgrade_stage2": 3,
+          "ecl_macro_overlay": 1.1,
+          "irac_provision_rates": {
+            "STANDARD": 0.004,
+            "SUB_STANDARD": 0.15,
+            "DOUBTFUL": 0.4,
+            "LOSS": 1.0
+          },
+          "irac_dpd_substandard": 90,
+          "irac_dpd_doubtful": 365,
+          "reported_provision_policy": "max(ecl,irac)",
+          "sma_enabled": 1,
+          "sma_0_max_dpd": 30,
+          "sma_1_max_dpd": 60,
+          "sma_2_max_dpd": 90,
+          "crilc_exposure_threshold": 50000000.0,
+          "irac_doubtful_age_bands": {
+            "D1": 0.25,
+            "D2": 0.4,
+            "D3": 1.0
+          },
+          "irac_doubtful_unsecured_rate": 1.0,
+          "irac_doubtful_d1_max_dpd": 730,
+          "irac_doubtful_d2_max_dpd": 1460,
+          "restructure_npa_hold_months": 12,
+          "restructure_classification_floor": "SUB_STANDARD",
+          "drawing_power_enabled": 1,
+          "dp_stock_margin_pct": 0.25,
+          "dp_debtor_margin_pct": 0.4
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.147Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.147Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.149Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 7,
+        "code": "rbi_doa_matrix",
+        "type": "DOA_MATRIX",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "levels": [
+            {
+              "max_amount": 50000000.0,
+              "min_grade": "BBB",
+              "authority": "RM_HEAD"
+            },
+            {
+              "max_amount": 250000000.0,
+              "min_grade": "BB",
+              "authority": "CREDIT_OFFICER"
+            },
+            {
+              "max_amount": 1000000000.0,
+              "min_grade": "B",
+              "authority": "CREDIT_COMMITTEE"
+            },
+            {
+              "max_amount": 1.7976931348623157e+308,
+              "min_grade": "D",
+              "authority": "BOARD_COMMITTEE"
+            }
+          ],
+          "deviation_escalates_one_level": true,
+          "below_hurdle_requires_escalation": true
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.154Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.154Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.156Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 11,
+        "code": "rbi_concentration_limits",
+        "type": "CONCENTRATION_LIMITS",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "capital_base": 50000000000.0,
+          "watch_pct": 0.8,
+          "warning_pct": 0.9,
+          "capital_buffer_pct": 0.1,
+          "dimensions": {
+            "SINGLE_NAME": {
+              "basis": "CAPITAL",
+              "limitPct": 0.15
+            },
+            "GROUP": {
+              "basis": "CAPITAL",
+              "limitPct": 0.25
+            },
+            "SECTOR": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.2
+            },
+            "GEOGRAPHY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.4
+            },
+            "INSTRUMENT": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.5
+            },
+            "DURATION_BUCKET": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.45
+            },
+            "RATING": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.35
+            },
+            "CURRENCY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.6
+            },
+            "SECTOR_x_GEOGRAPHY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.15
+            },
+            "RATING_x_SECTOR": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.12
+            }
+          },
+          "correlations": {
+            "INFRASTRUCTURE": {
+              "CONSTRUCTION": 0.8,
+              "STEEL": 0.7,
+              "POWER": 0.65,
+              "REAL_ESTATE": 0.55,
+              "MANUFACTURING": 0.45,
+              "LOGISTICS": 0.4,
+              "RETAIL": 0.2,
+              "TRADE": 0.2
+            },
+            "REAL_ESTATE": {
+              "CONSTRUCTION": 0.85,
+              "STEEL": 0.6,
+              "INFRASTRUCTURE": 0.55,
+              "MANUFACTURING": 0.35,
+              "RETAIL": 0.3,
+              "POWER": 0.3,
+              "LOGISTICS": 0.25,
+              "TRADE": 0.2
+            },
+            "MANUFACTURING": {
+              "STEEL": 0.65,
+              "LOGISTICS": 0.55,
+              "TRADE": 0.5,
+              "INFRASTRUCTURE": 0.45,
+              "CONSTRUCTION": 0.4,
+              "RETAIL": 0.4,
+              "POWER": 0.35,
+              "REAL_ESTATE": 0.35
+            },
+            "RETAIL": {
+              "TRADE": 0.75,
+              "LOGISTICS": 0.6,
+              "MANUFACTURING": 0.4,
+              "REAL_ESTATE": 0.3,
+              "INFRASTRUCTURE": 0.2
+            },
+            "TRADE": {
+              "RETAIL": 0.75,
+              "LOGISTICS": 0.65,
+              "MANUFACTURING": 0.5,
+              "INFRASTRUCTURE": 0.2
+            },
+            "LOGISTICS": {
+              "TRADE": 0.65,
+              "RETAIL": 0.6,
+              "MANUFACTURING": 0.55,
+              "INFRASTRUCTURE": 0.4
+            },
+            "STEEL": {
+              "INFRASTRUCTURE": 0.7,
+              "MANUFACTURING": 0.65,
+              "CONSTRUCTION": 0.65,
+              "REAL_ESTATE": 0.6,
+              "POWER": 0.45
+            },
+            "CONSTRUCTION": {
+              "REAL_ESTATE": 0.85,
+              "INFRASTRUCTURE": 0.8,
+              "STEEL": 0.65,
+              "MANUFACTURING": 0.4,
+              "POWER": 0.4
+            },
+            "POWER": {
+              "INFRASTRUCTURE": 0.65,
+              "STEEL": 0.45,
+              "CONSTRUCTION": 0.4,
+              "MANUFACTURING": 0.35,
+              "REAL_ESTATE": 0.3
+            }
+          }
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.200Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.200Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.209Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 12,
+        "code": "rbi_pricing_v1",
+        "type": "PRICING",
+        "jurisdiction": "IN-RBI",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "hurdle_raroc": 0.15,
+          "cost_of_funds": 0.075,
+          "opex_rate": 0.01,
+          "target_capital_ratio": 0.12,
+          "min_spread": 0.005,
+          "exception_single_level_bps": 100,
+          "exception_two_level_bps": 200
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.219Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.219Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.220Z",
+        "fullySignedOff": true
+      }
+    ],
+    "rule_packs_AE": [
+      {
+        "id": 15,
+        "code": "cbuae_sa_basel3",
+        "type": "CAPITAL_SA",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "unrated_risk_weights": {
+            "SOVEREIGN": 0.0,
+            "BANK": 0.4,
+            "CORPORATE": 1.0,
+            "SME_CORPORATE": 0.85,
+            "SPECIALISED_LENDING": 1.0,
+            "EQUITY": 2.5,
+            "OTHER": 1.0
+          },
+          "below_investment_grade_corporate_rw": 1.5,
+          "slotting_risk_weights": {
+            "STRONG": 0.7,
+            "GOOD": 0.9,
+            "SATISFACTORY": 1.15,
+            "WEAK": 2.5,
+            "DEFAULT": 0.0
+          },
+          "ccf_undrawn_commitment": 0.4,
+          "ccf_trade_contingent": 0.2,
+          "ccf_direct_credit_substitute": 1.0,
+          "crm_collateral_haircuts": {
+            "CASH": 0.0,
+            "GOVT_SECURITIES": 0.02,
+            "EQUITY_LISTED": 0.25,
+            "PROPERTY": 0.4,
+            "RECEIVABLES": 0.5
+          },
+          "due_diligence_uplift": 0.25,
+          "capital_ratio_min": 0.09
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.257Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.257Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.258Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 16,
+        "code": "cbuae_ecra",
+        "type": "ECRA_MAPPING",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "corporate": {
+            "AAA_AA": 0.2,
+            "A": 0.5,
+            "BBB": 1.0,
+            "BB": 1.0,
+            "B_AND_BELOW": 1.5,
+            "UNRATED": 1.0
+          },
+          "bank": {
+            "AAA_AA": 0.2,
+            "A": 0.3,
+            "BBB": 0.5,
+            "BB": 1.0,
+            "B_AND_BELOW": 1.5,
+            "UNRATED": 0.4
+          },
+          "internal_grade_to_bucket": {
+            "AAA": "AAA_AA",
+            "AA": "AAA_AA",
+            "A": "A",
+            "BBB": "BBB",
+            "BB": "BB",
+            "B": "B_AND_BELOW",
+            "CCC": "B_AND_BELOW",
+            "CC": "B_AND_BELOW",
+            "C": "B_AND_BELOW",
+            "D": "B_AND_BELOW"
+          }
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.267Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.267Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.272Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 17,
+        "code": "cbuae_rating_pd",
+        "type": "RATING_PD_MAP",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "AAA": 0.0003,
+          "AA": 0.0005,
+          "A": 0.001,
+          "BBB": 0.003,
+          "BB": 0.01,
+          "B": 0.035,
+          "CCC": 0.12,
+          "CC": 0.25,
+          "C": 0.4,
+          "D": 1.0
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.278Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.278Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.279Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 19,
+        "code": "cbuae_lgd",
+        "type": "LGD_MAP",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "SENIOR_UNSECURED": 0.45,
+          "SENIOR_SECURED": 0.25,
+          "SUBORDINATED": 0.75,
+          "FULLY_COLLATERALISED": 0.15
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.295Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.295Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.296Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 20,
+        "code": "ifrs_9_sicr_v1",
+        "type": "PROVISIONING",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "sicr_dpd_stage2": 30,
+          "sicr_dpd_stage3": 90,
+          "sicr_notch_downgrade_stage2": 3,
+          "ecl_macro_overlay": 1.05,
+          "irac_provision_rates": {},
+          "reported_provision_policy": "ecl"
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.307Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.307Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.309Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 21,
+        "code": "cbuae_doa_matrix",
+        "type": "DOA_MATRIX",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "levels": [
+            {
+              "max_amount": 20000000.0,
+              "min_grade": "BBB",
+              "authority": "RM_HEAD"
+            },
+            {
+              "max_amount": 100000000.0,
+              "min_grade": "BB",
+              "authority": "CREDIT_OFFICER"
+            },
+            {
+              "max_amount": 500000000.0,
+              "min_grade": "B",
+              "authority": "CREDIT_COMMITTEE"
+            },
+            {
+              "max_amount": 1.7976931348623157e+308,
+              "min_grade": "D",
+              "authority": "BOARD_COMMITTEE"
+            }
+          ],
+          "deviation_escalates_one_level": true,
+          "below_hurdle_requires_escalation": true
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.319Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.319Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.320Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 25,
+        "code": "cbuae_concentration_limits",
+        "type": "CONCENTRATION_LIMITS",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "capital_base": 50000000000.0,
+          "watch_pct": 0.8,
+          "warning_pct": 0.9,
+          "capital_buffer_pct": 0.1,
+          "dimensions": {
+            "SINGLE_NAME": {
+              "basis": "CAPITAL",
+              "limitPct": 0.25
+            },
+            "GROUP": {
+              "basis": "CAPITAL",
+              "limitPct": 0.25
+            },
+            "SECTOR": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.2
+            },
+            "GEOGRAPHY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.4
+            },
+            "INSTRUMENT": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.5
+            },
+            "DURATION_BUCKET": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.45
+            },
+            "RATING": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.35
+            },
+            "CURRENCY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.6
+            },
+            "SECTOR_x_GEOGRAPHY": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.18
+            },
+            "RATING_x_SECTOR": {
+              "basis": "PORTFOLIO",
+              "limitPct": 0.12
+            }
+          },
+          "correlations": {
+            "INFRASTRUCTURE": {
+              "CONSTRUCTION": 0.8,
+              "STEEL": 0.7,
+              "POWER": 0.65,
+              "REAL_ESTATE": 0.55,
+              "MANUFACTURING": 0.45,
+              "LOGISTICS": 0.4,
+              "RETAIL": 0.2,
+              "TRADE": 0.2
+            },
+            "REAL_ESTATE": {
+              "CONSTRUCTION": 0.85,
+              "STEEL": 0.6,
+              "INFRASTRUCTURE": 0.55,
+              "MANUFACTURING": 0.35,
+              "RETAIL": 0.3,
+              "POWER": 0.3,
+              "LOGISTICS": 0.25,
+              "TRADE": 0.2
+            },
+            "MANUFACTURING": {
+              "STEEL": 0.65,
+              "LOGISTICS": 0.55,
+              "TRADE": 0.5,
+              "INFRASTRUCTURE": 0.45,
+              "CONSTRUCTION": 0.4,
+              "RETAIL": 0.4,
+              "POWER": 0.35,
+              "REAL_ESTATE": 0.35
+            },
+            "RETAIL": {
+              "TRADE": 0.75,
+              "LOGISTICS": 0.6,
+              "MANUFACTURING": 0.4,
+              "REAL_ESTATE": 0.3,
+              "INFRASTRUCTURE": 0.2
+            },
+            "TRADE": {
+              "RETAIL": 0.75,
+              "LOGISTICS": 0.65,
+              "MANUFACTURING": 0.5,
+              "INFRASTRUCTURE": 0.2
+            },
+            "LOGISTICS": {
+              "TRADE": 0.65,
+              "RETAIL": 0.6,
+              "MANUFACTURING": 0.55,
+              "INFRASTRUCTURE": 0.4
+            },
+            "STEEL": {
+              "INFRASTRUCTURE": 0.7,
+              "MANUFACTURING": 0.65,
+              "CONSTRUCTION": 0.65,
+              "REAL_ESTATE": 0.6,
+              "POWER": 0.45
+            },
+            "CONSTRUCTION": {
+              "REAL_ESTATE": 0.85,
+              "INFRASTRUCTURE": 0.8,
+              "STEEL": 0.65,
+              "MANUFACTURING": 0.4,
+              "POWER": 0.4
+            },
+            "POWER": {
+              "INFRASTRUCTURE": 0.65,
+              "STEEL": 0.45,
+              "CONSTRUCTION": 0.4,
+              "MANUFACTURING": 0.35,
+              "REAL_ESTATE": 0.3
+            }
+          }
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.351Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.351Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.352Z",
+        "fullySignedOff": true
+      },
+      {
+        "id": 26,
+        "code": "cbuae_pricing",
+        "type": "PRICING",
+        "jurisdiction": "AE-CBUAE",
+        "version": 1,
+        "effectiveFrom": "2026-01-01",
+        "active": true,
+        "payload": {
+          "hurdle_raroc": 0.135,
+          "cost_of_funds": 0.045,
+          "opex_rate": 0.011,
+          "target_capital_ratio": 0.12,
+          "min_spread": 0.005,
+          "exception_single_level_bps": 100,
+          "exception_two_level_bps": 200
+        },
+        "policySignedOffBy": "seed.policy.officer",
+        "policySignedOffAt": "2026-07-16T13:21:25.363Z",
+        "modelRiskSignedOffBy": "seed.model.risk",
+        "modelRiskSignedOffAt": "2026-07-16T13:21:25.363Z",
+        "createdBy": "seed",
+        "createdAt": "2026-07-16T13:21:25.364Z",
+        "fullySignedOff": true
+      }
+    ],
+    "masters_active_counts": {
+      "ACTOR_ROLE": 27,
+      "AI_GOVERNANCE": 12,
+      "GOVERNANCE_POSTURE": 1,
+      "FACILITY_MASTER": 5,
+      "COLLATERAL_MASTER": 5,
+      "COVENANT_LIBRARY": 6,
+      "CP_MASTER": 10,
+      "CHECKLIST_MASTER": 1,
+      "EWS_TRIGGER": 3,
+      "FTP_CURVE": 3,
+      "RAROC_PD_TERM_STRUCTURE": 1,
+      "RAROC_BENCHMARK": 2,
+      "DEDUP_RULES": 1,
+      "NEGATIVE_LIST": 4,
+      "MODEL_DEFINITION": 3,
+      "FINANCIAL_TEMPLATE": 3,
+      "PROJECTION_TEMPLATE": 1,
+      "ESG_BAND": 3,
+      "CODE_VALUE": 14,
+      "EXTERNAL_RATING_AGENCY": 2,
+      "VALUATION_AGENCY": 1,
+      "CHARGE_AGENCY": 2,
+      "EMAIL_TEMPLATE": 13
+    }
+  },
+  "suites": [
+    {
+      "suite": "e2e_smoke",
+      "exit_code": 0,
+      "duration_sec": 20.6,
+      "passed": 422,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  CSV injection defanged \u2014 formula-trigger cell prefixed with apostrophe\n  PASS  newMarketValue <= 0 rejected (400) \u2014 wipeout routes through write-off path\n  PASS  invalid effectiveDate rejected (400, not 500)\n  PASS  AUTHORITATIVE rating UNCHANGED by collateral extraction + revaluation\n== 46. Client Planning Template (CPT): auto-generation \u00b7 wallet sizing \u00b7 nudges (advisory) ==\n  PASS  CPT generated (v1, DRAFT, advisory)\n  PASS  CPT pulls live application count (Meridian has \u22651 application)\n  PASS  CPT carries the real group reference (not a synthetic GROUP_ID placeholder)\n  PASS  CPT carries exposure-weighted figures (PD + RAROC + latestGrade)\n  PASS  CPT figures match the authoritative risk-service snapshot (quoted verbatim)\n  PASS  current facility types non-empty\n  PASS  cross-sell whitespace excludes already-held products\n  PASS  wallet sizing produces 3 scenarios (BEST / MOST_LIKELY / WORST)\n  PASS  each scenario has a 3-year revenue path or null when base unknown\n  PASS  BEST_CASE delta > MOST_LIKELY delta > WORST_CASE delta\n  PASS  wallet sizing produces non-null projected revenue paths from spread financials\n  PASS  indicative wallet is derived (heuristic, not null) when base revenue is known\n  PASS  industry insights carry sector + headwinds + tailwinds\n  PASS  completeness nudges surface RM action items\n  PASS  call-report nudge present (no CALL_REPORT event in audit history)\n  PASS  CPT markdown contains all major sections\n  PASS  CPT cites the upstream services (grounding)\n  PASS  CPT generation stamped as AI event (decision-service audit)\n  PASS  CPT regeneration -> v2 with overridden trend\n  PASS  CPT version history exposed\n  PASS  CPT confirmed -> CONFIRMED\n  PASS  re-review rejected (already CONFIRMED, 409)\n  PASS  CPT v1 rejected -> REJECTED\n  PASS  AUTHORITATIVE rating + pricing UNCHANGED by CPT\n  PASS  CPT for unknown counterparty returns 404 (not 502 'upstream unavailable')\n  PASS  Group insights for unknown group returns 404 (not 502)\n== 13. Audit trail ==\n  PASS  risk-service audit trail present\n== G1. Rating-override authority resolved from ACTOR_ROLE, not the request body ==\n  PASS  override: self-attested CRO ignored \u2014 analyst notch-capped (403)\n  PASS  override: genuine CREDIT_COMMITTEE succeeds despite a modest body role\n== E. \u00a75 config-over-code: seeded masters/packs now DRIVE their engines ==\n  PASS  E6: DAYS_PAST_DUE fires at 45 DPD (master watch cut 30)\n  PASS  E6: EWS DPD threshold edit pending\n  PASS  E6: checker approves EWS edit -> ACTIVE\n  PASS  E6: raising the master cut to 60 stops the 45-DPD deal firing DAYS_PAST_DUE (master-driven)\n  PASS  E1: PROVISIONING pack carries irac_dpd_substandard\n  PASS  E1: at the pack cutpoint -> SUB_STANDARD and the engine trace echoes the pack value\n  PASS  E1: one day below the pack cutpoint -> STANDARD\n  PASS  E4: suggestions sourced from the COVENANT_LIBRARY master (DSCR + NET_LEVERAGE present)\n  PASS  E4: library covenant edit pending\n  PASS  E4: a new library covenant appears in suggestions with its master threshold\n  PASS  E5: dedup echoes the configured identifierFields from DEDUP_RULES\n\nRESULT: 422 passed, 0 failed",
+      "ok": true
+    },
+    {
+      "suite": "e2e_masters",
+      "exit_code": 0,
+      "duration_sec": 0.48,
+      "passed": 21,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Default (null-jurisdiction) record: submit \u2192 approve ==\n  PASS  default submitted PENDING v1\n  PASS  default ACTIVE\n== 2. Jurisdiction override for the SAME key: submit \u2192 approve ==\n  PASS  override submitted PENDING v1 (own version line)\n  PASS  override ACTIVE\n== 3. The default must STILL be ACTIVE (no collision) ==\n  PASS  default + override BOTH active\n== 4. Jurisdiction-aware resolution ==\n  PASS  AE resolves to OVERRIDE\n  PASS  unrelated jur falls back to DEFAULT\n  PASS  no-jurisdiction resolves to DEFAULT\n== 5. Versioning the default supersedes only the default (override untouched) ==\n  PASS  default v2 submitted\n  PASS  only one active default after versioning\n  PASS  override STILL active v1 (not superseded by default versioning)\n== 6. Versioning the override supersedes only the override (default untouched) ==\n  PASS  override v2 submitted (own line)\n  PASS  AE resolves to override v2\n  PASS  default still v2 (untouched by override versioning)\n== 7. Maker-checker SoD still enforced ==\n  PASS  self-approval blocked (403)\n  PASS  different checker approves (200)\n== 8. Blank jurisdiction normalises to the DEFAULT line (no duplicate ACTIVE) ==\n  PASS  blank jurisdiction stored as null (default line)\n  PASS  blank re-submit versions the SAME default line (v2, not v1)\n  PASS  exactly one ACTIVE default after blank-jurisdiction versioning\n== 9. resolve() does NOT cross-jurisdiction fallback (no default \u2192 404) ==\n  PASS  unrelated jurisdiction with no default returns 404 (no cross-jurisdiction leak)\n  PASS  the AE-CBUAE override itself still resolves\n\n== masters jurisdiction e2e: 21 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_auth",
+      "exit_code": 0,
+      "duration_sec": 2.73,
+      "passed": 13,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== Auth e2e (stack mode: PERMISSIVE) ==\n\n== 1. Login mints a token; bad credentials rejected ==\n  PASS  bad password rejected (401)\n  PASS  unknown user rejected (401)\n  PASS  login returns a token\n  PASS  login echoes the actor\n  PASS  login resolves roles from ACTOR_ROLE\n\n== 2. /me echoes verified claims ==\n  PASS  me returns the verified actor\n  PASS  me resolves roles\n  PASS  me without a token rejected (401)\n\n== 3. SPOOF: token subject overrides a conflicting client X-Actor ==\n  PASS  gateway injected the TOKEN subject, not the client X-Actor\n\n== 4. Tampered / expired tokens are rejected ==\n  PASS  tampered token rejected (401)\n  PASS  expired token rejected (401)\n\n== 5. Mode-specific enforcement ==\n  PASS  PERMISSIVE: token-less call passes with client X-Actor\n  PASS  PERMISSIVE: token-less write still allowed\n\n== Auth e2e: 13 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_rbac",
+      "exit_code": 0,
+      "duration_sec": 1.42,
+      "passed": 20,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Setup: deal to sanction + limit tree ==\n\n== 1. CP clear / waive are role-gated ==\n  PASS  waive by CAD_OPS blocked \u2014 waivers need CREDIT_COMMITTEE\n  PASS  403 names the missing role\n  PASS  waive by CREDIT_COMMITTEE succeeds\n  PASS  clear by LIE blocked \u2014 clearing needs CAD_OPS/CREDIT_OPS\n  PASS  gate open after role-correct clears\n\n== 2. Unknown actor: the directory denies what it does not know ==\n  PASS  unknown actor cannot request a drawdown (403)\n  PASS  403 points at the ACTOR_ROLE master\n\n== 3. Known actor, wrong role ==\n  PASS  ANALYST cannot authorise (403 role)\n  PASS  CREDIT_OFFICER authorises\n  PASS  CREDIT_OPS cannot release \u2014 money movement needs TREASURY_OPS\n  PASS  TREASURY_OPS releases\n\n== 4. Repayment lanes are role-gated ==\n  PASS  ANALYST cannot record a repayment (403)\n  PASS  TREASURY_OPS cannot confirm a repayment \u2014 needs LOAN_OPS\n  PASS  LOAN_OPS checker confirms\n\n== 5. SoD still applies ON TOP of roles ==\n  PASS  all-roles actor still blocked from self-authorising (SoD)\n  PASS  cleanup cancel by requester ok\n\n== 6. Role grant flows maker -> checker through the ACTOR_ROLE master ==\n  PASS  role grant approved by a different actor\n  PASS  rbac cache invalidated on decision-service\n  PASS  granted role takes effect \u2014 intern.user can now request\n  PASS  granted CREDIT_OPS still cannot reverse (needs TREASURY_OPS)\n\n== RBAC e2e: 20 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_ai_governance",
+      "exit_code": 0,
+      "duration_sec": 1.35,
+      "passed": 14,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Capability catalogue + default state ==\n  PASS  catalogue exposes capabilities\n  PASS  default DOC_INTEL enabled\n\n== 2. Seed a minimal deal we can run AI against ==\n\n== 3. AI capability enabled -> endpoint succeeds ==\n  PASS  collateral-intel works when enabled\n\n== 4. Disable COLLATERAL_INTEL globally -> 403; deterministic path still works ==\n  PASS  collateral-intel blocked with 403 when disabled\n  PASS  403 message names the capability\n  PASS  deterministic rating works while AI off\n\n== 5. Re-enable -> endpoint succeeds again ==\n  PASS  collateral-intel works after re-enable\n\n== 6. Jurisdiction override: block only for AE-CBUAE, leave RBI on ==\n  PASS  IN-RBI deal unaffected by AE-CBUAE override\n  PASS  AE-CBUAE deal blocked by jurisdiction override\n\n== 7. Newly-wired gates: every remaining AI capability is enforced ==\n  PASS  pricing-exception blocked when disabled\n  PASS  covenant-intel blocked when disabled\n  PASS  cpt blocked when disabled\n  PASS  group-suggest blocked when disabled\n  PASS  copilot blocked when disabled\n\n== AI governance e2e: 14 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_governance_posture",
+      "exit_code": 0,
+      "duration_sec": 0.5,
+      "passed": 15,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Setup: a deal with a facility + limit tree ==\n\n== 1. Posture is observable; default is FAIL-OPEN ==\n  PASS  posture endpoint reports the effective posture on this service\n  PASS  default posture is FAIL-OPEN\n  PASS  no outage simulated at baseline\n\n== 2. Simulate the ACTOR_ROLE directory outage (posture master stays readable) ==\n  PASS  outage simulated\n  PASS  posture still readable during the simulated ACTOR_ROLE outage (fail-open)\n\n== 3. FAIL-OPEN: an unknown actor is ALLOWED during the outage ==\n  PASS  unknown actor's role-gated write succeeds under fail-open + outage\n\n== 4. Flip to FAIL-CLOSED (governed maker-checker) + observe ==\n  PASS  posture flipped to FAIL-CLOSED via the master\n  PASS  posture source is the MASTER (governed)\n\n== 5. FAIL-CLOSED: the SAME call now 403s on the outage ==\n  PASS  unknown actor denied under fail-closed + outage (403)\n  PASS  403 explains the fail-closed posture\n\n== 6. The posture deny is audit-stamped (examiner trail) ==\n  PASS  an RBAC_POSTURE_DENY audit event was written\n  PASS  deny event records the FAIL_CLOSED posture + outage reason + SYSTEM actor\n\n== 7. Restore: fail-open baseline, outage cleared ==\n  PASS  posture restored to FAIL-OPEN\n  PASS  outage simulation cleared\n  PASS  healthy directory denies the unknown actor for the ordinary ACTOR_ROLE reason (403)\n\n== governance posture (G7) e2e: 15 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_ai_off",
+      "exit_code": 0,
+      "duration_sec": 0.96,
+      "passed": 22,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "\n-- 2. Application (manual) --\n  PASS  application created\n\n-- 3. Financial spreading (analyst keys the figures by hand \u2014 no doc-intel) --\n  PASS  spread generated from keyed figures\n  PASS  ratios computed deterministically\n  PASS  spread confirmed (human gate)\n\n-- 4. Rating (deterministic scorecard) --\n  PASS  rating produced\n  PASS  model grade present\n  PASS  rating confirmed (human)\n\n-- 5. Capital (deterministic Standardised-Approach RWA) --\n  PASS  capital computed\n\n-- 6. Pricing (deterministic RAROC recommendation \u2014 NOT the optimiser) --\n  PASS  pricing recommendation produced\n\n-- 7. Covenants (analyst writes them by hand \u2014 no covenant-intel) --\n  PASS  covenant created manually\n\n-- 8. Credit proposal (generated WITHOUT AI commentary) --\n  PASS  credit proposal generated\n\n-- 9. DoA routing + human decision --\n  PASS  routed to an authority tier\n  PASS  named human decision recorded\n\n-- 10. Limit tree built from the approved deal --\n  PASS  limit tree built\n\n-- 11. CAD documentation + limit release --\n  PASS  CAD case opened with checklist\n  PASS  CAD case completed\n\n-- 12. Exposure booked to the portfolio --\n  PASS  exposure registered (booked)\n  PASS  ECL computed deterministically\n\n-- 13. Audit: the figure path is attributed to SYSTEM, never AI --\n  PASS  figure-path events present (rating/pricing/capital)\n  PASS  NO figure-path event attributed to AI\n  INFO  AI-actor events on this manual deal: ['CREDIT_PROPOSAL_GENERATED']\n\n== AI-OFF proof: 22 passed, 0 failed ==\nThe full LOS lifecycle (intake -> spread -> rate -> capital -> price ->\ncovenants -> proposal -> decision -> limits -> CAD -> booking) completed\nwith every AI endpoint hard-blocked by the harness.",
+      "ok": true
+    },
+    {
+      "suite": "e2e_ftp",
+      "exit_code": 0,
+      "duration_sec": 1.33,
+      "passed": 11,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Long-tenor TERM_LOAN (84m, amortising \u2192 WAL \u2248 0.6 \u00d7 84 = ~50m) ==\n  PASS  pricing breakdown carries FTP block\n  PASS  TERM_LOAN FTP sourced from curve\n  PASS  TERM_LOAN behaviour is AMORTISING\n  PASS  TERM_LOAN behavioural life < contractual\n    TL: contractual 84m \u2192 behavioural 50.4m, base 0.0748 + LP 0.0008 = FTP 0.0756\n\n== 2. Short revolving WORKING_CAPITAL (12m contractual, behavioural 12m) ==\n  PASS  WC FTP sourced from curve\n  PASS  WC behaviour is REVOLVING\n    WC: contractual 12m \u2192 behavioural 12.0m, base 0.0690 + LP 0.0002 = FTP 0.0692\n\n== 3. The term structure produces different funding for different maturities ==\n  PASS  TL (longer behavioural life) funds higher than WC (short revolving)\n  PASS  the two FTPs differ materially (>10 bps)\n\n== 4. cost_of_funds in the breakdown equals the derived FTP (not the flat 0.075) ==\n  PASS  breakdown costOfFunds == FTP\n  PASS  derived FTP differs from the old flat 0.075\n\n== 5. Negative: overdraft behavioural maturity is the shortest ==\n  PASS  OD behavioural maturity (6m) < WC behavioural (12m)\n\n== FTP e2e: 11 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_codevalue",
+      "exit_code": 0,
+      "duration_sec": 0.23,
+      "passed": 12,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. All expected domains seeded as CODE_VALUE records ==\n  PASS  every expected domain seeded (14 total)\n== 2. Resolver returns the right shape + preserved order ==\n  PASS  GRADE_SCALE canonical ladder present in correct order (AAA -> D)\n  PASS  each value carries code + label\n  PASS  OVERRIDE_ROLE.ANALYST carries score=1 (notch limit) \u2014 proves score field round-trips\n  PASS  OVERRIDE_ROLE.CRO score >= 99 (unlimited)\n== 3. Multi-domain endpoint returns every CODE_VALUE in one call ==\n  PASS  every expected domain returned by the bulk endpoint\n== 4. Unknown domain -> 404 ==\n  PASS  unknown domain -> 404\n== 5. CODE_VALUE is governed (maker-checker / SoD); adding a new value works ==\n  PASS  extension submitted PENDING_APPROVAL\n  PASS  self-approval blocked (SoD) -> 403\n  PASS  different checker approves -> ACTIVE\n  PASS  the new value (NR) shows up at the resolver immediately\n== 6. New brand-new domain can be added without code change ==\n  PASS  brand-new domain resolves with declared order\n\n== code-value master e2e: 12 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_modelconfig",
+      "exit_code": 0,
+      "duration_sec": 2.21,
+      "passed": 34,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Definition seeds + resolution by sector/segment (config) ==\n  PASS  model definitions seeded (corporate + mfg + sme)\n  PASS  MID_CORPORATE (no sector) -> default corporate model\n  PASS  sector=MANUFACTURING -> sector-specific model wins (most specific)\n  PASS  segment=SME -> SME model wins\n== 2. Render auto-resolves the model for a deal (sections present) ==\n  PASS  non-sector deal resolves the default corporate model\n  PASS  model has QUALITATIVE + QUANTITATIVE sections\n  PASS  advisory + grade carried (unchanged)\n  PASS  MANUFACTURING borrower auto-resolves the sector model through origination\n== 3. Question types present (dropdown / number / iterative / master-driven) ==\n  PASS  DROPDOWN question present\n  PASS  NUMBER question present\n  PASS  ITERATIVE question present\n  PASS  conditional question present (succession, visibleWhen)\n== 4. Visibility / conditional rule ==\n  PASS  succession hidden when management is Weak\n  PASS  succession visible when management is not Weak\n  PASS  mgmt_quality dropdown scored (Strong -> 90)\n== 5. Master-driven options (ESG_BAND) on the manufacturing model ==\n  PASS  mfg model has the master-driven esg_band question\n  PASS  esg_band options resolved from the ESG_BAND master\n== 6. Iterative (repeating group) capture ==\n  PASS  iterative group captured 2 items\n== 7. Parameter sources: module-sourced vs standalone (model-scored) ==\n  PASS  leverage is MODULE-sourced from the spreading ratio\n  PASS  mgmt_quality is STANDALONE (not fed by another module)\n== 7b. Auto-score: pull module params + score standalone params ==\n  PASS  auto-score produced a composite + band\n  PASS  module param (leverage) auto-pulled from the spreading ratio + scored\n  PASS  standalone param (mgmt_quality) model-scored with an AI rationale\n  PASS  standalone rationale is grounded (cites grade/ratios)\n== 8. Constraints: mandatory + min-answered gate confirmation ==\n  PASS  confirm blocked when mandatory questions unanswered\n  PASS  confirm succeeds once constraints satisfied\n  PASS  confirmed by a named human\n== 9. Governance off-switch on the AI suggest capability ==\n  PASS  suggest blocked when model-scoring disabled (403)\n  PASS  suggest works again once re-enabled\n== 10. The advisory invariant: authoritative grade unchanged ==\n  PASS  authoritative final grade byte-identical after all model activity\n== 11. MODEL_DEFINITION is governed (maker-checker / SoD) ==\n  PASS  new model submitted PENDING_APPROVAL\n  PASS  self-approval blocked (SoD) -> 403\n  PASS  different checker approves -> ACTIVE\n  PASS  the newly-approved model now resolves for its segment\n\n== model config engine e2e: 34 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_ratingmodel",
+      "exit_code": 0,
+      "duration_sec": 1.28,
+      "passed": 19,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Publish two single-dropdown models: one model-of-record, one advisory ==\n  PASS  PF/INFRASTRUCTURE resolves the model-of-record definition\n  PASS  its payload carries ratingModelOfRecord=true\n  PASS  PF/RENEWABLES resolves the advisory (non-of-record) definition\n\n== 2. Model-of-record deal: NO confirmed instance -> scorecard fallback ==\n  PASS  no confirmed model instance -> gradeSource=SCORECARD (feature inert)\n  PASS  scorecard produced a healthy grade (not the model's CCC)\n\n== 3. Confirm the model instance (composite 40) -> flips grade to MODEL_OF_RECORD ==\n  PASS  deal resolves its model-of-record definition\n  PASS  single dropdown answer -> advisory composite 40\n  PASS  model instance CONFIRMED by a named human\n  PASS  confirmed model-of-record -> gradeSource=MODEL_OF_RECORD\n  PASS  authoritative grade now the composite ladder result (40 -> CCC)\n  PASS  modelScore carries the composite (40.0)\n  PASS  breakdown records the model provenance\n  PASS  provenance names the confirming human + model key\n  PASS  latest authoritative rating reads CCC (model of record)\n\n== 4. CONTROL: identical model NOT flagged of-record stays advisory ==\n  PASS  control deal rated by scorecard\n  PASS  control model instance CONFIRMED (composite 40, advisory)\n  PASS  confirmed advisory instance does NOT move the grade (still SCORECARD)\n  PASS  control authoritative grade byte-identical after confirm\n  PASS  control grade is NOT the model composite CCC (flag alone is the gate)\n\n== rating model of record e2e: 19 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_fintemplate",
+      "exit_code": 0,
+      "duration_sec": 0.75,
+      "passed": 22,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Templates seeded + resolution by sector/segment ==\n  PASS  default + SME + manufacturing templates seeded\n  PASS  MID_CORPORATE resolves the default chart\n  PASS  SME segment resolves the SME chart\n  PASS  MANUFACTURING sector resolves the manufacturing chart (most specific)\n== 2. Default template leaves the standard chart untouched (zero regression) ==\n  PASS  default chart in force\n  PASS  standard ratios present (NET_LEVERAGE, DSCR, CURRENT_RATIO)\n  PASS  no template-specific ratio leaks into the default chart\n  PASS  standard NET_LEVERAGE computed exactly as before\n== 3. SME template adds an input line + formula-computed ratios (through the spread) ==\n  PASS  SME chart in force\n  PASS  extra ratio ASSET_TURNOVER computed by formula\n  PASS  extra ratio PROMOTER_COVERAGE uses the extra input line via formula\n  PASS  standard ratios still present alongside the extras\n  PASS  extra input line PROMOTER_NET_WORTH appears in the spread grid\n== 4. Manufacturing template: extra input + derived line via formula ==\n  PASS  manufacturing template declares an INVENTORY_DAYS derived line\n  PASS  its formula references INVENTORY and COGS\n== 4b. MANUFACTURING borrower auto-resolves fin-mfg THROUGH origination (sector wired) ==\n  PASS  manufacturing borrower's spread auto-uses fin-mfg (sector from counterparty)\n  PASS  manufacturing extra ratio ASSET_TURNOVER present\n  PASS  INVENTORY_DAYS derived line computed by formula (0.8/3.2*365 = 91.25)\n== 5. FINANCIAL_TEMPLATE is governed (maker-checker / SoD) ==\n  PASS  new template submitted PENDING_APPROVAL\n  PASS  self-approval blocked (SoD) -> 403\n  PASS  different checker approves -> ACTIVE\n  PASS  newly-approved template resolves for its segment\n\n== financial templates e2e: 22 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_projection",
+      "exit_code": 0,
+      "duration_sec": 0.7,
+      "passed": 21,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Template resolves + proforma computes N years ==\n  PASS  resolved proj-corp-v1 template\n  PASS  5-year horizon with 5 projected years\n  PASS  drivers present (revenue_growth etc.)\n  PASS  base year seeded from the spread (REVENUE = 5e9)\n== 2. Revenue compounds at the growth driver (10% default) ==\n  PASS  Y1 revenue = base * 1.10\n  PASS  Y2 revenue = Y1 * 1.10\n  PASS  projected DSCR present each year\n  PASS  debt amortises (Y2 debt < Y1 debt)\n== 3. Driver override changes the grid ==\n  PASS  revenue_growth override applied (0.20)\n  PASS  Y1 revenue now base * 1.20\n  PASS  unknown driver key ignored (no crash)\n== 4. Sensitivity: flex a driver, see the final-year DSCR move ==\n  PASS  sensitivity returns base + flexed grids\n  PASS  lower EBITDA margin lowers the final-year projected DSCR\n  PASS  unknown sensitivity driver -> 400\n== 5. Human confirm (advisory gate) ==\n  PASS  projection CONFIRMED by a named human\n== 6. Advisory invariant: authoritative grade unchanged ==\n  PASS  rating present + unchanged by projection activity\n  PASS  projection view advertises advisory + gradeUnchanged\n== 7. PROJECTION_TEMPLATE is governed (maker-checker / SoD) ==\n  PASS  new template submitted PENDING_APPROVAL\n  PASS  self-approval blocked (SoD) -> 403\n  PASS  different checker approves -> ACTIVE\n  PASS  newly-approved template resolves for its segment\n\n== financial projections e2e: 21 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_concentration",
+      "exit_code": 0,
+      "duration_sec": 2.35,
+      "passed": 43,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  Titan breaches single-name limit (9bn > 7.5bn)\n  PASS  total breaches >= 1\n  PASS  breach narrative mentions SINGLE_NAME\n\n== 4. Instrument + duration + rating dimensions populated ==\n  PASS  INSTRUMENT has >= 3 facility types\n  PASS  INSTRUMENT includes TERM_LOAN\n  PASS  DURATION_BUCKET has multiple buckets\n  PASS  DURATION includes a 0-12m bucket\n  PASS  DURATION includes a 120m+ bucket (PF 144m)\n\n== 5. Intersection dimension (sector x geography) present ==\n  PASS  SECTOR_x_GEOGRAPHY has composite keys\n  PASS  intersection limitPct tighter than sector (0.15 vs 0.20)\n\n== 6. Legacy 3-dimension view still works (back-compat) ==\n  PASS  legacy view still returns singleName/sector/segment\n\n== 7. Jurisdiction scoping: the local view never leaks another regime's book ==\n    1 AE-CBUAE exposure booked\n  PASS  IN-RBI view does NOT contain the AE counterparty\n  PASS  AE-CBUAE view contains its own counterparty\n  PASS  AE-CBUAE view does NOT contain IN-RBI names\n  PASS  global=true (group-CRO) view spans both books\n  PASS  global view GEOGRAPHY has both jurisdictions\n\n== 8. Early-warning bands (NORMAL / WATCH / WARNING / BREACH) ==\n  PASS  every line carries a band\n  PASS  Titan single-name is in the BREACH band (9bn > 7.5bn cap)\n  PASS  dimension reports a bands tally\n  PASS  SINGLE_NAME breach band count == breachCount\n  PASS  every bucket lands in exactly one band\n  PASS  SECTOR bands all match their utilisation bucket\n\n== 9. Correlation-stressed concentration ==\n  PASS  shocked sector echoed\n  PASS  stressed EL strictly exceeds base EL\n  PASS  incremental loss = stressed - base\n  PASS  shocked sector has correlation 1.0\n  PASS  shocked sector PD lifts ~4x\n  PASS  a correlated sector (MANUFACTURING) takes a partial PD hit, not the full shock\n  PASS  MANUFACTURING correlation to INFRASTRUCTURE is in (0,1)\n  PASS  sectors sorted by incremental loss desc\n  PASS  stressed loss reported as % of capital\n  PASS  RETAIL shock yields a different (lower) incremental loss than the INFRASTRUCTURE complex\n  PASS  severe shock breaches the capital buffer\n  PASS  capital breach raises an alert\n  PASS  stress without a shocked sector rejected (400)\n\n== Multi-dim concentration e2e: 43 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_sector_provenance",
+      "exit_code": 0,
+      "duration_sec": 0.47,
+      "passed": 7,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Book a deal whose SECTOR and SEGMENT differ ==\n\n== 1. Origination already captures the real counterparty sector ==\n  PASS  origination credit-inputs carries the counterparty sector\n  PASS  segment is distinct from sector on this deal\n\n== 2. The booked exposure records the REAL sector, not the segment proxy ==\n  PASS  exposure sector = counterparty sector (LOGISTICS), not the segment\n  PASS  exposure sector is NOT the segment proxy\n  PASS  exposure segment unchanged\n\n== 3. The real sector flows into the concentration SECTOR dimension ==\n  PASS  concentration SECTOR dimension now buckets by the real sector (LOGISTICS present)\n  PASS  no SEGMENT value leaks into the SECTOR dimension (proxy retired)\n\n== sector provenance (D6) e2e: 7 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_group_grade",
+      "exit_code": 0,
+      "duration_sec": 2.0,
+      "passed": 13,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Build a 3-member group with distinct grades + exposures ==\n\n== 1. Derived group grade = deterministic exposure-weighted notch ==\n  PASS  group grade derived on the AAA..D ladder + advisory\n  PASS  method is EXPOSURE_WEIGHTED_NOTCH (default policy)\n  PASS  group grade equals the deterministic ladder computation (expected BBB)\n  PASS  group grade sits inside the [best, weakest] band\n  PASS  per-member contributions present, weights sum to ~1.0\n  PASS  basis explains the method + rated-member count\n\n== 2. Deterministic + SYSTEM-audited (never AI) ==\n  PASS  GROUP_GRADE_DERIVED stamped by SYSTEM (engine), not AI\n\n== 3. Advisory invariant: member authoritative grades unchanged ==\n  PASS  combined proposal renders the derived group grade\n  PASS  every member's authoritative grade is byte-identical after the rollup\n\n== 4. Config method-flip moves the group grade (governed) ==\n  PASS  method flipped to WORST_OF via the GROUP_GRADE pack\n  PASS  WORST_OF group grade = weakest member (B), moved from BBB\n  PASS  member grades still unchanged after the method flip\n  PASS  GROUP_GRADE pack restored to EXPOSURE_WEIGHTED_NOTCH\n\n== group grade ladder (D10) e2e: 13 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_amendment",
+      "exit_code": 0,
+      "duration_sec": 1.28,
+      "passed": 23,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Setup: rated deal, limit tree, 300M drawn ==\n    deal HLX-2026-GRUDTP, facility FAC-XCYYXS3, 600M sanctioned / 300M drawn\n\n== 1. Propose an increase 600M -> 900M \u2014 routed by the DoA matrix ==\n  PASS  unknown actor cannot propose (403 role)\n  PASS  amendment PROPOSED with type INCREASE\n  PASS  routed exposure = post-amendment total (900M)\n  PASS  900M routes to CREDIT_COMMITTEE (250M < x <= 1B band)\n\n== 2. Only one PROPOSED amendment per facility ==\n  PASS  second concurrent proposal blocked (409)\n\n== 3. Approval needs authority RANK + a different human ==\n  PASS  proposer cannot self-approve (403 SoD)\n  PASS  CREDIT_OFFICER (rank below committee) blocked (403)\n  PASS  CREDIT_COMMITTEE approves\n  PASS  appliedAt stamped\n\n== 4. The amendment is APPLIED: facility of record + limit tree + headroom ==\n  PASS  origination facility amount now 900M\n  PASS  limit node sanctioned now 900M\n  PASS  obligor root rolled up to 900M\n  PASS  new headroom immediately drawable (300+550 <= 900)\n\n== 5. Decrease below committed drawdowns is blocked ==\n  PASS  decrease below committed blocked (400)\n\n== 6. Tenor extension flows the same lane ==\n  PASS  type TENOR_EXTENSION, amount unchanged\n  PASS  CRO (committee+board rank) approves the extension\n  PASS  facility tenor now 84\n  PASS  limit node tenor now 84\n\n== 7. Reject lane + history ==\n  PASS  actor with no DoA-ladder authority cannot reject (403)\n  PASS  rejected by an authority holder\n  PASS  rejected amendment did NOT touch the facility\n  PASS  history lists all three amendments\n  PASS  FACILITY_AMENDMENT_APPROVED stamped HUMAN\n\n== Amendment e2e: 23 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_syndication",
+      "exit_code": 0,
+      "duration_sec": 0.97,
+      "passed": 55,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  lead funded-to-date = 500m\n  PASS  lead undrawn = 4.5bn\n  PASS  total funded = 3bn after two draws\n\n== 4b. Allocation reversal: rows kept for audit, funded-to-date drops ==\n  PASS  funded back to 1bn after DRAW-2 reversed\n  PASS  DRAW-2 rows retained and marked REVERSED\n  PASS  re-reversal is idempotent (reused=true)\n  PASS  reversing an unknown drawdown is a 404\n\n== 5. Participant feed (canonical downstream statement) ==\n  PASS  feed destination = SYNDICATION\n  PASS  feed has 3 participant lines\n  PASS  feed line carries funded + fees\n  PASS  feed call persisted as an ExportBatch\n  PASS  ExportBatch idempotency key follows SYND-<ref>-<asOf>\n  PASS  ExportBatch record count matches envelope\n  PASS  ExportBatch destination = SYNDICATION\n  PASS  re-fetching the feed on the same day reuses the ExportBatch\n\n== 6. Negative: non-syndication deal rejected ==\n  PASS  book on non-syndication deal returns 4xx\n\n== 7. Invitations: SENT -> ACCEPT / DECLINE / WITHDRAW (with SoD) ==\n  PASS  invitation persisted SENT\n  PASS  self-accept blocked (403 SoD)\n  PASS  invitation flips to ACCEPTED\n  PASS  participantId stamped on accepted invitation\n  PASS  accepted invitee joined the syndicate book\n  PASS  re-accept of ACCEPTED invitation rejected (409)\n  PASS  declined invitation captured\n  PASS  withdraw by non-inviter blocked (403)\n  PASS  withdraw by inviter succeeds\n  PASS  invitation history returns 3 rows\n\n== 8. Secondary transfer: novate unfunded commitment with SoD + agent settlement ==\n  PASS  lead participant identified\n  PASS  transfer above unfunded commitment blocked (400)\n  PASS  transfer PROPOSED\n  PASS  self-settle blocked (403 SoD)\n  PASS  transfer SETTLED\n  PASS  toParticipantId stamped\n  PASS  lead commitment dropped by the transferred amount\n  PASS  transferee appears in the book with the transfer\n  PASS  funded historical allocations on DRAW-1 untouched by transfer\n  PASS  agent rejection succeeds\n  PASS  SYNDICATION_INVITATION_ACCEPTED stamped HUMAN\n  PASS  SYNDICATION_TRANSFER_SETTLED stamped HUMAN\n\n== Syndication e2e: 55 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_pf",
+      "exit_code": 0,
+      "duration_sec": 1.64,
+      "passed": 47,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  tranche releases with distinct third actor\n\n== 5. Milestone 1 is now DRAWN and cannot be re-drawn ==\n  PASS  milestone 1 marked DRAWN\n  PASS  re-drawing a DRAWN milestone is blocked\n  PASS  403 cites already drawn\n\n== 6. Second tranche needs milestone 2 certified independently ==\n  PASS  tranche 2 blocked until milestone 2 certified\n  PASS  tranche 2 authorises after milestone 2 certified\n\n== 7. Reserve withdrawal SoD: withdrawer must differ from the last funder ==\n  PASS  withdraw by last funder blocked (403 SoD)\n  PASS  withdraw by different actor succeeds\n  PASS  withdrawal drops DSRA back to SHORTFALL\n\n== 8. Reversal reinstates the milestone \u2014 the tranche becomes re-drawable ==\n  PASS  reversal by the releaser blocked (403 SoD)\n  PASS  reversal succeeds with a distinct actor\n  PASS  milestone 1 reinstated to LIE_CERTIFIED\n  PASS  milestone 1 re-draw authorises after reversal (was ALREADY_DRAWN)\n\n== 9. Waterfall + forward DSCR projection (computed view, never persisted) ==\n  PASS  projection has rows for every schedule period (180)\n  PASS  first row carries O&M + debtService + DSCR\n  PASS  frequency inherited from the schedule\n  PASS  O&M = 30% of CFADS each period\n  PASS  min DSCR > covenant in the healthy case\n  PASS  zero breaches in the healthy case\n  PASS  cushion to covenant reported (>0)\n  PASS  LLCR > 1 in the healthy case (NPV cash > outstanding)\n  PASS  no DSRA top-up when the reserve is already at requirement\n  PASS  distributions flow every period (surplus after debt service)\n  PASS  DSRA shortfall pulled top-ups from period-1 surplus\n  PASS  top-ups stop after DSRA is refilled\n\n== 10. Stress: low CFADS triggers covenant + cash breaches ==\n  PASS  min DSCR collapses well below covenant under stress\n  PASS  totalBreachPeriods > 0\n  PASS  firstBreachPeriod identified\n  PASS  cushion to covenant negative under stress\n  PASS  breached rows flagged covenantBreach\n  PASS  cash shortfall flagged where CFADS net of O&M < debt service\n  PASS  no distributions in any breached period\n\n== 11. Covenant override + audit ==\n  PASS  lower covenant -> fewer covenant breaches than 1.20\n  PASS  PF_WATERFALL_PROJECTED stamped on the audit trail\n\n== PF mechanics e2e: 47 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_predisbursement",
+      "exit_code": 0,
+      "duration_sec": 1.98,
+      "passed": 80,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  cancel of AUTHORIZED by third party blocked (403 SoD)\n  PASS  cancel of AUTHORIZED by authoriser succeeds\n  PASS  cancelledBy/Reason captured\n  PASS  CANCELLED can't be re-authorised\n  PASS  cancel of DRAFT by non-requester blocked (403 SoD)\n  PASS  cancel of DRAFT by requester succeeds\n  PASS  cancelled drawdown freed facility headroom\n\n== 11. Cross-currency: USD drawdown on an INR facility (FX converted) ==\n  PASS  status DRAFT\n  PASS  requestedCurrency = USD\n  PASS  requestedAmount = 1,000,000\n  PASS  facility currency stays INR\n  PASS  amount > requestedAmount (USD \u2192 INR at ~83)\n  PASS  fxRate stamped on the row\n    1,000,000 USD @ 87.3679 = 87,367,875.00 INR\n  PASS  request-time rate includes the bank spread (> raw mid ~83)\n\n== 11b. Release-time FX re-quote: the rate moves between request and release ==\n  PASS  released status RELEASED\n  PASS  booked amount re-quoted at the higher release-time rate\n  PASS  re-quoted rate reflects the new USD (~90 + spread)\n  PASS  booked INR ~= 1,000,000 USD x re-quoted rate\n  PASS  DISBURSEMENT_FX_REQUOTED stamped on release\n\n== 12. Per-jurisdiction CP_MASTER override: IN-RBI uses Indian-specific CPs ==\n  PASS  IN-RBI override picked (CERSAI present)\n  PASS  IN-RBI override picked (ROC charge filing)\n  PASS  IN-RBI override picked (revenue stamping)\n  PASS  default-only codes not present (CP-VAL still here, CP-BR still here)\n  PASS  AE-CBUAE override picked (Mortgage with Land Dept)\n  PASS  AE-CBUAE override picked (Emirates ID)\n  PASS  AE-CBUAE override picked (Al Etihad bureau)\n  PASS  AE-CBUAE override picked (Economic Substance)\n  PASS  AE-CBUAE does NOT carry India-specific CPs\n\n== 13. Actor hygiene: anonymous writes are blocked, never defaulted ==\n  PASS  request without X-Actor header rejected (400)\n  PASS  request with blank X-Actor rejected (400/403)\n\n== 14. Idempotent UTILISE \u2014 a repeat transactionRef is a no-op on the limit ledger ==\n  PASS  replay returns 200\n  PASS  replay marked Idempotent in the result message\n  PASS  limit-service outstanding UNCHANGED after replay\n\n== 15. Reject is the checker's lane \u2014 the requester withdraws via cancel ==\n  PASS  reject by own requester blocked (403 SoD)\n  PASS  reject by a different actor succeeds\n\n== Pre-disbursement e2e: 80 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_postdisbursement",
+      "exit_code": 0,
+      "duration_sec": 1.71,
+      "passed": 41,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  principal column sums to the principal\n  PASS  EMI payment constant across periods (\u00b11)\n  PASS  closing balance reaches zero\n  PASS  EQUAL_PRINCIPAL has constant principal (\u00b11)\n  PASS  BULLET: principal only in final period\n  PASS  BULLET quarterly periods = 20\n\n== 2. Manual repayment: record (maker) -> confirm (checker) books limit RELEASE ==\n  PASS  repayment RECORDED with split captured\n  PASS  no ledger movement before confirmation\n  PASS  self-confirm blocked (403 SoD)\n  PASS  confirm by checker succeeds\n  PASS  releaseRef stamped\n  PASS  outstanding dropped by the principal (45M), not the full amount\n  PASS  decision-ledger outstanding = 255M\n  PASS  re-confirm rejected (409 \u2014 already CONFIRMED)\n  PASS  over-repayment blocked (400)\n  PASS  self-reject blocked (403 SoD)\n  PASS  reject by checker succeeds\n\n== 3. Core-banking connector: idempotent envelope ingest, RELEASE as SYSTEM ==\n  PASS  event accepted (not duplicate)\n  PASS  outstanding dropped by ingested principal (28M)\n  PASS  replay recognised as duplicate\n  PASS  replay did NOT move the ledger\n  PASS  connector repayment CONFIRMED by SYSTEM\n\n== 4. Reversal of a RELEASED drawdown \u2014 blocked while repayments exist ==\n  PASS  reversal blocked while facility has confirmed repayments (409)\n  PASS  reversal without a reason rejected (400)\n  PASS  reversal by the releaser blocked (403 SoD)\n\n== 5. Reversal succeeds: ledger restored, headroom freed, terminal state ==\n  PASS  reversal by a different actor succeeds\n  PASS  reversalRef = REV-<utilisationRef>\n  PASS  limit outstanding restored by the reversed amount (100M)\n  PASS  reversed drawdown freed facility headroom\n  PASS  REVERSED is terminal \u2014 second reversal rejected (409)\n  PASS  DISBURSEMENT_REVERSED stamped HUMAN\n  PASS  REPAYMENT_INGESTED stamped as engine/system event\n\n== 6. Floating-rate schedule (EBLR + 200bps, reset quarterly) ==\n  PASS  facility now FLOATING with EBLR + 200bps\n  PASS  rateSource references the benchmark\n  PASS  annualRate = EBLR (8.7%) + 200bps = 10.7%\n  PASS  rows carry periodRate\n  PASS  schedule reflects the new EBLR (9.2 + 2.0 = 11.2%)\n  PASS  payment rose with the higher rate\n\n== Post-disbursement e2e: 41 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_monitoring",
+      "exit_code": 0,
+      "duration_sec": 1.51,
+      "passed": 17,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Book a distressed (95 dpd) and a healthy (0 dpd) exposure ==\n    distressed HLX-2026-EXS4WK, healthy HLX-2026-ZXPMCL\n\n== 1. Sweep the distressed deal: EWS signal -> auto-opened collections case ==\n  PASS  sweep raised at least one signal\n  PASS  sweep escalated to collections\n  PASS  escalation cites the DPD signal\n  PASS  a collections case id was returned\n  PASS  case opened by SYSTEM monitoring\n  PASS  case staged STAGE_3 from 95 dpd\n  PASS  trigger reason records the EWS escalation\n  PASS  case is OPEN (workable)\n\n== 2. Re-sweep is idempotent \u2014 refresh, not duplicate ==\n  PASS  re-sweep returns the SAME case id\n  PASS  exactly one collections case for the distressed deal\n\n== 3. The auto-opened case flows through the normal workflow ==\n  PASS  auto-opened case can be escalated to legal by an authorised actor\n\n== 4. Healthy deal: swept, no escalation, no case ==\n  PASS  healthy deal not escalated\n  PASS  healthy deal opened no case\n  PASS  no collections case on the healthy deal\n\n== 5. Sweep-all + audit trail ==\n  PASS  sweep-all covers both deals\n  PASS  MONITORING_SWEEP stamped on the audit trail\n  PASS  COLLECTIONS_CASE_AUTO_OPENED stamped (engine/SYSTEM)\n\n== Monitoring loop e2e: 17 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_collections",
+      "exit_code": 0,
+      "duration_sec": 1.53,
+      "passed": 26,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Setup: rated deal + limit tree + 200M released and 50M repaid ==\n    deal HLX-2026-MGLM9D, facility FAC-8HF9XXH, 150M outstanding\n\n== 1. Open a collections case ==\n  PASS  opener without COLLECTIONS_OPS denied\n  PASS  case OPEN at STAGE_1 (5 dpd)\n  PASS  outstandingAtOpen captured (150M)\n  PASS  only one active case per facility (409)\n\n== 2. DPD updates restage the case (30/60/90 cuts) ==\n  PASS  35 dpd moves to STAGE_2\n  PASS  95 dpd moves to STAGE_3 (NPA)\n\n== 3. Legal lane needs COLLECTIONS_HEAD / LEGAL ==\n  PASS  collections.ops cannot initiate legal (403)\n  PASS  legal needs a reference (400)\n\n== 4. Restructure chains the FacilityAmendment lane (same DoA matrix) ==\n  PASS  restructure created an amendment in the FacilityAmendment lane\n  PASS  amendment routed via DoA (committee/board)\n  PASS  restructure approval needs the routed authority (403)\n  PASS  CRO approves the restructure amendment\n  PASS  case flips to RESTRUCTURED\n\n== 5. Write-off: DoA-routed on the write-off amount, limit ledger releases ==\n  PASS  write-off above outstanding rejected (400)\n  PASS  write-off propose needs a COLLECTIONS / CREDIT_OPS role\n  PASS  write-off routed to a DoA authority\n  PASS  write-off proposer cannot also approve (403 SoD)\n  PASS  CREDIT_OFFICER may approve at-rank write-off\n  PASS  case ends WRITTEN_OFF\n  PASS  writeOffAmount captured\n  PASS  limit ledger dropped by the written-off amount\n\n== 6. Cure: only when DPD = 0 and overdue = 0 ==\n  PASS  cure while overdue stands rejected (409)\n  PASS  cure once cleared succeeds\n\n== 7. List + audit ==\n  PASS  list returns 3 cases for the deal\n  PASS  COLLECTIONS_WRITTEN_OFF stamped HUMAN\n  PASS  COLLECTIONS_RESTRUCTURED stamped HUMAN\n\n== Collections e2e: 26 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_sicr_notch",
+      "exit_code": 0,
+      "duration_sec": 0.67,
+      "passed": 17,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Build + rate a mid-corporate deal ==\n  PASS  deal rated (scorecard model grade recorded)\n\n== 2. Set origination grade AAA (governed), book at dpd 0 -> STAGE_1 ==\n  PASS  rating overridden to AAA + confirmed\n  PASS  origination grade snapshotted = AAA\n  PASS  current grade at booking = AAA\n  PASS  origination exposure is STAGE_1 (AAA, dpd 0)\n  PASS  no notch downgrade at origination\n  PASS  trace echoes origination + current grade\n\n== 3. Downgrade 5 notches (AAA -> B) at dpd 0 -> STAGE_2 by notch rule ==\n  PASS  rating overridden to B + confirmed\n  PASS  origination grade IMMUTABLE across re-register (still AAA)\n  PASS  current grade updated to B on re-register\n  PASS  downgraded exposure is now STAGE_2\n  PASS  stage-2 trigger is the notch rule (sicrByNotch=true)\n  PASS  notch downgrade computed = 5 (AAA -> B)\n  PASS  notch threshold read from pack (default 3)\n  PASS  trace shows origination AAA -> current B\n  PASS  dpd 0 is below the stage-2 dpd gate (notch rule not dpd-driven)\n  PASS  current grade B is NOT a weak/SICR grade (notch rule not grade-driven)\n\n== SICR-by-notch e2e: 17 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_100_obligors",
+      "exit_code": 0,
+      "duration_sec": 64.39,
+      "passed": 10,
+      "failed": 0,
+      "tally_source": "pass_fail_lines",
+      "stdout_tail": " declined               : 19\n booked                 : 109\n ECL computed           : 109\n RAROC snapshots        : 109\n\n distribution by segment :\n   MID_CORPORATE             26\n   SME                       34\n   LARGE_CORPORATE           29\n   PROJECT_FINANCE            8\n   TRADE_FINANCE             15\n   FINANCIAL_INSTITUTION     17\n distribution by jurisdiction :\n   IN-RBI                    85\n   AE-CBUAE                  15\n distribution by final grade :\n     AAA   2\n      AA  30\n       A  37\n     BBB  37\n      BB   3\n     CCC   1\n      CC  15\n       C   4\n book :\n   total EAD             211,561,000,000\n   total RWA              33,184,348,157\n   total provision         2,163,357,207\n   by stage             {'STAGE_1': 111, 'STAGE_2': 6, 'STAGE_3': 4}\n concentration breaches:\n   - Single-name limit breached: Titan Mega Corp at \u20b9900 Cr vs limit \u20b9750 Cr\n   - Single-name limit breached: Mumbai Auto 001 Pvt Ltd at \u20b9819.1 Cr vs limit \u20b9750 Cr\n   - Single-name limit breached: Mumbai Foods 058 Pvt Ltd at \u20b9914.7 Cr vs limit \u20b9750 Cr\n   - Single-name limit breached: Dubai Steel 072 LLC at \u20b9755.6 Cr vs limit \u20b9750 Cr\n   - Single-name limit breached: Mumbai Highway SPV 096 Ltd at \u20b91,425.3 Cr vs limit \u20b9750 Cr\n RAROC variance: tracked=53, material misses=35, avg variance=-0.3134\n\n distribution assertions:\n PASS 100 counterparties onboarded  100\n PASS at least 5 of every segment present  {\"SME\": 34, \"LARGE_CORPORATE\": 29, \"MID_CORPORATE\": 26, \"FINANCIAL_INSTITUTION\": 17, \"TRADE_FINANCE\": 15, \"PROJECT_FINANCE\": 8}\n PASS both jurisdictions used\n PASS approval rate plausible (>30%)  109/129\n PASS declines/refers present (population spans the policy)\n PASS at least 20 booked exposures\n PASS RAROC snapshots match booked deals\n PASS existing borrowers had a prior deal\n PASS MIS dashboard populated\n PASS no internal errors during the run  []\n\nALL ASSERTIONS PASSED \u2713",
+      "ok": true
+    },
+    {
+      "suite": "e2e_workflow",
+      "exit_code": 0,
+      "duration_sec": 0.95,
+      "passed": 23,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Materialise: pull the WORKFLOW_DEFINITION pack and create stages ==\n  PASS  materialised an active instance from the seeded pack\n  PASS  definition version pinned on the instance\n  PASS  materialise is idempotent (same instance id)\n  PASS  stage list is non-empty\n  PASS  at least one stage is human-gated\n  PASS  INTAKE is first and IN_PROGRESS\n== 2. Guard contract: advance rejected on blank/AI/wrong actor ==\n  PASS  blank X-Actor on advance -> 403\n  PASS  AI actor on humanGate stage -> 403\n  PASS  cannot skip a humanGate stage that is still PENDING\n== 3. Proper advance: HUMAN actor completes INTAKE, next stage opens ==\n  PASS  advance moves currentStage off INTAKE\n  PASS  INTAKE is COMPLETE with HUMAN actorType + named actor\n== 4. Sweep human-gated stages with rotating named humans ==\n  PASS  every materialised stage now COMPLETE or SKIPPED\n  PASS  instance status -> COMPLETED\n  PASS  at least 4 stages closed by a HUMAN actor\n== 5. The authoritative invariant: risk grade/pricing unchanged ==\n  PASS  rating final grade unchanged\n  PASS  rating PD byte-identical\n  PASS  recommended pricing rate byte-identical\n== 6. Block / unblock a stage ==\n  PASS  block sets status=BLOCKED with reason\n  PASS  unblock clears BLOCKED status\n== 7. SLA breach surfaces in /sla-breaches after sweep ==\n  PASS  sla-sweep endpoint responds\n  PASS  sla-breaches list is present\n== 8. Unknown stage / unknown reference are rejected ==\n  PASS  unknown stage on advance -> 400/404\n  PASS  view of unknown instance -> 404\n\n== workflow engine e2e: 23 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_reporting",
+      "exit_code": 0,
+      "duration_sec": 1.35,
+      "passed": 38,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Dataset registry is the whitelist boundary ==\n  PASS  EXPOSURE_BOOK dataset registered\n  PASS  RAROC_TRACKING dataset registered\n  PASS  EWS_SIGNALS dataset registered\n  PASS  ead exposed as a measure field\n  PASS  segment exposed as a dimension\n  PASS  typed numeric op catalogue published\n  PASS  aggregations catalogue published\n== 2. RBAC and SoD guards ==\n  PASS  blank X-Actor on /run -> 403\n  PASS  actor without REPORT_RUN role -> 403\n  PASS  allowed actor runs an inline report\n== 3. Whitelist rejects unknown fields, datasets, ops ==\n  PASS  unknown dimension -> 400\n  PASS  AVG on a STRING field -> 400\n  PASS  unknown dataset -> 400\n  PASS  unsupported operator -> 400\n== 4. Need a book to compare against \u2014 drive a couple of bookings ==\n== 5. The headline cross-check: ad-hoc SUM(ead) by segment == MIS view ==\n  PASS  ad-hoc and MIS produced segments for the same set of keys\n  PASS    segment FINANCIAL_INSTITUTION totals match  (MIS=36,813,000,000 \u00b7 ad-hoc=36,813,000,000)\n  PASS    segment INFRASTRUCTURE totals match  (MIS=2,000,000,000 \u00b7 ad-hoc=2,000,000,000)\n  PASS    segment LARGE_CORPORATE totals match  (MIS=88,866,000,000 \u00b7 ad-hoc=88,866,000,000)\n  PASS    segment LOGISTICS totals match  (MIS=1,200,000,000 \u00b7 ad-hoc=1,200,000,000)\n  PASS    segment MANUFACTURING totals match  (MIS=10,500,000,000 \u00b7 ad-hoc=10,500,000,000)\n  PASS    segment MID_CORPORATE totals match  (MIS=16,078,000,000 \u00b7 ad-hoc=16,078,000,000)\n  PASS    segment PROJECT_FINANCE totals match  (MIS=48,584,000,000 \u00b7 ad-hoc=48,584,000,000)\n  PASS    segment RETAIL totals match  (MIS=800,000,000 \u00b7 ad-hoc=800,000,000)\n  PASS    segment SME totals match  (MIS=2,640,000,000 \u00b7 ad-hoc=2,640,000,000)\n  PASS    segment TRADE totals match  (MIS=900,000,000 \u00b7 ad-hoc=900,000,000)\n  PASS    segment TRADE_FINANCE totals match  (MIS=3,630,000,000 \u00b7 ad-hoc=3,630,000,000)\n== 6. Filter + sort + limit ==\n  PASS  filter narrowed scannedRows\n  PASS  sort+limit honoured\n  PASS  rows sorted DESC by ead\n== 7. Numeric IN / BETWEEN / GT operators ==\n  PASS  GT filter executes\n  PASS  BETWEEN filter executes\n== 8. Saved REPORT_DEFINITION via master engine + SoD ==\n  PASS  master created in PENDING_APPROVAL\n  PASS  self-approval blocked -> 403 (SoD)\n  PASS  different checker approves -> ACTIVE\n  PASS  saved report executes\n  PASS  saved report carries the title's intent (column shape)\n== 9. Engine stamps a deterministic audit event ==\n  PASS  REPORT_EXECUTED audit stamped by SYSTEM\n== 10. The advisory invariant: reports never mutate authoritative figures ==\n  PASS  MIS totalEad unchanged after several ad-hoc runs\n\n== ad-hoc reporting e2e: 38 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_currency",
+      "exit_code": 0,
+      "duration_sec": 1.08,
+      "passed": 40,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  presentation currency resolves to INR\n  PASS  spread is flagged single-currency\n  PASS  baseline trends present (REVENUE_GROWTH)\n  PASS  baseline NET_LEVERAGE computed\n== 2. Cross-currency: prior year in USD, restated to INR ==\n  PASS  mixed spread normalised to INR\n  PASS  mixed spread flagged NOT single-currency\n  PASS  USD period keeps native currency USD\n  PASS  USD period carries fxToPresentation == USD rate\n  PASS  USD period presentationValues restated to INR magnitude\n  PASS  trend REVENUE_GROWTH matches the all-INR baseline after USD restatement  (INR=0.111 \u00b7 mixed=0.111)\n  PASS  trend EBITDA_GROWTH matches the all-INR baseline after USD restatement  (INR=0.286 \u00b7 mixed=0.286)\n  PASS  trend DEBT_GROWTH matches the all-INR baseline after USD restatement  (INR=-0.056 \u00b7 mixed=-0.056)\n== 3. Per-period ratios are currency-agnostic (unit-free) ==\n  PASS  NET_LEVERAGE identical across currencies (unit-free)\n  PASS  INTEREST_COVERAGE identical across currencies\n== 4. Currency-consistency guard: mixed currency, no rate -> 400 ==\n  PASS  mixed-currency spread with no resolvable FX rate -> 400\n  PASS  error explains the currency-consistency refusal\n== 5. Analyst-supplied per-period rate overrides the fetched rate ==\n  PASS  supplied fxToPresentation is honoured verbatim\n== 6. Presentation currency defaults to the latest period's currency ==\n  PASS  presentation currency defaults to latest period (AED)\n== 7. Borrower-level presentation currency on the counterparty ==\n  PASS  IN-RBI borrower defaults presentationCurrency to INR\n  PASS  explicit presentationCurrency is honoured (USD)\n== 8. Level 2 \u2014 system currency: limit ledger reconciles to base ==\n  PASS  FX refresh accepted (idempotent re-post of the same rate)\n  PASS  AED rate readable after refresh (system-currency table live)\n  PASS  base currency is fixed at INR and rate 1.0\n== 9. Dated FX_RATE master is the historical authority ==\n  PASS  FX_RATE master seeded with dated points\n  PASS  USD@2024-03-31 dated point present\n  PASS  USD@2023-03-31 dated point present\n  PASS  dated 2023 rate differs from current spot (so period-dating is observable)\n== 10. Period-end date drives the DATED rate, not today's spot ==\n  PASS  FX source is the DATED master (not spot)\n  PASS  dated rate used == the 2023-03-31 FX_RATE point\n  PASS  period-end date carried through\n  PASS  USD revenue restated to INR at the dated rate\n== 11. No period-end -> falls back to current spot (distinct source) ==\n  PASS  FX source falls back to CURRENT_SPOT when no period-end given\n  PASS  spot rate used == limit-service current USD rate\n== 12. FX_RATE master is governed (maker-checker / SoD) ==\n  PASS  new dated point submitted PENDING_APPROVAL\n  PASS  self-approval blocked (SoD) -> 403\n  PASS  different checker approves -> ACTIVE\n  PASS  newly-approved dated point is used for matching period-end\n\n== currency (two-level) e2e: 40 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_decisioning",
+      "exit_code": 0,
+      "duration_sec": 1.08,
+      "passed": 28,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  committee DOA_MATRIX active (CREDIT_COMMITTEE flagged, quorum 2)\n\n== 3. Committee / quorum decision mode ==\n  PASS  deal routed to CREDIT_COMMITTEE in committee mode\n  PASS  quorum required = 2, status PENDING_APPROVAL, router recorded\n  PASS  the member who routed the deal cannot vote (SoD) -> 403\n  PASS  insufficient-authority actor cannot vote -> 403\n  PASS  first approving vote leaves the decision PENDING_APPROVAL (quorum not met)\n  PASS  a member cannot vote twice (SoD) -> 403\n  PASS  second approving vote meets quorum -> DECIDED\n  PASS  finalised as a COMMITTEE decision\n  PASS  no vote accepted after the decision is DECIDED -> 409\n  PASS  exactly the two qualifying votes recorded (no rejected attempts persisted)\n\n== 1. CONDITIONAL_APPROVE conditions -> CP register ==\n  PASS  CONDITIONAL_APPROVE with neither free-text nor structured conditions -> 400\n  PASS  deal DECIDED (single-approver, non-committee tier)\n  PASS  conditions materialised into the CP register as source=SANCTION\n  PASS  blank-facilityRef condition fanned out to BOTH facilities\n  PASS  pinned condition attached only to its facility\n  PASS  materialised CPs are mandatory + OPEN\n  PASS  the pre-disbursement gate now blocks on the sanction conditions\n  PASS  clearing the sanction CPs opens the gate\n\n== 2. Sanction letter on the approved deal ==\n  PASS  sanction letter generated DRAFT + advisory\n  PASS  letter carries the sanction clauses (facilities + conditions)\n  PASS  letter body quotes borrower, a facility, and a condition of sanction\n  PASS  advisory invariant: authoritative grade unchanged by letter generation\n  PASS  advisory invariant: decision outcome unchanged by letter generation\n  PASS  generator cannot confirm own sanction letter (maker != checker) -> 403\n  PASS  a different named human confirms the letter -> CONFIRMED\n  PASS  sanction letter refused on an un-decided deal -> 409\n  PASS  DOA_MATRIX restored to seeded single-approver semantics\n\n== decisioning loop closure e2e: 28 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_india_rbi",
+      "exit_code": 0,
+      "duration_sec": 2.53,
+      "passed": 27,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. IN-RBI PROVISIONING pack carries the RBI overlay keys ==\n  PASS  SMA + CRILC + doubtful age-bands + restructure + DP keys all seeded\n\n== 1. SMA sub-classification boundaries (SMA-0/1/2 -> NPA) ==\n  PASS  dpd 0 -> no SMA, STANDARD\n  PASS  dpd 1 -> SMA_0\n  PASS  dpd 30 -> SMA_0\n  PASS  dpd 31 -> SMA_1\n  PASS  dpd 60 -> SMA_1\n  PASS  dpd 61 -> SMA_2\n  PASS  dpd just below NPA cut -> SMA_2, still STANDARD IRAC\n  PASS  dpd at NPA cut -> SUB_STANDARD, SMA cleared (now NPA)\n\n== 2. CRILC large-credit feed (idempotent, threshold-filtered) ==\n  PASS  CRILC batch generated to the CRILC destination\n  PASS  large borrower reported with classification + SMA bucket\n  PASS  sub-threshold borrower excluded from CRILC\n  PASS  CRILC idempotent per as-of day (same batch id)\n\n== 3. Doubtful-asset age-bands with secured/unsecured split ==\n  PASS  doubtful account banded D1\n  PASS  secured portion provisioned at the D1 secured rate\n  PASS  unsecured portion provisioned at 100%\n  PASS  total IRAC provision is the split sum\n  PASS  unsecured account in D3 provisioned at 100% of EAD\n\n== 4. Working-capital drawing-power monitoring (advisory) ==\n  PASS  drawing power computed deterministically from the borrowing base\n  PASS  shortfall flagged when outstanding exceeds drawing power\n  PASS  assessment is advisory\n  PASS  advisory invariant: exposure EAD untouched by the DP assessment\n\n== 5. Restructure classification consequence (held at >= SUB_STANDARD) ==\n  PASS  collections case flipped to RESTRUCTURED\n  PASS  restructured account floored to >= SUB_STANDARD at dpd 0\n  PASS  restructured account floored to >= STAGE_2 at dpd 0 (below the dpd gate)\n  PASS  floor trace records the hold + restructure date\n  PASS  CBUAE deal unaffected: no SMA, no restructure floor\n\n== India (RBI) regulatory pack e2e: 27 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_notifications",
+      "exit_code": 0,
+      "duration_sec": 1.01,
+      "passed": 20,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Covenant DUE reminder renders an EMAIL_TEMPLATE (decision outbox) ==\n  PASS  alerts/send business response unchanged (alertsSent count returned)\n  PASS  a COVENANT_DUE notification was enqueued\n  PASS  template was fetched + interpolated (not name-only)\n  PASS  dispatched via the OUTBOX transport, status SENT\n  PASS  recipient roles routed from NOTIFICATION_ROUTE\n\n== 2. Idempotent \u2014 re-firing the same sweep does not duplicate ==\n  PASS  re-fire produced no duplicate (same single row, same id)\n\n== 3. Covenant BREACH notification on run-due (additive to COVENANT_TESTED) ==\n  PASS  run-due business response unchanged (schedule state machine list)\n  PASS  a COVENANT_BREACH notification was enqueued\n  PASS  breach body cites the covenant + action verbatim\n  PASS  existing COVENANT_TESTED audit still emitted (additive, not replaced)\n  PASS  NOTIFICATION_ENQUEUED audit is SYSTEM-actor (deterministic, never AI)\n\n== 4. CP nudge \u2014 one notification per facility with open CPs ==\n  PASS  nudge swept at least one facility with open CPs\n  PASS  a CP_NUDGE notification was enqueued with the open codes\n\n== 5. Outbox is queryable + filterable ==\n  PASS  status filter returns only SENT rows\n  PASS  single-row fetch returns the notification\n\n== 6. CRILC report-due notification (portfolio outbox, idempotent) ==\n  PASS  a CRILC_REPORT_DUE notification was enqueued\n  PASS  CRILC notification renders the as-of day + count\n  PASS  CRILC notification idempotent per as-of day (no duplicate on re-run)\n\n== 7. EWS breach notification (portfolio outbox) ==\n  PASS  a severe EWS signal enqueued an EWS_BREACH notification\n  PASS  EWS notification renders the borrower + signal (interpolated)\n\n== notification transport (G5-notify) e2e: 20 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_cdd_tiers",
+      "exit_code": 0,
+      "duration_sec": 0.32,
+      "passed": 10,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Seeded pack reproduces the historical CDD tiers (behaviour-preserving) ==\n  PASS  PEP -> ENHANCED\n  PASS  high-risk jurisdiction -> ENHANCED\n  PASS  listed entity (no triggers) -> SIMPLIFIED\n  PASS  regulated FI -> SIMPLIFIED\n  PASS  no flags -> default STANDARD\n  PASS  CDD_TIERS pack carries the enhanced_triggers list\n\n== 2. Re-authoring the pack MOVES the tiering (config-driven, not code) ==\n  PASS  with PEP removed from enhanced_triggers, a PEP-only counterparty is no longer ENHANCED\n  PASS  a listed counterparty is still SIMPLIFIED (simplified_eligible unchanged)\n  PASS  CDD_TIERS pack restored (PEP back in enhanced_triggers)\n  PASS  PEP -> ENHANCED again after restore\n\n== CDD tiering from pack (E3) e2e: 10 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_scorecard_pack",
+      "exit_code": 0,
+      "duration_sec": 0.66,
+      "passed": 20,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Seeded SCORECARD pack (dual-signed, weights verbatim from the old constants) ==\n  PASS  SCORECARD pack resolvable for IN-RBI and dual-signed\n  PASS  pack carries 7 factors + 10 grade cut-points\n  PASS  AE-CBUAE SCORECARD pack seeded too (same numbers, overlay not release)\n  PASS  seeded DSCR weight is the historical constant 0.18\n\n== a/b. Obligor A rates off the pack; breakdown stamps scorecardSource ==\n  PASS  (b) breakdown carries scorecardSource\n  PASS  (b) scorecardSource cites the governed pack, not BUILT_IN\n  PASS  (a) every factor weight in the breakdown == the pack's weight\n  PASS  (a) totalScore == sum(bandScore x packWeight) \u2014 deterministic, pack-traceable\n\n== c. Author + dual-sign a NEW version with one weight visibly moved (DSCR 0.18 -> 0.30) ==\n  PASS  (c) new version fully signed by two distinct humans and active\n  PASS  (c) resolver now serves the moved-weight version\n\n== d. Obligor B (identical financials) scores off the NEW weights ==\n  PASS  (d) B's breakdown carries the NEW DSCR weight 0.30\n  PASS  (d) B's scorecardSource cites the new pack version\n  PASS  (d) the score MOVED vs what the old weights would give\n  PASS  (d) ...and lands exactly where the new weights put it (config, not code)\n  PASS  (d) identical financials, different pack version -> different score than A\n\n== e. Obligor A's STORED rating is untouched by the re-authoring ==\n  PASS  (e) A's stored grade unchanged\n  PASS  (e) A's stored score byte-identical\n  PASS  (e) A's stored breakdown still cites the pack version it was rated under\n\n== restore. Re-author the seeded weights verbatim (grade parity for later suites) ==\n  PASS  SCORECARD pack restored to the seeded weights\n  PASS  post-restore control obligor scores byte-identically to A (parity restored)\n\n== SCORECARD rule pack e2e: 20 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_hygiene",
+      "exit_code": 0,
+      "duration_sec": 0.55,
+      "passed": 32,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. VALIDATION_PARAMETER master seeded ==\n  PASS  COUNTERPARTY_IDENTIFIERS domain seeded\n  PASS  4 identifier rules (pan/gstin/lei/cin)\n== 2. malformed identifiers blocked at create (400, aggregated) ==\n  PASS  malformed PAN -> 400\n  PASS  GSTIN with a wrong check digit -> 400 (CHECKSUM rule)\n  PASS  one 400 aggregates BOTH failing fields\n  PASS  malformed CIN blocked on the prospect path too -> 400\n  PASS  LEI failing ISO 17442 mod-97 -> 400\n== 3. valid identifiers accepted + normalised + echoed ==\n  PASS  counterparty created with valid PAN+GSTIN+LEI+CIN\n  PASS  PAN normalised to uppercase and echoed\n  PASS  GSTIN echoed\n  PASS  LEI echoed\n  PASS  CIN echoed\n  PASS  identifiers stay optional \u2014 create without them is unchanged (200, all null)\n== 4. dedup on the new identifier fields (same GSTIN) ==\n  PASS  dedup reports the GSTIN twin\n  PASS  match type is IDENTIFIER (names are dissimilar)\n  PASS  gstin listed in the configured identifierFields\n== 5. legacy registrationNo dedup preserved ==\n  PASS  registrationNo twin still dedups (legacy contract)\n== 6. identifier-verify facade (simulated registry checks) ==\n  PASS  PAN_VERIFY -> VERIFIED for a format-valid PAN\n  PASS  GSTIN_VERIFY -> VERIFIED (GSTN)\n  PASS  LEI_VERIFY -> NOT_AVAILABLE when the LEI is not captured\n== 7. hygiene GREEN \u2014 valid ids + screening cleared + KYC verified ==\n  PASS  KYC verified\n  PASS  hygiene status GREEN\n  PASS  all four identifiers VALID\n  PASS  screening CLEAR + kyc VERIFIED in the checks\n  PASS  hygiene read leaves the counterparty record byte-identical (no figures touched)\n  PASS  HYGIENE_ASSESSED stamped as a SYSTEM audit event\n== 8. hygiene AMBER \u2014 identifiers missing / KYC not verified ==\n  PASS  obligor without identifiers -> AMBER\n  PASS  identifier checks report MISSING\n  PASS  kyc reported NOT_VERIFIED\n== 9. hygiene RED \u2014 unresolved HIGH screening hit ==\n  PASS  PEP screening produced a HIGH hit\n  PASS  unresolved HIGH hit -> RED (identifiers all valid)\n  PASS  screening flagged SEVERE_OPEN while identifiers stay VALID\n\n== India identifiers + hygiene RAG e2e: 32 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_spread_versions",
+      "exit_code": 0,
+      "duration_sec": 0.39,
+      "passed": 28,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Onboard counterparty (KYC-verified) ==\n  PASS  counterparty created\n  PASS  screening ran\n  PASS  KYC verified\n== 2. Application ==\n  PASS  application created\n== 3. Spread v1 (analyst.one) ==\n  PASS  spread v1 generated (2 periods)\n  PASS  timeline has exactly 1 version after v1\n  PASS  v1 versionNo == 1\n  PASS  v1 createdBy analyst.one\n  PASS  v1 source derived MANUAL (first spread)\n  PASS  v1 unconfirmed and timestamped\n  PASS  timeline row carries no snapshot payload\n== 4. Spread v2 \u2014 resubmission with changed numbers (analyst.two) ==\n  PASS  spread v2 generated\n  PASS  timeline has exactly 2 versions after resubmission\n  PASS  timeline ordered v1 then v2\n  PASS  authors preserved per version\n  PASS  v2 source derived RESUBMISSION\n  PASS  v2 note recorded\n== 5. Snapshots: live analysis == v2, v1 history immutable ==\n  PASS  v2 snapshot fetched\n  PASS  live analysis fetched\n  PASS  live REVENUE equals v2 snapshot REVENUE (= 6e9)\n  PASS  v1 snapshot fetched\n  PASS  v1 snapshot REVENUE still 5e9 (append-only history unchanged by resubmission)\n  PASS  missing version returns 404\n== 6. Confirm stamps the LATEST version ==\n  PASS  spread confirmed (live gate unchanged)\n  PASS  latest version (v2) stamped confirmed by analyst.one\n  PASS  earlier version (v1) remains unconfirmed\n== 7. Rating still succeeds off the untouched live spread ==\n  PASS  rating produced (200)\n  PASS  finalGrade non-null\n\nRESULT: 28 passed, 0 failed",
+      "ok": true
+    },
+    {
+      "suite": "e2e_notify_schedule",
+      "exit_code": 0,
+      "duration_sec": 3.28,
+      "passed": 28,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. baseline immediate enqueue (behaviour unchanged: no schedule, no reminders)\n  PASS  immediate enqueue dispatches straight to SENT\n  PASS  no scheduledFor on immediate row\n  PASS  no reminder config on plain row\n  PASS  sentAt stamped on immediate row\n== 2. schedule-later: future row stays SCHEDULED across a sweep\n  PASS  future enqueue persists as SCHEDULED\n  PASS  scheduledFor recorded\n  PASS  no transport dispatch yet (sentAt empty)\n  PASS  future row still SCHEDULED after sweep\n== 3. schedule-later idempotency: re-enqueue returns the existing row\n  PASS  re-enqueue same (event|subject|dedupe) returns same row\n== 4. schedule-later: due row dispatches on sweep via the normal transport path\n  PASS  near-future enqueue persists as SCHEDULED\n  PASS  due row flipped to SENT on sweep\n  PASS  sentAt stamped on sweep dispatch\n  PASS  providerRef recorded via transport\n  PASS  re-sweep does not re-dispatch (still exactly SENT, no new state)\n== 5. auto-reminders: #r<N> rows, capped by maxReminders, no reminder chains\n  PASS  parent dispatched SENT with reminder config\n  PASS  remindersSent starts at 0\n  PASS  reminder row #r1 created\n  PASS  reminder row is a real dispatched notification\n  PASS  reminder row carries no reminder config (no reminder-of-reminder chain)\n  PASS  parent remindersSent advanced (1, or 2 if the background sweep also fired)\n  PASS  second sweep creates reminder #r2\n  PASS  parent remindersSent advanced to 2 (== maxReminders)\n== 6. reminder cap + sweep idempotency: nothing new on further sweeps\n  PASS  capped: third sweep creates no #r3 and no duplicates\n  PASS  no reminder beyond maxReminders\n  PASS  total rows for reminder subject == parent + 2 reminders\n  PASS  far-future row STILL SCHEDULED after all sweeps\n== 7. sweep audit: SYSTEM-stamped NOTIFICATION_SWEEP event\n  PASS  NOTIFICATION_SWEEP audit stamped\n  PASS  sweep audit is SYSTEM actorType\n\nnotify schedule/reminder e2e: 28 passed, 0 failed",
+      "ok": true
+    },
+    {
+      "suite": "e2e_casework",
+      "exit_code": 0,
+      "duration_sec": 1.43,
+      "passed": 50,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 4b. Inbox / queue reads require an authorised caller (fix #2) ==\n  PASS  queue read with blank actor -> 403\n  PASS  inbox read with blank actor -> 403\n  PASS  queue read by a non-member -> 403\n  PASS  inbox read of another actor by a non-supervisor -> 403\n== 5. Complete is restricted to assignee or supervisor ==\n  PASS  non-assignee non-supervisor cannot complete (403)\n  PASS  assignee completes the task\n  PASS  supervisor may complete a member's task\n== 6. Assign requires a mandatory reason + supervisor ==\n  PASS  assign without a reason -> 400\n  PASS  non-supervisor cannot reassign (403)\n  PASS  supervisor reassign sets the new assignee\n  PASS  REASSIGNED event recorded on the timeline\n== 7. Send-back opens a REWORK task with reworkCycle incremented ==\n  PASS  send-back with blank actor -> 403\n  PASS  send-back by a foreign actor -> 403\n  PASS  original task is SENT_BACK\n  PASS  rework task has reworkCycle incremented\n  PASS  rework task is flagged and links to its origin\n  PASS  send-back reopens a NEW rework task in the queue/inbox\n== 8. Parallel fan-out + join (ANY / ALL / QUORUM:n) ==\n  PASS  fan-out created 3 siblings under one join group\n  PASS  ANY join satisfied after a single completion\n  PASS  ALL join NOT satisfied after 1 of 2\n  PASS  ALL join satisfied after 2 of 2\n  PASS  QUORUM:2 NOT satisfied after 1 of 3\n  PASS  QUORUM:2 satisfied after 2 of 3\n== 9. TAT / SLA report derived from the event timeline ==\n  PASS  TAT report aggregates the subject's tasks\n  PASS  TAT rows carry a derived tatMinutes per completed task\n== 10. Mirror invariant: CAD deviation task leaves the CadCase BYTE-IDENTICAL ==\n  PASS  a CAD deviation approval task was mirrored\n  PASS  withdraw with blank actor -> 403\n  PASS  withdraw by a foreign actor -> 403\n  PASS  the task creator may withdraw the mirror\n  PASS  mirroring/operating a task NEVER mutates the CadCase (byte-identical)\n== 11. Mirror invariant: pricing-exception task leaves PricingResult BYTE-IDENTICAL ==\n  PASS  concession queued for approval\n  PASS  a pricing-exception approval task was mirrored\n  PASS  authoritative recommended rate UNCHANGED by the task mirror\n  PASS  authoritative pricing-exception record BYTE-IDENTICAL after a task-layer operation\n== 12. Mirror complete by dedupeKey closes the mirrored task (fix #3) ==\n  PASS  a fresh CAD deviation mirror was created\n  PASS  mirror carries a dedupeKey distinct from its TSK- ref\n  PASS  mirror-complete by dedupeKey closes the ORIGINAL task\n  PASS  the mirrored task is now COMPLETED when fetched by its ref\n  PASS  a second dedupeKey-complete no longer resolves an open mirror (404)\n\n==== casework e2e: 50 passed, 0 failed ====",
+      "ok": true
+    },
+    {
+      "suite": "e2e_query_rfi",
+      "exit_code": 0,
+      "duration_sec": 0.45,
+      "passed": 41,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  raisedBy is the X-Actor\n  PASS  dueAt computed from slaHours\n  PASS  first message is the question (HUMAN, not inbound)\n== 2. reply -> RESPONDED (message appended)\n  PASS  status flips to RESPONDED\n  PASS  reply appended to the message log\n== 3. SoD: addressee self-resolve is forbidden (403)\n  PASS  addressee self-resolve -> 403 forbiddenAutonomy\n  PASS  thread NOT resolved by the forbidden attempt\n== 4. raiser resolves -> RESOLVED (+ resolution fields)\n  PASS  raiser resolve -> RESOLVED\n  PASS  resolvedBy stamped\n  PASS  resolvedAt stamped\n  PASS  resolution text recorded\n== 5. resolve audit: QUERY_RAISED + QUERY_RESOLVED on the thread subject\n  PASS  QUERY_RAISED audit stamped\n  PASS  QUERY_RESOLVED audit stamped\n  PASS  resolve audit is a HUMAN action\n== 6. EXTERNAL_VENDOR raise dispatches an RFI notification (fa\u00e7ade, no real transport)\n  PASS  external query starts OPEN\n  PASS  raise response carries a one-time responseToken for the external thread\n  PASS  the token hash is never serialised on the thread\n  PASS  an RFI notification/outbox row was produced for the external query\n  PASS  RFI row rendered + dispatched via a transport\n  PASS  RFI notification embeds the tokenised callback link\n== 7. external-response requires the one-time token (Fix 1): reject without, accept with, single-use\n  PASS  external-response WITHOUT the token is rejected (401)\n  PASS  external thread still OPEN after the tokenless attempt\n  PASS  external-response with a WRONG token is rejected (403)\n  PASS  external response with the correct token -> RESPONDED\n  PASS  an inbound message was appended\n  PASS  inbound message carries the sender\n  PASS  inbound message author type is EXTERNAL (never HUMAN)\n  PASS  replaying the same one-time token is rejected (403, single-use)\n== 7b. external-response is REJECTED on an INTERNAL thread (forgery hardening)\n  PASS  external-response on an INTERNAL thread is rejected (4xx)\n  PASS  INTERNAL thread untouched by the forged call (still OPEN)\n  PASS  no forged inbound message appended to the INTERNAL thread\n== 8. schedule-later query starts SCHEDULED (dispatch deferred to the sweep)\n  PASS  scheduled query starts SCHEDULED\n  PASS  scheduleAt recorded\n  PASS  no RFI dispatched for the scheduled thread yet\n== 9. caller-scoped listing (Fix 2): raiser / addressee see own; stranger doesn't; supervisor sees all\n  PASS  raiser sees their own thread\n  PASS  addressee sees the thread addressed to them\n  PASS  unrelated non-supervisor actor does NOT see the thread\n  PASS  supervisor sees the thread (unrestricted)\n  PASS  subjectRef listing returns the external thread\n\nquery/RFI e2e: 41 passed, 0 failed",
+      "ok": true
+    },
+    {
+      "suite": "e2e_notify_center",
+      "exit_code": 0,
+      "duration_sec": 0.27,
+      "passed": 21,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. fresh unique scope starts at zero unread\n  PASS  scoped unread-count is 0 before any enqueue\n== 2. enqueue raises the scoped unread-count (existing enqueue behaviour unchanged)\n  PASS  immediate enqueue still dispatches straight to SENT\n  PASS  no schedule/reminder fields on plain enqueue\n  PASS  enqueued row starts unread (readAt null)\n  PASS  scoped unread-count reflects 3 enqueued rows (role scope)\n  PASS  scoped unread-count matches on recipient scope too\n== 3. mark-read ownership (403 for a non-recipient), then stamp/decrement/idempotency\n  PASS  mark-read by a NON-recipient actor -> 403\n  PASS  scoped unread-count unchanged by the forbidden mark-read (still 3)\n  PASS  mark-read stamps readAt\n  PASS  mark-read stamps readBy = X-Actor\n  PASS  scoped unread-count decrements to 2 after one read\n  PASS  re-reading is idempotent: readAt unchanged\n  PASS  re-reading is idempotent: readBy unchanged (stays original actor)\n  PASS  scoped unread-count still 2 (no double-decrement)\n== 4. a READ row still appears in the full list (read != deleted)\n  PASS  read row is still present in the outbox list\n  PASS  listed read row carries readAt\n== 5. read-all zeroes the scoped count and is idempotent\n  PASS  read-all reports the remaining 2 rows flipped\n  PASS  scoped unread-count is 0 after read-all\n  PASS  read-all is idempotent (re-run marks 0)\n  PASS  n2/n3 now readAt-stamped\n== 6. global unread-count endpoint responds\n  PASS  global unread-count returns a non-negative integer\n\nnotify center e2e: 21 passed, 0 failed",
+      "ok": true
+    },
+    {
+      "suite": "e2e_notings",
+      "exit_code": 0,
+      "duration_sec": 1.14,
+      "passed": 26,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "    8 NOTING_TYPE rows ACTIVE\n\n== 1. Setup: a rated deal \u2014 capture the authoritative figures BEFORE any noting ==\n    deal HLX-2026-W4Q4DQ rated; grade=A facility=400000000 \u2014 figures snapshotted\n\n== 2. create -> submit -> approve (CAM_NOTE, fixed-role CREDIT_OFFICER) ==\n  PASS  created DRAFT with NTG- ref\n  PASS  submit -> PENDING_APPROVAL, routed FIXED_ROLE CREDIT_OFFICER\n  PASS  approved by CREDIT_OFFICER -> APPROVED\n\n== 3. SoD + role gates on approve ==\n  PASS  approve by the RAISER -> 403 (SoD)\n  PASS  approve by NON-authorised (ANALYST) -> 403 (role gate)\n  PASS  then a real CREDIT_OFFICER approves\n\n== 4. cadRequired type -> PENDING_CAD -> cad-authorize -> AUTHORIZED ==\n  PASS  cadRequired flag resolved from master\n  PASS  approve of a cadRequired type -> PENDING_CAD\n  PASS  cad-authorize by a non-CAD actor -> 403\n  PASS  cad-authorize by CAD_OPS -> AUTHORIZED\n\n== 5. reject requires a mandatory reason ==\n  PASS  reject with blank reason -> 400\n  PASS  reject with a reason -> REJECTED\n\n== 6. reverse an APPROVED noting (reason + role gated) ==\n  PASS  reverse with blank reason -> 400\n  PASS  reverse by a non-authority actor -> 403\n  PASS  reverse by CREDIT_OFFICER -> REVERSED\n\n== 7. withdraw is raiser-only, pre-approval ==\n  PASS  withdraw by a non-raiser -> 403\n  PASS  withdraw by the raiser -> WITHDRAWN\n\n== 8. DOA-routed type: rank gate (PRODUCT_PAPER) ==\n  PASS  DOA routing resolved to a ladder authority\n  PASS  DOA approve by insufficient rank (ANALYST) -> 403\n  PASS  DOA approve by board-rank actor (cro) -> APPROVED\n\n== 9. list / get filters ==\n  PASS  all notings for the subject are listed (>=6)\n  PASS  status filter returns only REJECTED\n  PASS  type filter returns only TOD_INTRADAY\n  PASS  get by ref returns the record\n\n== 10. INVARIANT: the authoritative figures are BYTE-IDENTICAL after the full lifecycle ==\n  PASS  origination facility + risk summary unchanged (record, not mutation)\n  PASS  every NOTING_* audit event is stamped HUMAN (no AI/SYSTEM figure path)\n\n== Notings e2e: 26 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_monitoring_artifacts",
+      "exit_code": 0,
+      "duration_sec": 0.94,
+      "passed": 37,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "\n== 1. Setup: a full deal with a booked exposure + computed ECL (the authoritative figures) ==\n  PASS  authoritative exposure booked (EAD + grade present)\n  PASS  authoritative ECL computed (stage + reported provision)\n\n== 2. CALL_MEMO: create -> submit -> review (owner->403) -> approve (reviewer->403) ==\n  PASS  artifactRef generated MON-XXXXXX\n  PASS  starts DRAFT\n  PASS  owner is the X-Actor\n  PASS  masterVersion pinned (>=1)\n  PASS  sections materialised from the master template\n  PASS  CALL_MEMO does not require authorisation\n  PASS  submit -> SUBMITTED\n  PASS  review by owner -> 403 (SoD)\n  PASS  artifact untouched by the forbidden review\n  PASS  review by role-gated reviewer -> REVIEWED\n  PASS  reviewer + reviewedBy stamped\n  PASS  approve by reviewer -> 403 (SoD)\n  PASS  artifact untouched by the forbidden approve\n  PASS  approve by role-gated approver -> APPROVED\n  PASS  authorize on a non-requiresAuthorize type -> 409\n\n== 3. LCR (requiresAuthorize=true) reaches AUTHORIZED ==\n  PASS  LCR requires authorisation\n  PASS  authorize by approver -> 403 (SoD)\n  PASS  LCR -> AUTHORIZED\n  PASS  authorisedBy stamped\n\n== 4. STOCK_AUDIT vendor RFQ -> EXTERNAL_VENDOR query + outbox fa\u00e7ade, then external-response ==\n  PASS  STOCK_AUDIT enables vendorRfq\n  PASS  unknown vendor rejected (400)\n  PASS  vendorRef + vendorQueryRef pinned on the artifact\n  PASS  an EXTERNAL_VENDOR query row was raised for the RFQ\n  PASS  an RFI notification/outbox fa\u00e7ade row was produced\n  PASS  RFI row rendered + dispatched via the notification lane\n  PASS  RFI notification carries the one-time response token\n  PASS  external-response -> RESPONDED\n  PASS  inbound vendor message appended\n  PASS  artifact GET surfaces the linked vendor-query status\n\n== 5. Listing + audit trail ==\n  PASS  subject listing returns CALL_MEMO + LCR + STOCK_AUDIT\n  PASS  status=AUTHORIZED listing returns the LCR\n  PASS  MON_ARTIFACT_CREATED + REVIEWED + APPROVED audited as HUMAN\n\n== 6. INVARIANT: authoritative ECL / IRAC / exposure BYTE-IDENTICAL after the lifecycle ==\n  PASS  exposure record byte-identical before/after the artifact lifecycle\n  PASS  ECL / IRAC / reported provision byte-identical before/after the artifact lifecycle\n\nmonitoring-artifacts e2e: 37 passed, 0 failed",
+      "ok": true
+    },
+    {
+      "suite": "e2e_ip_note",
+      "exit_code": 0,
+      "duration_sec": 0.48,
+      "passed": 21,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Setup: a prospect counterparty to sponsor ==\n    prospect CP-CN2Z7EA4 (id=193)\n\n== 1. create -> submit -> approve happy path ==\n  PASS  created DRAFT with IPN- ref\n  PASS  prospect + proposed structure captured\n  PASS  submit -> PENDING_APPROVAL\n\n== 2/3. SoD + authority gates on approve ==\n  PASS  approve by the RAISER -> 403 (SoD)\n  PASS  approve by NON-authorised (ANALYST) -> 403 (authority gate)\n  PASS  approved by CREDIT_OFFICER -> APPROVED\n\n== 4. convert BEFORE approve -> 409 (APPROVED-only) ==\n  PASS  convert a PENDING_APPROVAL note -> 409\n\n== 5. convert an APPROVED note -> a NEW LoanApplication, linked both ways ==\n  PASS  convert -> CONVERTED with applicationRef set\n  PASS  created application exists and carries the ipNoteRef back-link\n  PASS  application inherits the proposed structure verbatim\n  PASS  re-convert a CONVERTED note -> 409 (idempotent guard)\n\n== 6. reject requires a mandatory reason ==\n  PASS  reject with blank reason -> 400\n  PASS  reject with a reason -> REJECTED\n\n== 7. withdraw is raiser-only, pre-approval ==\n  PASS  withdraw by a non-raiser -> 403\n  PASS  withdraw by the raiser -> WITHDRAWN\n\n== 8. terminal gates ==\n  PASS  submit a CONVERTED note -> 409\n  PASS  withdraw a REJECTED note -> 409\n\n== 9. list / get filters + audit provenance ==\n  PASS  all IP notes for the prospect are listed (>=4)\n  PASS  status filter returns only CONVERTED\n  PASS  get by ref returns the record\n  PASS  IP_NOTE_* audit events exist and are all stamped HUMAN\n\n== IP-note e2e: 21 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_scf",
+      "exit_code": 0,
+      "duration_sec": 0.58,
+      "passed": 24,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Seed the SCF_ELIGIBILITY master (generic master API \u2014 NO code change) ==\n    SCF_ELIGIBILITY/DEFAULT ACTIVE\n    ACTOR_ROLE/credit.head -> [CREDIT_HEAD] ACTIVE\n\n== 1. Create the anchor + a DRAFT SCF programme ==\n  PASS  programme created DRAFT with SCF- ref\n  PASS  eligibility criteria pinned from the master snapshot\n  PASS  programme with non-positive limit -> 400\n  PASS  unknown programme type -> 400\n\n== 2. Add spokes \u2014 deterministic eligibility (PASS within bounds, FAIL over the cap) ==\n  PASS  spoke within bounds -> PASS with approved cap = requested\n  PASS  spoke over the per-spoke cap -> FAIL with reasons + zero approved cap\n  PASS  roll-ups: 2 spokes, 1 eligible\n\n== 2b. Aggregate programme-limit cap (individually eligible, breach in aggregate) ==\n  PASS  first three 28M spokes each PASS per-spoke checks (84M <= 100M so far)\n  PASS  the over-the-line 4th spoke FAILs with the programme-limit reason\n  PASS  approvedCapTotal never exceeds programLimit (84M <= 100M)\n\n== 3. Submit -> PENDING_APPROVAL + a linked PRODUCT_PAPER noting is created ==\n  PASS  submit -> PENDING_APPROVAL\n  PASS  a PRODUCT_PAPER noting was created + linked (notingRef stored)\n  PASS  linked noting is PRODUCT_PAPER + subject-linked to the SCF programme\n\n== 4-6. Approval: SoD + credit-authority gate, then a real approval ==\n  PASS  approve by the RAISER -> 403 (segregation of duties)\n  PASS  approve by a NON-authority actor (ANALYST) -> 403 (credit-authority gate)\n  PASS  privileged-looking username with NO credit role -> 403 (role check, not username whitelist)\n  PASS  approve by a genuine credit-role holder (credit.head/CREDIT_HEAD) -> APPROVED\n  PASS  best-effort limit node (when registered) is a real limit-service node\n    programme limit registered as limit node LMT-96D0BC32\n  PASS  re-approve an APPROVED programme -> 409\n\n== 7. Reject path: SoD then a credit authority rejects ==\n  PASS  reject by the RAISER -> 403 (SoD)\n  PASS  reject by a credit authority -> REJECTED\n\n== 8. Withdraw is raiser-only ==\n  PASS  withdraw by a non-raiser -> 403\n  PASS  withdraw by the raiser -> WITHDRAWN\n\n== 9. Governance: every SCF_* audit event is stamped HUMAN ==\n  PASS  SCF_* audit events exist and are ALL HUMAN (no AI/SYSTEM in the SCF write path)\n\n== SCF e2e: 24 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_escrow",
+      "exit_code": 0,
+      "duration_sec": 1.09,
+      "passed": 29,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Seed VALIDATION_PARAMETER/ESCROW_UTILISATION thresholds (amber 80% / red 100%) ==\n  PASS  thresholds seeded (submit+approve, maker != checker)\n\n== 1. Create escrow account + budget lines ==\n  PASS  escrowRef generated ESC-XXXXXX\n  PASS  account starts ACTIVE\n  PASS  currency normalised\n  PASS  MATERIALS budget line v1\n\n== 2. Deterministic budget-vs-actual + GREEN -> AMBER -> RED ==\n  PASS  thresholds read from the MASTER (config-as-data)\n  PASS  no spend yet -> 0% GREEN\n  PASS  DEBIT 500k of 1,000,000 -> actual 500k, 50%, GREEN (deterministic)\n  PASS  CREDIT tracked separately, does not move actual spend\n  PASS  85% utilisation -> AMBER\n  PASS  105% utilisation -> RED with negative variance (overspend)\n  PASS  LABOUR 20% GREEN\n  PASS  overall RAG is worst-of categories -> RED\n  PASS  totals aggregate deterministically\n\n== 3. Re-version MATERIALS budget (v2, higher) -> new active baseline, history preserved ==\n  PASS  new version is v2 + active\n  PASS  actuals re-baselined against v2: 1,050,000 / 1,500,000 = 70% GREEN\n  PASS  overall RAG recovers to GREEN (both categories GREEN)\n  PASS  MATERIALS history retains BOTH versions (append-only, nothing deleted)\n  PASS  v1 superseded (inactive), v2 active \u2014 single active pointer per category\n  PASS  account view lists one active line per category (MATERIALS v2 + LABOUR v1)\n  PASS  account view exposes all transactions\n\n== 4. Audit trail ==\n  PASS  ESCROW_ACCOUNT_CREATED stamped HUMAN\n  PASS  ESCROW_BUDGET_VERSIONED stamped HUMAN (>=3: 2 categories + 1 re-version)\n  PASS  ESCROW_TXN_POSTED stamped HUMAN (5 transactions)\n  PASS  ESCROW_BUDGET_ASSESSED stamped SYSTEM (deterministic read)\n\n== 5. INVARIANT: no authoritative figure moved ==\n  PASS  portfolio summary byte-identical before/after the escrow lifecycle\n  PASS  non-positive amount rejected (400)\n  PASS  unknown direction rejected (400)\n  PASS  unknown account -> 404\n\nescrow monitoring e2e: 29 passed, 0 failed",
+      "ok": true
+    },
+    {
+      "suite": "e2e_srm",
+      "exit_code": 0,
+      "duration_sec": 0.3,
+      "passed": 22,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Seed SRM_CHECKLIST + SRM_RENEWAL masters (generic master API \u2014 NO code change) ==\n    SRM_CHECKLIST/STANDARD + NOTING_TYPE/SRM_RENEWAL(cadRequired) ACTIVE\n\n== 1. Seed the MER register (renewal to advance + two controls that must NOT move) ==\n  PASS  application RENEWAL_REVIEW seeded (recurring, ANNUAL)\n    review(A)=2026-09-01  condition(A)=2026-10-15  review(B,other)=2026-09-01\n\n== 2. Create the SRM review -> checklist materialised + SRM_RENEWAL noting raised (DRAFT) ==\n  PASS  SRM created OPEN with SRM- ref\n  PASS  SRM pins an applicationRef distinct from the counterparty subjectRef (different ID namespaces)\n  PASS  checklist materialised from the SRM_CHECKLIST master\n  PASS  linked SRM_RENEWAL noting created in DRAFT\n\n== 3. Mark a checklist item -> persisted on the review ==\n  PASS  checklist item SRM-1 marked done (persisted)\n  PASS  marking an unknown checklist item -> 404\n\n== 4. Submit the renewal noting (delegated to the Noting engine) ==\n  PASS  SRM -> NOTING_RAISED, noting PENDING_APPROVAL\n  PASS  cadRequired resolved from the master + routed FIXED_ROLE CREDIT_OFFICER\n\n== 5. SoD + role gates on the linked noting (via /api/notings) ==\n  PASS  approve by the RAISER -> 403 (SoD)\n  PASS  approve by NON-authorised (ANALYST) -> 403 (role gate)\n\n== 6. Drive the noting to AUTHORIZED via /api/notings ==\n  PASS  approve of a cadRequired noting -> PENDING_CAD\n  PASS  cad-authorize by a non-CAD actor -> 403\n  PASS  cad-authorize by CAD_OPS -> AUTHORIZED\n\n== 7. Refresh the SRM -> COMPLETED + MER next-review ADVANCED ==\n  PASS  SRM COMPLETED, noting AUTHORIZED, renewal date carried\n  PASS  application RENEWAL_REVIEW ADVANCED via the applicationRef, NOT a silent 0 (+1 cycle)\n\n== 8. INVARIANT: the non-SRM MER entries are UNCHANGED (type + subject scoped) ==\n  PASS  same-application CONDITION_SUBSEQUENT unchanged (item-type scoped)\n  PASS  different-application RENEWAL_REVIEW unchanged (application scoped)\n\n== 9. Idempotent: a second refresh does NOT advance the date again ==\n  PASS  re-refresh is a no-op for the hook (date + cycle unchanged)\n\n== 10. Governance: SRM_* + MER_RENEWAL_ADVANCED audit events are HUMAN ==\n  PASS  SRM lifecycle emitted audit events\n  PASS  every SRM_* audit event is stamped HUMAN (no AI/SYSTEM figure path)\n  PASS  MER_RENEWAL_ADVANCED stamped once, HUMAN\n\n== SRM e2e: 22 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_perfection",
+      "exit_code": 0,
+      "duration_sec": 0.57,
+      "passed": 29,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. Seed CHECKLIST_MASTER PERFECTION_MOE (maker -> checker, SoD) ==\n  PASS  PERFECTION_MOE submitted PENDING_APPROVAL\n  PASS  maker cannot self-approve the master (403)\n  PASS  PERFECTION_MOE ACTIVE after checker approval\n== 1b. Seed step-owner ACTOR_ROLE grants \u2014 role is verified server-side, the body role is NOT trusted ==\n  PASS  decision-service RBAC cache invalidated so the grants take effect\n== 2. Create a perfection case -> steps materialised IN ORDER from the master ==\n  PASS  perfRef generated PRF-XXXXXX\n  PASS  case opens OPEN\n  PASS  6 steps materialised\n  PASS  steps in order with keys from the master\n  PASS  step titles came from the master (not the built-in fallback)\n  PASS  step order 0..5\n  PASS  master version pinned onto the case\n== 3. Steps are role-gated to the ACTOR's real ACTOR_ROLE (the request-body role is NOT trusted) ==\n  PASS  actor lacking the role rejected despite a MATCHING body role (403)\n  PASS  403 is a real ACTOR_ROLE denial (body role not trusted)\n  PASS  TITLE_SEARCH DONE by LEGAL\n  PASS  case moved to IN_PROGRESS after first action\n== 4. VENDOR step raises an EXTERNAL_VENDOR query; report returns via external-response ==\n  PASS  VALUATION step stored a vendorQueryRef\n  PASS  query is an EXTERNAL_VENDOR thread, OPEN\n  PASS  vendor RFI notification carries the one-time response token\n  PASS  external-response flips the query to RESPONDED\n  PASS  an inbound vendor message was appended\n  PASS  VALUATION DONE by VENDOR\n== 5. MOE execution, then MOE-vetting SoD (vetting != execution actor) ==\n  PASS  MOE_EXECUTION DONE by LMO (lmo.user)\n  PASS  MOE-vetting by the execution actor -> 403 (SoD, not merely the role gate)\n  PASS  MOE_VETTING DONE by a different CAD_OPS actor\n== 6. Case COMPLETED once every step is DONE / WAIVED ==\n  PASS  case COMPLETED after last step\n  PASS  GET reflects COMPLETED + all steps terminal\n== 7. DEFAULT-OFF limit-release gate: no perfectionRequired -> release unchanged ==\n  PASS  gate perfection case is NOT completed (still OPEN)\n  PASS  CAD case completed\n  PASS  DEFAULT-OFF: limit-release succeeds despite an incomplete perfection case\n\nperfection e2e: 29 passed, 0 failed",
+      "ok": true
+    },
+    {
+      "suite": "e2e_coi",
+      "exit_code": 0,
+      "duration_sec": 0.61,
+      "passed": 19,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "\n== A. Default-OFF: no require_coi_attestation key -> decision proceeds as before ==\n  PASS  seeded DOA_MATRIX has no require_coi_attestation key\n  PASS  routed decision carries requireCoiAttestation=false (key absent)\n  PASS  un-attested approver decides normally when the key is absent (gate OFF)\n  PASS  transient DOA_MATRIX now sets require_coi_attestation=true\n  PASS  routed decision captured requireCoiAttestation=true from the pack\n\n== C. Gate ON ==\n  PASS  un-attested (but authority-qualified) approver blocked -> 403\n  PASS  ...403 is a conflict-of-interest denial (not authority)\n  PASS  deal remains PENDING_APPROVAL after the COI block\n\n== B. Attestation record (X-Actor), listing, get, audit HUMAN ==\n  PASS  attestation created (coiRef COI-*, ATTESTED, records the X-Actor, not the body)\n  PASS  attestation is listed for the subject\n  PASS  attestation fetchable by coiRef\n  PASS  attestation stamped an audit HUMAN event\n  PASS  CONFLICTED attester blocked from deciding -> 403\n  PASS  ...403 cites the conflict\n  PASS  a CONFLICTED actor cannot self-approve their conflict away (still 403)\n  PASS  managed attestation recorded (DECLARED_MANAGED, ATTESTED)\n  PASS  ATTESTED, non-CONFLICTED (managed) approver is allowed -> DECIDED\n  PASS  the SAME actor (cro) was blocked un-attested and allowed after attesting -> the 403 was COI, not authority\n  PASS  DOA_MATRIX restored to seeded semantics (no require_coi_attestation key)\n\n== COI attestation e2e: 19 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_tat_mis",
+      "exit_code": 0,
+      "duration_sec": 0.34,
+      "passed": 29,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Seed a run-unique queue of WorkItems ==\n  PASS  send-back opened a rework task with reworkCycle=1\n== 1. /api/tasks/mis is the deterministic function of the seeded data ==\n  PASS  filter echoes the queueKey\n  PASS  count == 5 (2 completed + 1 open + 1 sent-back + 1 rework)\n  PASS  completedCount == 2\n  PASS  openCount == 2 (open APPROVAL + rework)\n  PASS  sentBackCount == 1\n  PASS  reworkTaskCount == 1\n  PASS  sendBackRate == 1/5\n== 2. SLA: no breaches for the within-SLA seed ==\n  PASS  breachedCount == 0\n  PASS  breachRate == 0\n  PASS  openOverdueCount == 0 (dueAt in the future)\n== 3. Cycle-time bucket derived from CREATED -> COMPLETED ==\n  PASS  avgCycleHours present and in the sub-hour bucket\n  PASS  medianCycleHours present\n  PASS  maxCycleHours present and >= avg\n== 4. Throughput + backlog ==\n  PASS  createdInWindow == 5 (all seeded tasks)\n  PASS  completedInWindow == 2\n  PASS  openBacklog == 2\n== 5. Per-task-type + per-queue breakdowns ==\n  PASS  REVIEW type: count 2, all completed\n  PASS  APPROVAL type: count 3 (open + sent-back + rework), 0 completed\n  PASS  single queue row for the seeded queue with count 5\n== 6. Rework distribution + assignee load ==\n  PASS  rework distribution: 4 first-pass + 1 on cycle 1\n  PASS  assignee load counts open tasks per assignee (carol=1, rm.user=1)\n== 7. taskType filter narrows the scope ==\n  PASS  queueKey + taskType filter \u2192 count 2, completed 2\n== 8. The report is deterministic (byte-identical across re-runs) ==\n  PASS  re-running /mis yields identical figures (only generatedAt differs)\n== 9. Query / RFI SLA rollup (additive helix-common endpoint) ==\n  PASS  rollup shape present (total + byChannel list)\n  PASS  rollup total advanced by exactly the two raised threads\n  PASS  rollup open advanced by 1 (one still open, one resolved)\n  PASS  rollup resolved advanced by 1\n  PASS  INTERNAL channel present in the byChannel breakdown\n\n==== TAT / MIS e2e: 29 passed, 0 failed ====",
+      "ok": true
+    },
+    {
+      "suite": "e2e_docpdf",
+      "exit_code": 0,
+      "duration_sec": 0.64,
+      "passed": 43,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  spread generated\n  PASS  spread confirmed\n  PASS  rated\n  PASS  rating confirmed\n  PASS  decision recorded (DECIDED)\n== docpdf 1. Generate credit proposal + document + sanction letter ==\n  PASS  credit proposal generated\n  PASS  document generated in DRAFT\n  PASS  document confirmed (human confirm-lock)\n  PASS  sanction letter generated (DRAFT)\n== docpdf 2. Print endpoint \u2014 confirmed generated document ==\n  PASS  document print returns 200\n  PASS  document print sets Cache-Control: no-store (rendered figures never disk/shared-cached)\n  PASS  document print is a standalone document (PDF magic bytes or standalone HTML)\n  PASS  print carries the Helix letterhead governance chrome\n  PASS  confirmed document print shows HUMAN-CONFIRMED provenance\n  PASS  print embeds @media print styling for page-to-PDF\n  PASS  print reproduces the authoritative document body verbatim\n  PASS  print carries the borrower name from the authoritative doc\n== docpdf 3. Print endpoint \u2014 credit proposal ==\n  PASS  proposal print returns 200\n  PASS  proposal print sets Cache-Control: no-store\n  PASS  proposal print is a standalone document\n  PASS  proposal print reproduces the authoritative proposal body verbatim\n  PASS  proposal print carries grounded governance provenance\n== docpdf 4. Print endpoint \u2014 sanction letter ==\n  PASS  sanction-letter print returns 200\n  PASS  sanction-letter print is a standalone document\n  PASS  sanction-letter print reproduces the authoritative letter body verbatim\n  PASS  DRAFT sanction letter print flags advisory + awaiting-confirm\n== docpdf 5. Governance invariant \u2014 render does not mutate the source artifact ==\n  PASS  generated document byte-identical after render(s)\n  PASS  document still CONFIRMED (confirm-lock intact after render)\n  PASS  credit proposal byte-identical after render\n  PASS  proposal version unchanged (no new version minted by render)\n== docpdf 6. Unknown artifacts 404 (no partial page) ==\n  PASS  print of unknown document -> 404\n  PASS  print of proposal for unknown application -> 404\n== docpdf 7. Render recorded in the append-only audit trail ==\n  PASS  DOCUMENT_RENDERED audit event(s) present\n  PASS  render audit actor is the requesting human (X-Actor), not AI\n== docpdf 8. Defense-in-depth \u2014 human/AI clause free text is HTML-escaped in the print output ==\n  PASS  clean draft generated for XSS check\n  PASS  custom clause with embedded HTML/script added\n  PASS  generated document html escapes the injected <script> (not raw)\n  PASS  clause print returns 200\n  PASS  print output escapes the injected <script> tag (rendered inert)\n  PASS  print output escapes the injected onerror <img> tag\n\n43 passed, 0 failed",
+      "ok": true
+    },
+    {
+      "suite": "e2e_field_encryption",
+      "exit_code": 0,
+      "duration_sec": 0.27,
+      "passed": 22,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== field-encryption e2e (gateway=http://localhost:8080, data-dir=/home/user/CPS-LOS/data-regress-llm) ==\n== 0. dev-default field-key path in effect (no env / no prod profile) \u2014 regression parity ==\n  PASS  HELIX_FIELD_KEY unset in the harness env (dev-default path)\n  PASS  no production Spring profile active (dev-default is not fail-closed here)\n== 1. ScreeningHit PII \u2014 transparent round-trip via the API ==\n  PASS  screening produced at least one hit\n  PASS  matchedName reads back as plaintext (== legalName)\n  PASS  aiRationale reads back as plaintext (non-empty, cites the matched name)\n  PASS  dispositionNote reads back as plaintext after write\n  PASS  dispositionNote still plaintext on a fresh GET\n== 2. ScreeningHit PII \u2014 at-rest ciphertext in SQLite ==\n  PASS  stored matched_name != plaintext (encrypted at rest)\n  PASS  plaintext legalName does NOT appear in the stored matched_name\n  PASS  stored matched_name is AES-GCM Base64 ciphertext\n  PASS  stored ai_rationale != plaintext + no plaintext leak\n  PASS  stored disposition_note is ciphertext (note not stored in the clear)\n== 3. UboNode beneficial-owner name \u2014 round-trip + at-rest ciphertext ==\n  PASS  UBO PERSON node persisted + flagged as UBO (>=10%)\n  PASS  UBO name reads back as plaintext (transparent)\n  PASS  UBO name still plaintext on a fresh GET of the graph\n  PASS  stored ubo_nodes.name is ciphertext (person name not in the clear)\n  PASS  ubo_nodes.node_key stays PLAINTEXT (structural key, not encrypted)\n== 4. EXCLUDED lookup column gstin \u2014 dedup still matches (non-regression) ==\n  PASS  dedup still finds the gstin twin (gstin NOT encrypted -> equality works)\n  PASS  gstin listed in the configured identifierFields\n== 5. EXCLUDED lookup column registrationNo \u2014 legacy dedup still matches ==\n  PASS  registrationNo twin still dedups (registrationNo NOT encrypted)\n== 6. EXCLUDED identifiers readable + validated \u2014 hygiene identifiers VALID ==\n  PASS  all four identifiers read back VALID (identifier columns intact + queryable)\n== 7. decrypt path is read-stable (never crashes a read) ==\n  PASS  repeated reads of encrypted PII always return 200 + stable plaintext (decrypt never crashes)\n\n== field-encryption e2e: 22 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_cam_packs_core",
+      "exit_code": 0,
+      "duration_sec": 2.03,
+      "passed": 120,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  FINANCIAL_TEMPLATE resolves by segment\n  PASS  template declares the authored extra ratio CAM_LTV\n  PASS  template declares the authored extra input line(s)\n  PASS  spread auto-resolved this segment's FINANCIAL_TEMPLATE\n  PASS  authored extra ratio CAM_LTV computed by formula (0.5)\n  PASS  standard canonical ratios still present alongside the extras\n  PASS  authored extra input line appears in the spread grid\n  PASS  CHECKLIST_MASTER materialises with the authored items\n  PASS  CP register materialised the authored mandatory CP codes\n\n== Trade Finance (LC/BG) (segment TRADE_FINANCE_LCBG) ==\n  PASS  MODEL_DEFINITION resolves by segment (most-specific wins)\n  PASS  model carries QUALITATIVE + QUANTITATIVE sections\n  PASS  authored qualitative question 'trade_track_record' present\n  PASS  quantitative question is MODULE-sourced from a spreading ratio\n  PASS  FINANCIAL_TEMPLATE resolves by segment\n  PASS  template declares the authored extra ratio CAM_MARGIN_COVER\n  PASS  template declares the authored extra input line(s)\n  PASS  spread auto-resolved this segment's FINANCIAL_TEMPLATE\n  PASS  authored extra ratio CAM_MARGIN_COVER computed by formula (0.2)\n  PASS  standard canonical ratios still present alongside the extras\n  PASS  authored extra input line appears in the spread grid\n  PASS  CHECKLIST_MASTER materialises with the authored items\n  PASS  CP register materialised the authored mandatory CP codes\n\n== Construction / Real Estate (segment CONSTRUCTION_REAL_ESTATE) ==\n  PASS  MODEL_DEFINITION resolves by segment (most-specific wins)\n  PASS  model carries QUALITATIVE + QUANTITATIVE sections\n  PASS  authored qualitative question 'developer_track' present\n  PASS  quantitative question is MODULE-sourced from a spreading ratio\n  PASS  FINANCIAL_TEMPLATE resolves by segment\n  PASS  template declares the authored extra ratio CAM_LOAN_TO_GDV\n  PASS  template declares the authored extra input line(s)\n  PASS  spread auto-resolved this segment's FINANCIAL_TEMPLATE\n  PASS  authored extra ratio CAM_LOAN_TO_GDV computed by formula (0.2)\n  PASS  standard canonical ratios still present alongside the extras\n  PASS  authored extra input line appears in the spread grid\n  PASS  CHECKLIST_MASTER materialises with the authored items\n  PASS  CP register materialised the authored mandatory CP codes\n\n== 7. Maker != checker enforced on master approvals (SoD) ==\n  PASS  probe submitted PENDING_APPROVAL\n  PASS  self-approval blocked (maker == checker) -> 403\n  PASS  different checker approves -> ACTIVE\n\n== 8. Seed is idempotent (a second run creates nothing) ==\n  PASS  second seed run creates zero records (idempotent)\n  PASS  second seed run has no errors\n\n== CAM core-lending packs e2e: 120 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_cam_packs_specialty",
+      "exit_code": 0,
+      "duration_sec": 1.17,
+      "passed": 121,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  CORP_TERM_LOAN_SECURED remains the sole/first 'SECURED' checklist (picker unchanged)\n\n== 4. Each format resolves its CP_MASTER (governed keyed master) ==\n  PASS  [SCF_VENDOR] CP_MASTER/SCF_VENDOR ACTIVE with 6 CP items\n  PASS  [SCF_VENDOR] CP list has mandatory items + a MAC condition\n  PASS  [SCF_DEALER] CP_MASTER/SCF_DEALER ACTIVE with 6 CP items\n  PASS  [SCF_DEALER] CP list has mandatory items + a MAC condition\n  PASS  [IBPC] CP_MASTER/IBPC ACTIVE with 5 CP items\n  PASS  [IBPC] CP list has mandatory items + a MAC condition\n  PASS  [BANK_FI] CP_MASTER/BANK_FI ACTIVE with 6 CP items\n  PASS  [BANK_FI] CP list has mandatory items + a MAC condition\n  PASS  [INSURANCE] CP_MASTER/INSURANCE ACTIVE with 5 CP items\n  PASS  [INSURANCE] CP list has mandatory items + a MAC condition\n  PASS  [BROKER_CAPITAL_MARKET] CP_MASTER/BROKER_CAPITAL_MARKET ACTIVE with 6 CP items\n  PASS  [BROKER_CAPITAL_MARKET] CP list has mandatory items + a MAC condition\n  PASS  [ECB_STRUCTURED] CP_MASTER/ECB_STRUCTURED ACTIVE with 6 CP items\n  PASS  [ECB_STRUCTURED] CP list has mandatory items + a MAC condition\n  PASS  [INFRA_PRIORITY] CP_MASTER/INFRA_PRIORITY ACTIVE with 7 CP items\n  PASS  [INFRA_PRIORITY] CP list has mandatory items + a MAC condition\n\n== 5. Every new SEGMENT is selectable; the canonical six are preserved ==\n  PASS  SEGMENT dropdown carries SCF_VENDOR\n  PASS  SEGMENT dropdown carries SCF_DEALER\n  PASS  SEGMENT dropdown carries IBPC\n  PASS  SEGMENT dropdown carries BANK_FI\n  PASS  SEGMENT dropdown carries INSURANCE\n  PASS  SEGMENT dropdown carries BROKER_CAPITAL_MARKET\n  PASS  SEGMENT dropdown carries ECB_STRUCTURED\n  PASS  SEGMENT dropdown carries INFRA_PRIORITY\n  PASS  all six canonical wholesale segments preserved\n  PASS  every SEGMENT value still carries a label (well-formed dropdown)\n\n== 6. Maker != checker (SoD) enforced on the governed approval path ==\n  PASS  probe submitted PENDING_APPROVAL\n  PASS  self-approval blocked (maker==checker) -> 403\n  PASS  different checker approves -> ACTIVE\n\n== 7. Bank/FI prudential augmentation actually COMPUTES through the spreading engine ==\n  PASS  Bank/FI deal auto-resolves the fin-bank-fi chart (segment-driven)\n  PASS  CRAR_PCT computed by formula (180/1000*100 = 18.0)\n  PASS  GNPA_RATIO computed by formula (40/1000*100 = 4.0)\n  PASS  LCR computed by formula (120/100*100 = 120.0)\n  PASS  standard corporate ratios still present alongside the prudential extras\n  PASS  prudential input line CAPITAL_FUNDS appears in the spread grid\n\n== 8. Re-seeding is idempotent (a second run creates nothing) ==\n  PASS  second seed_all creates 0 new master records\n  PASS  second seed_all reports the same 8 formats\n\n== CAM specialty packs e2e: 121 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_workflow_engine",
+      "exit_code": 0,
+      "duration_sec": 0.32,
+      "passed": 18,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 0. Seed a bespoke parallel WORKFLOW_DEFINITION pack (dual-signed) ==\n  PASS  pack is dual-signed and active\n== 1. Materialise an instance from the bespoke pack ==\n  PASS  instance ACTIVE from the bespoke pack (not the linear fallback)\n  PASS  4 stages materialised\n  PASS  START is IN_PROGRESS, parallel siblings PENDING\n== 2. Complete START -> BOTH parallel siblings co-enter; a mirror opens ==\n  PASS  both parallel siblings are IN_PROGRESS (co-entered)\n  PASS  a stage-entry mirror WorkItem opened on the parallel stage's queue\n== 3. Send-back guards: blank actor + forward target are rejected (fix #4) ==\n  PASS  send-back with blank actor -> 403\n  PASS  forward send-back (ahead of current) -> rejected\n  PASS  send-back to the current stage (not backwards) -> rejected\n  PASS  rejected send-backs left the instance untouched (still ACTIVE at REVIEW_A/B)\n== 4. ANY join: one completion SKIPS the open sibling + advances past the group (fix #5) ==\n  PASS  winning sibling REVIEW_A is COMPLETE\n  PASS  non-winning sibling REVIEW_B is SKIPPED (not left IN_PROGRESS)\n  PASS  cursor advanced past the group to FINALIZE\n  PASS  advancing an already-SKIPPED sibling -> rejected\n== 5. Backwards send-back re-enters the stage + REOPENS a fresh mirror (fix #7) ==\n  PASS  send-back re-armed REVIEW_A to IN_PROGRESS and reset downstream to PENDING\n  PASS  re-entry opened a NEW mirror task (rework), not the stale COMPLETED one\n== 6. Withdraw requires a named actor (fix #4) ==\n  PASS  withdraw with blank actor -> 403\n  PASS  withdraw with a named actor terminates the instance\n\n==== workflow-engine e2e: 18 passed, 0 failed ====",
+      "ok": true
+    },
+    {
+      "suite": "e2e_auth_sso",
+      "exit_code": 0,
+      "duration_sec": 24.81,
+      "passed": 18,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== Part A: DEFAULT helix.security.mode=none preserves today's behaviour ==\n  PASS  none: /api/security/mode reports none (unauthenticated)\n  PASS  none: mode.secured is false\n  PASS  none: token-less read succeeds (no 401)\n  PASS  none: X-Actor passes through verbatim (no override)\n  PASS  none: request is anonymous (not authenticated)\n  PASS  none: token-less write succeeds (no 401 / no CSRF block)\n\n== Part B: helix.security.mode=oidc is a real JWT resource server ==\n  PASS  oidc: /api/security/mode open + reports oidc\n  PASS  oidc: mode.secured is true\n  PASS  oidc: no token -> 401\n  PASS  oidc: token-less write -> 401\n  PASS  oidc: valid token -> 200\n  PASS  oidc: actor derived from the username claim (preferred_username, not sub)\n  PASS  oidc: roles derived from the roles claim (drive the SoD/ActorDirectory model)\n  PASS  oidc: request is authenticated\n  PASS  oidc: token subject overrides a spoofed X-Actor header\n  PASS  oidc: tampered token -> 401\n  PASS  oidc: expired token -> 401\n  PASS  oidc: token signed with the wrong key -> 401\n\n== SSO auth e2e: 18 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_notify_transport",
+      "exit_code": 0,
+      "duration_sec": 38.67,
+      "passed": 27,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "SMTP sink :41419   SMS sink :38307\n\n== 1. DEFAULT outbox: render + persist, NO transmission (byte-identical) ==\n  PASS  outbox enqueue returns 200\n  PASS  transport recorded OUTBOX\n  PASS  status SENT (record-only)\n  PASS  providerRef is the synthetic outbox ref\n  PASS  NO SMTP transmission attempted in outbox mode (sink unchanged)\n\n== 2. smtp mode: actually transmit via SMTP, row flips to SENT ==\n  PASS  smtp enqueue returns 200\n  PASS  transport recorded SMTP\n  PASS  outbox row flipped to SENT\n  PASS  providerRef is an smtp: delivery ref\n  PASS  sentAt stamped on SMTP dispatch\n  PASS  SMTP sink actually received a message (real transmission)\n  PASS  captured RCPT is the resolved recipient address\n  PASS  captured DATA carries the rendered subject + body (not a placeholder)\n  PASS  persisted row records SMTP/SENT + delivery ref\n   -- degrade gracefully when no address resolves --\n  PASS  no-address enqueue still returns 200 (business tx intact)\n  PASS  no-address row recorded FAILED (fail-soft, not thrown)\n  PASS  FAILED row carries a failureReason\n\n== 3. sms mode: actually POST to the HTTP SMS gateway, row flips to SENT ==\n  PASS  sms enqueue returns 200\n  PASS  transport recorded SMS\n  PASS  outbox row flipped to SENT\n  PASS  providerRef records the gateway id (sms:gw-*)\n  PASS  SMS gateway actually received a POST (real transmission)\n  PASS  gateway payload carries the phone number\n  PASS  gateway payload carries the rendered message\n  PASS  api-key header forwarded to the gateway\n   -- degrade gracefully when no phone resolves --\n  PASS  no-phone enqueue still returns 200\n  PASS  no-phone row recorded FAILED (fail-soft)\n\n== notify transport (SMTP + SMS) e2e: 27 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_dms_crm",
+      "exit_code": 0,
+      "duration_sec": 9.01,
+      "passed": 33,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "\n== 2. DMS download \u2014 byte-identical round-trip ==\n  PASS  download returns 200\n  PASS  downloaded bytes are byte-identical to upload\n  PASS  downloaded bytes hash to the same sha256\n  PASS  download advertises the stored content-type\n  PASS  integrity header echoes the stored sha256\n\n== 3. DMS list by subjectRef + metadata read ==\n  PASS  list by subjectRef returns the document\n  PASS  metadata endpoint returns the row\n\n== 4. DMS multipart upload path ==\n  PASS  multipart upload stores the file\n  PASS  multipart bytes round-trip byte-identical\n\n== 5. DMS audit \u2014 DOCUMENT_STORED + DOCUMENT_RETRIEVED stamped with actor ==\n  PASS  DOCUMENT_STORED audit present, HUMAN actor rm.alice\n  PASS  DOCUMENT_RETRIEVED audit present, HUMAN actor ops.bob\n\n== 6. DMS negative cases ==\n  PASS  empty content rejected (400)\n  PASS  unknown document id -> 404\n\n== 7. CRM write-back (simulated default) \u2014 idempotent record on the export contract ==\n  PASS  write-back created (200)\n  PASS  simulated mode records only (no egress)\n  PASS  routed to the CRM destination on the export contract\n  PASS  canonical envelope carries the typed case-status record + payload version\n\n== 8. CRM write-back idempotency (same case + as-of day) ==\n  PASS  re-trigger returns the SAME row (idempotent)\n  PASS  a distinct case yields a distinct row\n\n== 9. CRM write-back list + detail + audit ==\n  PASS  write-backs listable by subjectRef\n  PASS  detail returns full envelope\n  PASS  CRM_WRITEBACK_SIMULATED audit stamped (SYSTEM/engine, triggeredBy recorded)\n\n== 10. CRM write-back negative case ==\n  PASS  write-back with neither caseRef nor subjectRef -> 400\n\n== 11. CRM live-mode -> real POST to a local mock CRM (self-contained) ==\n  PASS  isolated live-mode config-service came up\n  PASS  live write-back POST delivered\n  PASS  mock CRM received the canonical envelope at the configured path\n  PASS  delivered row captured the CRM provider reference\n  PASS  live write-back is idempotent (same row, no second POST)\n\n33 passed, 0 failed",
+      "ok": true
+    },
+    {
+      "suite": "e2e_coedit",
+      "exit_code": 0,
+      "duration_sec": 20.38,
+      "passed": 16,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. DEFAULT provider=none (today's local-export behaviour, no external call) ==\n  PASS  provider reports 'none'\n  PASS  none: HTML co-edit returns the local artifact (mode=LOCAL, no coEditUrl)\n  PASS  none: echoed bytes decode byte-for-byte to the submitted HTML\n  PASS  none: charge-Excel CSV returns the local artifact verbatim (base64 round-trip)\n  PASS  none: NO request ever reached the mock Graph server\n  PASS  none: COEDIT_LOCAL audit event stamped with the X-Actor\n  PASS  none: empty content rejected (400)\n== 2. provider=graph -> local mock Graph (token -> upload -> link) ==\n  PASS  provider reports 'graph'\n  PASS  graph: HTML publish returns the SharePoint co-edit URL (mode=COEDIT)\n  PASS  graph: provider performed token -> upload sequence in order\n  PASS  graph: Excel (CSV) publish returns co-edit URL + opens a workbook session\n  PASS  graph: Excel path performed token -> upload -> workbook session\n  PASS  graph: COEDIT_PUBLISHED audit event stamped\n== 3. graph outage (mock 5xx) -> graceful fallback to the local artifact ==\n  PASS  graph 5xx: falls back to local artifact (mode=LOCAL, fallback=true, bytes intact)\n  PASS  graph 5xx: the upload was actually attempted before falling back\n  PASS  graph 5xx: COEDIT_FALLBACK audit event stamped\n\n============================================================\n  co-edit e2e: 16 passed, 0 failed\n============================================================",
+      "ok": true
+    },
+    {
+      "suite": "e2e_llm",
+      "exit_code": 0,
+      "duration_sec": 127.05,
+      "passed": 226,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "  PASS  configured: ews-narrative drafted field carries the MARKER\n  PASS  configured: ews signalType/severity/score/proposedAction byte-identical to the DEFAULT-profile baseline\n  PASS  configured: ews-narrative audit stamped llmDrafted+llmModel\n  PASS  configured: cpt generate ok\n  PASS  configured: cpt-draft CALLED the external LLM\n  PASS  configured: cpt-draft drafted field carries the MARKER\n  PASS  configured: cpt markdown stays grounded in the client name\n  PASS  configured: cpt-draft audit stamped llmDrafted+llmModel\n  PASS  configured: credit-proposal generate ok\n  PASS  configured: proposal-draft CALLED the external LLM\n  PASS  configured: proposal-draft drafted field carries the MARKER\n  PASS  configured: proposal sections list byte-identical to the DEFAULT-profile baseline\n  PASS  configured: proposal-draft audit stamped llmDrafted+llmModel\n  PASS  configured: group insights ok\n  PASS  configured: group-insights CALLED the external LLM\n  PASS  configured: group-insights drafted field carries the MARKER\n  PASS  configured: group insights memberCount/weightedPd/groupGrade byte-identical to the DEFAULT-profile baseline\n  PASS  configured: group-insights audit stamped llmDrafted+llmModel\n  PASS  configured: covenant-extract produced candidate(s)\n  PASS  configured: covenant-extract CALLED the external LLM\n  PASS  configured: covenant-extract candidate carries MARKER + a valid taxonomy metric\n  PASS  configured: covenant-extract stays an advisory DRAFT (human confirm materialises the covenant)\n  PASS  configured: covenant-extract audit stamped llmDrafted+llmModel\n  PASS  configured: covenant-certificate assessed line(s)\n  PASS  configured: covenant-certificate CALLED the external LLM\n  PASS  configured: covenant-certificate overlaid the borrower-reported label with the MARKER\n  PASS  configured: certificate systemMetric + taxonomyMismatch (deterministic recompute) byte-identical to the DEFAULT-profile baseline\n  PASS  configured: covenant-certificate audit stamped llmDrafted+llmModel\n  PASS  configured: docgen generated a DRAFT document\n  PASS  configured: docgen addClause ok\n  PASS  configured: docgen-clause CALLED the external LLM\n  PASS  configured: docgen-clause text is LLM-polished (carries the MARKER)\n  PASS  configured: docgen-clause audit stamped llmDrafted+llmModel\n  PASS  configured: authoritative rating/pricing/DSCR unchanged after ALL 20 advisory capabilities\n\n-- fail-soft: mock LLM returns 5xx (outage) \u2014 every capability falls back to deterministic --\n  PASS  fail-soft: copilot falls back to deterministic (no marker, still grounded)\n  PASS  fail-soft: commentary falls back to deterministic narrative (no marker)\n  PASS  fail-soft: doc-intel falls back to deterministic template + built-in model\n\n-- fail-soft (outage) across the newly-wired services: deterministic fallback, no marker --\n  PASS  fail-soft: screening-rationale falls back to the deterministic template (no marker)\n  PASS  fail-soft: collateral-extract falls back to deterministic regex (no marker, still SUGGESTED)\n  PASS  fail-soft: rag-narrative falls back (no narrative key added to factors)\n  PASS  fail-soft: ews-narrative falls back to the deterministic rationale (no marker)\n  PASS  fail-soft: covenant-extract falls back to deterministic candidates (no marker)\n  PASS  fail-soft: docgen-clause uses the analyst text verbatim on outage (no polish/marker)\n  PASS  fail-soft: authoritative rating/pricing/DSCR unchanged through the outage sweep\n\n== e2e_llm: 226 passed, 0 failed ==",
+      "ok": true
+    },
+    {
+      "suite": "e2e_lifecycle_rekyc",
+      "exit_code": 0,
+      "duration_sec": 1.98,
+      "passed": 17,
+      "failed": 0,
+      "tally_source": "summary_line",
+      "stdout_tail": "== 1. CLOSED lifecycle terminal is now reachable (governed + audited) ==\n  PASS  created obligor starts ACTIVE\n  PASS  close transitions to the CLOSED terminal state\n  PASS  re-close is rejected (idempotent guard, 409)\n  PASS  close requires a reason (400)\n  PASS  COUNTERPARTY_CLOSED stamped by a named human\n\n== 2. Re-KYC sweep: due after the tier interval, not before; tier-differentiated ==\n  PASS  ENHANCED tier derived\n  PASS  SIMPLIFIED tier derived\n  PASS  not due before the interval (ENHANCED still VERIFIED at 6 months)\n  PASS  ENHANCED flips to RE_KYC_DUE past its 12-month interval\n  PASS  SIMPLIFIED still VERIFIED at 24 months (interval is tier-driven from CDD_TIERS)\n  PASS  sweep response reports the flagged obligor\n  PASS  re-KYC due date recorded ~= verified + 12 months\n\n== 3. Deterministic SYSTEM audit + advisory REKYC_DUE notification (idempotent) ==\n  PASS  REKYC_DUE stamped by SYSTEM (engine), never AI\n  PASS  a REKYC_DUE notification was enqueued for the flagged obligor\n  PASS  re-firing the sweep does not duplicate the notification\n\n== 4. A freshly-verified counterparty is untouched by a today sweep ==\n  PASS  freshly-verified obligor stays VERIFIED under a today sweep\n  PASS  fresh obligor not in the flagged set\n\n== lifecycle + re-KYC (D9) e2e: 17 passed, 0 failed ==",
+      "ok": true
+    }
+  ],
+  "audit_samples": {
+    "config": {
+      "total_events": 200,
+      "actor_types": {
+        "SYSTEM": 3,
+        "HUMAN": 197
+      },
+      "top_events": [
+        [
+          "MASTER_APPROVED",
+          94
+        ],
+        [
+          "MASTER_SUBMITTED",
+          94
+        ],
+        [
+          "RULEPACK_SIGNOFF",
+          6
+        ],
+        [
+          "RULEPACK_ACTIVATED",
+          3
+        ],
+        [
+          "RULEPACK_DRAFTED",
+          3
+        ]
+      ]
+    },
+    "counterparty": {
+      "total_events": 200,
+      "actor_types": {
+        "SYSTEM": 179,
+        "HUMAN": 21
+      },
+      "top_events": [
+        [
+          "NOTIFICATION_ENQUEUED",
+          87
+        ],
+        [
+          "REKYC_DUE",
+          87
+        ],
+        [
+          "COUNTERPARTY_CREATED",
+          15
+        ],
+        [
+          "REKYC_SWEEP",
+          4
+        ],
+        [
+          "KYC_VERIFIED",
+          4
+        ],
+        [
+          "COUNTERPARTY_CLOSED",
+          1
+        ],
+        [
+          "HYGIENE_ASSESSED",
+          1
+        ],
+        [
+          "PROSPECT_CREATED",
+          1
+        ]
+      ]
+    },
+    "origination": {
+      "total_events": 200,
+      "actor_types": {
+        "HUMAN": 152,
+        "AI": 48
+      },
+      "top_events": [
+        [
+          "APPLICATION_CREATED",
+          46
+        ],
+        [
+          "SPREAD_VERSION_RECORDED",
+          45
+        ],
+        [
+          "SPREAD_GENERATED",
+          45
+        ],
+        [
+          "SPREAD_CONFIRMED",
+          28
+        ],
+        [
+          "SCF_SPOKE_ADDED",
+          7
+        ],
+        [
+          "SCF_PROGRAM_CREATED",
+          4
+        ],
+        [
+          "IP_NOTE_SUBMITTED",
+          4
+        ],
+        [
+          "IP_NOTE_CREATED",
+          4
+        ]
+      ]
+    },
+    "risk": {
+      "total_events": 200,
+      "actor_types": {
+        "SYSTEM": 147,
+        "HUMAN": 53
+      },
+      "top_events": [
+        [
+          "RATING_PROPOSED",
+          58
+        ],
+        [
+          "RATING_CONFIRMED",
+          52
+        ],
+        [
+          "CAPITAL_COMPUTED",
+          48
+        ],
+        [
+          "PRICING_RECOMMENDED",
+          41
+        ],
+        [
+          "PRICING_EXCEPTION_PROPOSED",
+          1
+        ]
+      ]
+    },
+    "decision": {
+      "total_events": 200,
+      "actor_types": {
+        "SYSTEM": 78,
+        "HUMAN": 116,
+        "AI": 6
+      },
+      "top_events": [
+        [
+          "APPROVAL_ROUTED",
+          16
+        ],
+        [
+          "COVENANT_ADDED",
+          16
+        ],
+        [
+          "NOTIFICATION_ENQUEUED",
+          16
+        ],
+        [
+          "DECISION_RECORDED",
+          12
+        ],
+        [
+          "NOTIFICATION_TEMPLATE_MISSING",
+          11
+        ],
+        [
+          "CP_SEEDED",
+          9
+        ],
+        [
+          "NOTING_CREATED",
+          9
+        ],
+        [
+          "NOTIFICATION_SENT",
+          8
+        ]
+      ]
+    },
+    "portfolio": {
+      "total_events": 200,
+      "actor_types": {
+        "HUMAN": 79,
+        "SYSTEM": 120,
+        "AI": 1
+      },
+      "top_events": [
+        [
+          "EXPOSURE_BOOKED",
+          52
+        ],
+        [
+          "ECL_COMPUTED",
+          49
+        ],
+        [
+          "RAROC_SNAPSHOT_ORIGINATION",
+          37
+        ],
+        [
+          "RAROC_ACTUAL_COMPUTED",
+          16
+        ],
+        [
+          "ESCROW_BUDGET_ASSESSED",
+          6
+        ],
+        [
+          "REPORT_EXECUTED",
+          6
+        ],
+        [
+          "ESCROW_TXN_POSTED",
+          5
+        ],
+        [
+          "ESCROW_BUDGET_VERSIONED",
+          3
+        ]
+      ]
+    },
+    "limit": {
+      "total_events": 86,
+      "actor_types": {
+        "SYSTEM": 42,
+        "HUMAN": 44
+      },
+      "top_events": [
+        [
+          "LIMIT_UTILISE",
+          21
+        ],
+        [
+          "LIMIT_TREE_BUILT",
+          11
+        ],
+        [
+          "LIMIT_CHILD_ADDED",
+          10
+        ],
+        [
+          "LIMIT_ROOT_CREATED",
+          8
+        ],
+        [
+          "LIMIT_EOD_RUN",
+          6
+        ],
+        [
+          "LIMIT_RELEASE",
+          5
+        ],
+        [
+          "FX_RATE_REFRESHED",
+          4
+        ],
+        [
+          "LIMIT_APP_RELEASED",
+          3
+        ]
+      ]
+    },
+    "workflow": {
+      "total_events": 200,
+      "actor_types": {
+        "SYSTEM": 129,
+        "HUMAN": 71
+      },
+      "top_events": [
+        [
+          "WORKFLOW_MATERIALISED",
+          120
+        ],
+        [
+          "TASK_CREATED",
+          31
+        ],
+        [
+          "WORKFLOW_STAGE_ADVANCED",
+          16
+        ],
+        [
+          "TASK_COMPLETED",
+          16
+        ],
+        [
+          "TASK_FANOUT",
+          3
+        ],
+        [
+          "QUERY_RAISED",
+          2
+        ],
+        [
+          "TASK_SENT_BACK",
+          2
+        ],
+        [
+          "TASK_WITHDRAWN",
+          2
+        ]
+      ]
+    }
+  }
+}

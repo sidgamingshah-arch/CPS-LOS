@@ -15,13 +15,16 @@ import java.util.Map;
 public class GatewayAuthController {
 
     private final String mode;
+    private final String securityMode;
 
-    public GatewayAuthController(@Value("${helix.auth.mode:PERMISSIVE}") String mode) {
+    public GatewayAuthController(@Value("${helix.auth.mode:PERMISSIVE}") String mode,
+                                 @Value("${helix.security.mode:none}") String securityMode) {
         this.mode = mode == null ? "PERMISSIVE" : mode.toUpperCase();
+        this.securityMode = securityMode == null ? "none" : securityMode.toLowerCase();
     }
 
     @GetMapping("/auth/mode")
     public Map<String, Object> mode() {
-        return Map.of("mode", mode, "enforced", "ENFORCED".equals(mode));
+        return Map.of("mode", mode, "enforced", "ENFORCED".equals(mode), "securityMode", securityMode);
     }
 }

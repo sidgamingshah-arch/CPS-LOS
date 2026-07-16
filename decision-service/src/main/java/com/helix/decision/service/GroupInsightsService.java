@@ -1,6 +1,9 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.CounterpartyGroupDto;
 import com.helix.decision.client.UpstreamClient.DealEnvelopeDto;
@@ -40,11 +43,14 @@ public class GroupInsightsService {
     private final UpstreamClient upstream;
     private final CovenantRepository covenants;
     private final AuditService audit;
+    private final LlmClient llm;
 
-    public GroupInsightsService(UpstreamClient upstream, CovenantRepository covenants, AuditService audit) {
+    public GroupInsightsService(UpstreamClient upstream, CovenantRepository covenants, AuditService audit,
+                                LlmClient llm) {
         this.upstream = upstream;
         this.covenants = covenants;
         this.audit = audit;
+        this.llm = llm;
     }
 
     @Transactional
@@ -140,6 +146,17 @@ public class GroupInsightsService {
 
         String narrative = composeNarrative(group, exposure, members.size(), withApp,
                 exposureByCcy, weightedPd, weightedRaroc, lowestGrade, highestGrade, belowHurdle, overridden);
+        // Optional advisory LLM rewrite of the rollup narrative, grounded in the SAME deterministic
+        // figures assembled above (every exposure / PD / RAROC / grade is quoted verbatim in the prompt).
+        // It only rewords the narrative string — the per-member figures on each GroupMemberInsight, the
+        // weighted aggregates, and the deterministically-derived group grade are untouched. Provider
+        // 'none' (default) → the deterministic narrative, byte-identical to today.
+        LlmResult groupDraft = llmNarrative(group, members.size(), exposure.obligorCount(), withApp,
+                exposureByCcy, weightedPd, weightedRaroc, lowestGrade, highestGrade, belowHurdle, overridden, narrative);
+        boolean llmDrafted = groupDraft.usable();
+        if (llmDrafted) {
+            narrative = groupDraft.text().strip();
+        }
 
         GroupInsights gi = new GroupInsights(
                 group.reference(), group.name(), group.groupRmId(), group.multiCountry(),
@@ -151,12 +168,20 @@ public class GroupInsightsService {
                 gg.grade(), gg.method(), gg.basis(), gg.contributions(),
                 members, narrative, true);
 
+        Map<String, Object> giDetail = new LinkedHashMap<>();
+        giDetail.put("memberCount", members.size());
+        giDetail.put("membersWithApplication", withApp);
+        giDetail.put("membersBelowHurdle", belowHurdle);
+        giDetail.put("membersOverridden", overridden);
+        giDetail.put("advisory", true);
+        if (llmDrafted) {
+            giDetail.put("llmDrafted", true);
+            giDetail.put("llmModel", groupDraft.model());
+        }
         audit.ai("group-insights", "GROUP_INSIGHTS_GENERATED", "Group", group.reference(),
                 "Insights for group %s — %d member(s), %d with application, %d below hurdle, %d overridden"
                         .formatted(group.name(), members.size(), withApp, belowHurdle, overridden),
-                Map.of("memberCount", members.size(), "membersWithApplication", withApp,
-                        "membersBelowHurdle", belowHurdle, "membersOverridden", overridden,
-                        "advisory", true));
+                giDetail);
         // The group grade is a deterministic rollup, so it is stamped as an engine (SYSTEM) event
         // separate from the advisory narrative above.
         audit.engine("GROUP_GRADE_DERIVED", "Group", group.reference(),
@@ -360,6 +385,53 @@ public class GroupInsightsService {
         }
         sb.append(" _Advisory only. Authoritative grades, capital and pricing are unchanged._");
         return sb.toString();
+    }
+
+    /**
+     * Advisory LLM rewrite of the group rollup narrative, grounded strictly in the deterministic
+     * aggregates supplied here. The model is told to quote every figure verbatim and to invent
+     * nothing; it never derives a grade or a decision. Returns the {@link LlmResult} (usable only
+     * when a provider is configured AND it returned text) so the caller keeps the deterministic
+     * narrative on {@code none} / failure / empty — the byte-identical default.
+     */
+    private LlmResult llmNarrative(CounterpartyGroupDto group, int memberCount, int obligorCount, int withApp,
+                                   Map<String, Double> exposureByCcy, Double weightedPd, Double weightedRaroc,
+                                   String lowestGrade, String highestGrade, int belowHurdle, int overridden,
+                                   String deterministic) {
+        String system = "You are drafting an ADVISORY group-decisioning rollup narrative for a wholesale-credit "
+                + "borrower group (capability=group-insights). Write one concise, professional paragraph using ONLY "
+                + "the figures supplied — quote every exposure, PD, RAROC and grade exactly as given and never invent, "
+                + "estimate or change a value. Do not derive a new grade and do not make or imply a decision; the member "
+                + "grades, capital and pricing are authoritative and unchanged. Reply with 2-4 sentences of plain prose.";
+        StringBuilder user = new StringBuilder();
+        user.append("Group: ").append(nv(group.name())).append(" (").append(group.reference())
+                .append("), group RM ").append(nv(group.groupRmId()))
+                .append(group.multiCountry() ? ", multi-country." : ", single-country.").append('\n');
+        user.append("Members tagged: ").append(memberCount).append("; active obligors: ").append(obligorCount)
+                .append("; members with a live application: ").append(withApp).append(".\n");
+        if (!exposureByCcy.isEmpty()) {
+            user.append("Proposed exposure by currency: ").append(exposureByCcy.entrySet().stream()
+                    .map(e -> moneyShort(e.getValue()) + " " + e.getKey())
+                    .reduce((a, b) -> a + ", " + b).orElse("—")).append(".\n");
+        }
+        if (weightedPd != null) user.append("Exposure-weighted PD: ").append(pct(weightedPd)).append(".\n");
+        if (weightedRaroc != null) user.append("Exposure-weighted RAROC: ").append(pct(weightedRaroc)).append(".\n");
+        if (lowestGrade != null) {
+            user.append("Grade band (best to weakest): ").append(highestGrade).append(" to ").append(lowestGrade).append(".\n");
+        }
+        user.append("Members below RAROC hurdle: ").append(belowHurdle)
+                .append("; members with a rating override: ").append(overridden).append(".\n");
+        user.append("Deterministic reference narrative (reword only — keep every figure exactly): ").append(deterministic);
+        return safeComplete(LlmRequest.of("group-insights", system, user.toString()));
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
     }
 
     private static String pct(double v) {

@@ -50,6 +50,18 @@ function routeFor(n: Item): { view: string; ref?: string } {
   return { view, ref: n.subjectRef || undefined };
 }
 
+/**
+ * Mirrors the backend's addressedTo(): a notification is the actor's own when the actor appears
+ * in the row's recipients OR recipientRoles list. Used to scope the dropdown consistently with
+ * the recipient-scoped unread-count / read-all endpoints (the list endpoint carries no filter).
+ */
+function addressedToActor(n: any, actor: string): boolean {
+  if (!actor) return false;
+  const recipients: string[] = Array.isArray(n?.recipients) ? n.recipients : [];
+  const roles: string[] = Array.isArray(n?.recipientRoles) ? n.recipientRoles : [];
+  return recipients.includes(actor) || roles.includes(actor);
+}
+
 export default function NotificationBell() {
   const { actor, nav } = useApp();
   const [open, setOpen] = useState(false);
@@ -58,15 +70,20 @@ export default function NotificationBell() {
   const [loading, setLoading] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // Cheap, frequent: just the unread totals across the primary services.
+  // Cheap, frequent: just the unread totals across the primary services — scoped to the
+  // signed-in actor so the badge is a PERSONAL inbox, not the whole per-service outbox.
   const refreshCount = useCallback(async () => {
-    const results = await Promise.allSettled(BELL_SERVICES.map((s) => notifications.unreadCount(s)));
+    const results = await Promise.allSettled(
+      BELL_SERVICES.map((s) => notifications.unreadCount(s, { recipient: actor })));
     let total = 0;
     for (const r of results) if (r.status === "fulfilled") total += r.value?.unread || 0;
     setCount(total);
-  }, []);
+  }, [actor]);
 
-  // Heavier, on-demand: the recent unread rows to show in the dropdown.
+  // Heavier, on-demand: the recent unread rows to show in the dropdown. The list endpoint has
+  // no recipient filter, so we apply the SAME predicate the backend uses to scope the count /
+  // read-all (actor is one of the row's recipients or recipientRoles) — keeping the badge, the
+  // dropdown, and "mark all read" consistently scoped to the actor's own notifications.
   const loadItems = useCallback(async () => {
     setLoading(true);
     try {
@@ -74,7 +91,7 @@ export default function NotificationBell() {
         BELL_SERVICES.map(async (s) => {
           const rows = await notifications.list(s);
           return (rows || [])
-            .filter((n: any) => !n.readAt)
+            .filter((n: any) => !n.readAt && addressedToActor(n, actor))
             .map((n: any) => ({ ...n, svc: s } as Item));
         }),
       );
@@ -85,7 +102,7 @@ export default function NotificationBell() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [actor]);
 
   // Poll the badge on a modest interval; the tab being backgrounded still refreshes on open.
   useEffect(() => {
@@ -128,7 +145,9 @@ export default function NotificationBell() {
   }, [actor, nav, refreshCount]);
 
   const onMarkAll = useCallback(async () => {
-    await Promise.allSettled(BELL_SERVICES.map((s) => notifications.markAllRead(s, actor)));
+    // Clear only the actor's own notifications (recipient=actor); the backend's read-all is
+    // itself recipient-owned, so this never clears anyone else's inbox.
+    await Promise.allSettled(BELL_SERVICES.map((s) => notifications.markAllRead(s, actor, actor)));
     setItems([]);
     setCount(0);
     refreshCount();

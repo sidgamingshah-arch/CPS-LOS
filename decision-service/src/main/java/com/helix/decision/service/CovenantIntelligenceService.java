@@ -1,6 +1,11 @@
 package com.helix.decision.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.common.web.ApiException;
 import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.CreditInputsDto;
@@ -18,7 +23,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -48,6 +56,11 @@ import java.util.regex.Pattern;
 public class CovenantIntelligenceService {
 
     private static final Logger log = LoggerFactory.getLogger(CovenantIntelligenceService.class);
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** Operators the platform recognises — LLM-suggested operators are validated against this set. */
+    private static final Set<String> ALLOWED_OPERATORS = Set.of(">=", ">", "<=", "<", "==");
 
     // ---- metric taxonomy: canonical token + the borrower phrases that map to it ----
     private record MetricDef(String metric, String covenantType, String defaultOperator, List<String> synonyms) {
@@ -89,12 +102,14 @@ public class CovenantIntelligenceService {
     private final UpstreamClient upstream;
     private final AuditService audit;
     private final com.helix.common.governance.AiGovernanceClient governance;
+    private final LlmClient llm;
 
     public CovenantIntelligenceService(CovenantExtractionRepository extractions,
                                        CertificateAssessmentRepository assessments,
                                        CovenantRepository covenants, CovenantService covenantService,
                                        UpstreamClient upstream, AuditService audit,
-                                       com.helix.common.governance.AiGovernanceClient governance) {
+                                       com.helix.common.governance.AiGovernanceClient governance,
+                                       LlmClient llm) {
         this.extractions = extractions;
         this.assessments = assessments;
         this.covenants = covenants;
@@ -102,6 +117,7 @@ public class CovenantIntelligenceService {
         this.upstream = upstream;
         this.audit = audit;
         this.governance = governance;
+        this.llm = llm;
     }
 
     /** Both extract paths share the same gate — resolve once. */
@@ -116,17 +132,141 @@ public class CovenantIntelligenceService {
     @Transactional
     public List<CovenantExtraction> extract(String reference, String text, String actor) {
         enforceGate(reference);
-        List<CovenantExtraction> out = new ArrayList<>();
-        for (String chunk : splitClauses(text)) {
-            CovenantExtraction e = parseClause(reference, chunk);
-            if (e != null) {
-                out.add(extractions.save(e));
+        // Optional advisory LLM extraction. When a provider is configured the model proposes covenant
+        // candidates from the free text as a JSON object; each candidate is validated against the fixed
+        // metric taxonomy and persisted as a DRAFT SUGGESTION — never a live covenant. The suggested
+        // operator / threshold / frequency are just that: SUGGESTIONS the human confirms via
+        // confirmExtraction (that gate, and the authoritative covenant it materialises, are unchanged).
+        // On provider 'none', unparseable output, or no mappable candidate we run the deterministic
+        // parser, byte-identical to today.
+        LlmExtractResult llmResult = llmExtract(reference, text);
+        boolean llmDrafted = llmResult != null;
+        List<CovenantExtraction> candidates = new ArrayList<>();
+        if (llmDrafted) {
+            candidates = llmResult.candidates();
+        } else {
+            for (String chunk : splitClauses(text)) {
+                CovenantExtraction e = parseClause(reference, chunk);
+                if (e != null) {
+                    candidates.add(e);
+                }
             }
+        }
+        List<CovenantExtraction> out = new ArrayList<>();
+        for (CovenantExtraction e : candidates) {
+            out.add(extractions.save(e));
+        }
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("candidates", out.size());
+        detail.put("advisory", true);
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmResult.model());
         }
         audit.ai("covenant-extraction", "COVENANT_EXTRACTED", "Application", reference,
                 "Extracted %d covenant candidate(s) from CP free text".formatted(out.size()),
-                Map.of("candidates", out.size(), "advisory", true));
+                detail);
         return out;
+    }
+
+    /**
+     * Advisory LLM extraction of covenant candidates from credit-proposal free text. The model returns
+     * a JSON object; each entry is validated against the fixed metric taxonomy + operator set and mapped
+     * to a DRAFT {@link CovenantExtraction} whose operator/threshold/frequency are SUGGESTIONS a human
+     * confirms. Returns {@code null} when not configured / unparseable / no mappable candidate, so the
+     * caller keeps the deterministic parser (fail-soft, byte-identical default). Writes no live covenant
+     * and no authoritative figure.
+     */
+    private LlmExtractResult llmExtract(String reference, String text) {
+        String system = "You are an ADVISORY covenant-extraction assistant for wholesale-credit proposals "
+                + "(capability=covenant-extract). Read the credit-proposal free text and identify each financial "
+                + "covenant. Return ONLY a JSON object of the form {\"covenants\": [{\"metric\": ..., \"operator\": ..., "
+                + "\"threshold\": ..., \"testFrequency\": ..., \"sourceText\": ...}]}. metric MUST be one of DSCR, "
+                + "NET_LEVERAGE, INTEREST_COVERAGE, CURRENT_RATIO, GEARING, EBITDA_MARGIN, NET_WORTH; operator one of "
+                + ">=, <=, >, <, ==. Every value is a SUGGESTION a named human will confirm — quote figures from the "
+                + "text and never invent a threshold that is not present. Return ONLY a JSON object.";
+        String user = "Credit-proposal free text:\n" + (text == null ? "" : text);
+        LlmResult r = safeComplete(LlmRequest.of("covenant-extract", system, user));
+        if (!r.usable()) {
+            return null;
+        }
+        Map<String, Object> obj = parseJsonObject(r.text());
+        if (obj == null) {
+            return null;
+        }
+        List<Map<String, Object>> items = jsonItems(obj, "covenants");
+        List<CovenantExtraction> out = new ArrayList<>();
+        for (Map<String, Object> it : items) {
+            CovenantExtraction e = fromLlmCandidate(reference, it, r.model());
+            if (e != null) {
+                out.add(e);
+            }
+        }
+        if (out.isEmpty()) {
+            return null;   // nothing mappable → deterministic fallback
+        }
+        return new LlmExtractResult(out, r.model());
+    }
+
+    /** Map one validated LLM candidate to a DRAFT extraction; returns null when the metric is unmappable. */
+    private CovenantExtraction fromLlmCandidate(String reference, Map<String, Object> it, String model) {
+        MetricDef def = resolveMetric(str(it.get("metric")));
+        if (def == null) {
+            return null;
+        }
+        List<String> signals = new ArrayList<>();
+        List<String> gaps = new ArrayList<>();
+        signals.add("llm-extracted metric → " + def.metric() + " (model " + model + ")");
+
+        String operator = normaliseOperator(str(it.get("operator")));
+        boolean operatorExplicit = operator != null;
+        if (!operatorExplicit) {
+            operator = def.defaultOperator();
+            gaps.add("operator not stated — inferred '" + operator + "' from metric convention");
+        } else {
+            signals.add("operator → '" + operator + "'");
+        }
+
+        Double threshold = toNumber(it.get("threshold"));
+        if (threshold == null) {
+            gaps.add("no numeric threshold suggested");
+        } else {
+            signals.add("suggested threshold " + threshold);
+        }
+
+        String freq = canonicalFrequency(str(it.get("testFrequency")));
+        if (freq == null || freq.isBlank()) {
+            freq = "QUARTERLY";
+            gaps.add("test frequency not stated — defaulted QUARTERLY");
+        } else {
+            signals.add("frequency → " + freq);
+        }
+
+        double confidence = 0.4 + (operatorExplicit ? 0.3 : 0.1) + (threshold != null ? 0.3 : 0.0);
+
+        String sourceText = str(it.get("sourceText"));
+        if (sourceText == null || sourceText.isBlank()) {
+            sourceText = str(it.get("source"));
+        }
+        if (sourceText == null || sourceText.isBlank()) {
+            sourceText = "(LLM-extracted covenant candidate)";
+        }
+
+        CovenantExtraction e = new CovenantExtraction();
+        e.setApplicationReference(reference);
+        e.setSourceText(sourceText.trim());
+        e.setCovenantType(def.covenantType());
+        e.setMetric(def.metric());
+        e.setReportedLabel(clampLabel(def.synonyms().get(0)));
+        e.setOperator(operator);
+        e.setThreshold(threshold);
+        e.setTestFrequency(freq);
+        e.setBreachSeverity("INFORMATION".equals(def.covenantType()) ? "MINOR" : "MAJOR");
+        e.setConfidence(Math.round(confidence * 100.0) / 100.0);
+        e.setSignals(signals);
+        e.setGaps(gaps);
+        e.setExtractedBy("ai:covenant-extraction");
+        return e;
     }
 
     private CovenantExtraction parseClause(String reference, String chunk) {
@@ -275,26 +415,137 @@ public class CovenantIntelligenceService {
         List<Covenant> active = covenants.findByApplicationReference(reference).stream()
                 .filter(Covenant::isActive).toList();
 
-        List<CertificateAssessment> out = new ArrayList<>();
-        int disagreements = 0;
+        // Deterministic parse + recompute for every line (unchanged). This sets systemMetric, the
+        // covenant mapping, the recomputed observed value + pass/fail, the taxonomy-mismatch flag and
+        // the agreement — all 100% deterministic.
+        List<CertificateAssessment> det = new ArrayList<>();
         for (String line : text.split("\\R")) {
             if (line.isBlank()) continue;
             CertificateAssessment a = parseCertificateLine(reference, line, active, ratios);
             if (a == null) continue;
             a.setRecomputeAvailable(recomputeAvailable);
+            det.add(a);
+        }
+        // Optional advisory LLM overlay of ONLY the borrower-reported extraction fields (reportedLabel /
+        // reportedValue / reportedStatus). The deterministic recompute (recomputedObserved, recomputedPassed
+        // from the authoritative spread + covenant threshold), the covenant mapping and the taxonomy-mismatch
+        // flag are untouched; when a status is overlaid the agreement is RE-DERIVED by the SAME deterministic
+        // comparison. Provider 'none' / unparseable / no-mappable-line → deterministic fields stand, byte-identical.
+        LlmCertResult llmCert = llmAssistCertificate(text, det);
+        boolean llmDrafted = llmCert != null;
+        if (llmDrafted) {
+            applyLlmOverlay(det, llmCert);
+        }
+
+        List<CertificateAssessment> out = new ArrayList<>();
+        int disagreements = 0;
+        for (CertificateAssessment a : det) {
             if (Boolean.FALSE.equals(a.getAgreement())) disagreements++;
             out.add(assessments.save(a));
         }
         String tail = upstreamOk
                 ? (ratios.isEmpty() ? " (no ratios on file — spread not yet confirmed)" : "")
                 : " (recompute skipped — origination unavailable)";
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("lines", out.size());
+        detail.put("disagreements", disagreements);
+        detail.put("recomputeAvailable", recomputeAvailable);
+        detail.put("upstreamOk", upstreamOk);
+        detail.put("advisory", true);
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmCert.model());
+        }
         audit.ai("covenant-certificate", "CERTIFICATE_ASSESSED", "Application", reference,
                 "Assessed %d certificate line(s); %d disagree with recomputation%s".formatted(
                         out.size(), disagreements, tail),
-                Map.of("lines", out.size(), "disagreements", disagreements,
-                        "recomputeAvailable", recomputeAvailable,
-                        "upstreamOk", upstreamOk, "advisory", true));
+                detail);
         return out;
+    }
+
+    /**
+     * Advisory LLM reading of the borrower's compliance certificate: for each covenant line it extracts
+     * what the BORROWER reported (label / value / status) as a JSON object. It never computes or judges
+     * compliance. Returns {@code null} when not configured / unparseable / empty so the caller keeps the
+     * fully deterministic assessment (fail-soft, byte-identical default).
+     */
+    private LlmCertResult llmAssistCertificate(String text, List<CertificateAssessment> det) {
+        if (det.isEmpty()) {
+            return null;
+        }
+        String system = "You are an ADVISORY compliance-certificate reading assistant for wholesale credit "
+                + "(capability=covenant-certificate). Read the borrower's covenant compliance certificate and, for "
+                + "each covenant line, extract ONLY what the BORROWER reported. Return ONLY a JSON object of the form "
+                + "{\"lines\": [{\"metric\": ..., \"reportedLabel\": ..., \"reportedValue\": ..., \"reportedStatus\": ...}]}. "
+                + "metric is one of DSCR, NET_LEVERAGE, INTEREST_COVERAGE, CURRENT_RATIO, GEARING, EBITDA_MARGIN, "
+                + "NET_WORTH; reportedStatus is one of COMPLIED, NOT_COMPLIED, UNKNOWN. Extract only what the borrower "
+                + "stated — never invent a value and never compute or judge compliance yourself. Return ONLY a JSON object.";
+        String user = "Compliance certificate text:\n" + (text == null ? "" : text);
+        LlmResult r = safeComplete(LlmRequest.of("covenant-certificate", system, user));
+        if (!r.usable()) {
+            return null;
+        }
+        Map<String, Object> obj = parseJsonObject(r.text());
+        if (obj == null) {
+            return null;
+        }
+        List<Map<String, Object>> items = jsonItems(obj, "lines");
+        if (items.isEmpty()) {
+            return null;
+        }
+        return new LlmCertResult(items, r.model());
+    }
+
+    /**
+     * Overlay the LLM's borrower-reported extraction fields onto the matching deterministic assessment,
+     * joined by canonical metric (stable, order-preserving). Only reportedLabel / reportedValue /
+     * reportedStatus are overlaid; the deterministic recompute + covenant mapping + taxonomy flag stand.
+     * When a valid status is overlaid, agreement is re-derived by the same deterministic comparison.
+     */
+    private void applyLlmOverlay(List<CertificateAssessment> det, LlmCertResult llm) {
+        Map<String, Deque<CertificateAssessment>> byMetric = new LinkedHashMap<>();
+        for (CertificateAssessment a : det) {
+            byMetric.computeIfAbsent(a.getSystemMetric(), k -> new ArrayDeque<>()).add(a);
+        }
+        for (Map<String, Object> item : llm.items()) {
+            MetricDef def = resolveMetric(str(item.get("metric")));
+            if (def == null) {
+                continue;
+            }
+            Deque<CertificateAssessment> q = byMetric.get(def.metric());
+            if (q == null || q.isEmpty()) {
+                continue;
+            }
+            CertificateAssessment a = q.poll();
+            String label = str(item.get("reportedLabel"));
+            if (label == null || label.isBlank()) {
+                label = str(item.get("label"));
+            }
+            if (label != null && !label.isBlank()) {
+                a.setReportedLabel(clampLabel(label.trim()));
+            }
+            Double val = toNumber(item.get("reportedValue"));
+            if (val == null) {
+                val = toNumber(item.get("value"));
+            }
+            if (val != null) {
+                a.setReportedValue(val);
+            }
+            String status = normaliseStatus(str(item.get("reportedStatus")));
+            if (status == null) {
+                status = normaliseStatus(str(item.get("status")));
+            }
+            if (status != null) {
+                a.setReportedStatus(status);
+                // Deterministic disagreement detection, re-derived from the (extracted) borrower claim and
+                // the deterministic recomputed pass — recomputedObserved / recomputedPassed are untouched.
+                if (a.getRecomputedPassed() != null && !"UNKNOWN".equals(status)) {
+                    a.setAgreement(("COMPLIED".equals(status)) == a.getRecomputedPassed());
+                } else {
+                    a.setAgreement(null);
+                }
+            }
+        }
     }
 
     /**
@@ -519,5 +770,159 @@ public class CovenantIntelligenceService {
         if (freq == null || freq.isBlank()) return freq;
         String u = freq.trim().toUpperCase();
         return "SEMI_ANNUAL".equals(u) ? "HALF_YEARLY" : u;
+    }
+
+    // ====================================================== advisory LLM helpers
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
+    }
+
+    /** Lenient JSON-object parse: strips code fences and tolerates prose around the object. */
+    private static Map<String, Object> parseJsonObject(String text) {
+        if (text == null) {
+            return null;
+        }
+        String t = text.strip();
+        if (t.startsWith("```")) {
+            int nl = t.indexOf('\n');
+            if (nl > 0) {
+                t = t.substring(nl + 1);
+            }
+            if (t.endsWith("```")) {
+                t = t.substring(0, t.length() - 3);
+            }
+            t = t.strip();
+        }
+        int brace = t.indexOf('{');
+        int lastBrace = t.lastIndexOf('}');
+        if (brace < 0 || lastBrace < brace) {
+            return null;
+        }
+        t = t.substring(brace, lastBrace + 1);
+        try {
+            return JSON.readValue(t, new TypeReference<LinkedHashMap<String, Object>>() { });
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    /**
+     * Pull the array of candidate objects from a parsed JSON object: the named key, else "candidates",
+     * else the object itself when it looks like a single candidate ({@code metric} present).
+     */
+    private static List<Map<String, Object>> jsonItems(Map<String, Object> obj, String primaryKey) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        Object arr = obj.get(primaryKey);
+        if (arr == null) {
+            arr = obj.get("candidates");
+        }
+        if (arr instanceof List<?> list) {
+            for (Object o : list) {
+                if (o instanceof Map<?, ?> mm) {
+                    items.add(castMap(mm));
+                }
+            }
+        } else if (obj.containsKey("metric")) {
+            items.add(obj);
+        }
+        return items;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMap(Map<?, ?> m) {
+        return (Map<String, Object>) m;
+    }
+
+    /** Resolve a raw metric string to a taxonomy entry: canonical token first, then synonym containment. */
+    private static MetricDef resolveMetric(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        for (MetricDef d : METRICS) {
+            if (d.metric().equalsIgnoreCase(trimmed)) {
+                return d;
+            }
+        }
+        String lower = trimmed.toLowerCase();
+        for (Syn s : SYNONYMS) {
+            if (lower.contains(s.text())) {
+                return s.def();
+            }
+        }
+        return null;
+    }
+
+    /** Validate an LLM-suggested operator against the allowed set; tolerate word forms; null if unknown. */
+    private static String normaliseOperator(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String op = raw.trim();
+        if (ALLOWED_OPERATORS.contains(op)) {
+            return op;
+        }
+        return detectOperator(op.toLowerCase());   // may be null
+    }
+
+    /** Strictly normalise an LLM-suggested compliance status to the platform vocabulary; null if unknown. */
+    private static String normaliseStatus(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        return switch (raw.trim().toUpperCase()) {
+            case "COMPLIED", "COMPLIANT", "PASS", "PASSED", "MET", "IN_COMPLIANCE", "IN COMPLIANCE" -> "COMPLIED";
+            case "NOT_COMPLIED", "NOT COMPLIED", "NON_COMPLIED", "NON-COMPLIED", "NON_COMPLIANT",
+                 "NON-COMPLIANT", "BREACH", "BREACHED", "FAIL", "FAILED", "NOT_MET", "NOT MET", "DEFAULT" -> "NOT_COMPLIED";
+            case "UNKNOWN" -> "UNKNOWN";
+            default -> null;
+        };
+    }
+
+    /** Parse a JSON value to a number, reusing the deterministic percent/unit handling; null when absent. */
+    private static Double toNumber(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Number n) {
+            return n.doubleValue();
+        }
+        Matcher m = NUMBER.matcher(String.valueOf(o));
+        if (m.find()) {
+            double val = Double.parseDouble(m.group(1));
+            String unit = m.group(2);
+            if (unit != null && (unit.startsWith("%") || unit.toLowerCase().contains("percent")
+                    || unit.toLowerCase().contains("per cent"))) {
+                val = val / 100.0;
+            }
+            return val;
+        }
+        return null;
+    }
+
+    private static String str(Object o) {
+        return o == null ? null : String.valueOf(o);
+    }
+
+    /** The reportedLabel column is length 60 — keep any label (deterministic or LLM) within bounds. */
+    private static String clampLabel(String s) {
+        if (s == null) {
+            return null;
+        }
+        return s.length() > 60 ? s.substring(0, 60) : s;
+    }
+
+    /** LLM-drafted covenant candidates + the model that produced them. */
+    private record LlmExtractResult(List<CovenantExtraction> candidates, String model) {
+    }
+
+    /** LLM-read certificate line extractions + the model that produced them. */
+    private record LlmCertResult(List<Map<String, Object>> items, String model) {
     }
 }

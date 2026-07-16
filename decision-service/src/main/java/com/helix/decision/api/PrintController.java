@@ -1,6 +1,8 @@
 package com.helix.decision.api;
 
 import com.helix.decision.service.PrintService;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,14 +34,20 @@ public class PrintController {
     /** Print/PDF view for a generated document (facility letter, sanction letter, …). */
     @GetMapping(value = "/api/docs/{id}/print", produces = MediaType.TEXT_HTML_VALUE)
     public String document(@PathVariable Long id,
-                           @RequestHeader(value = "X-Actor", defaultValue = "system") String actor) {
+                           @RequestHeader(value = "X-Actor", defaultValue = "system") String actor,
+                           HttpServletResponse response) {
+        // A rendered credit artifact carries authoritative (and possibly sensitive) figures —
+        // it must never be persisted by a shared/intermediary cache or the browser's disk cache.
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
         return print.renderDocument(id, actor);
     }
 
     /** Print/PDF view for the latest credit proposal on an application. */
     @GetMapping(value = "/api/decisions/{reference}/credit-proposal/print", produces = MediaType.TEXT_HTML_VALUE)
     public String creditProposal(@PathVariable String reference,
-                                 @RequestHeader(value = "X-Actor", defaultValue = "system") String actor) {
+                                 @RequestHeader(value = "X-Actor", defaultValue = "system") String actor,
+                                 HttpServletResponse response) {
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
         return print.renderProposal(reference, actor);
     }
 }

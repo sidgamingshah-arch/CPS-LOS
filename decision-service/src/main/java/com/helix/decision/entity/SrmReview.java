@@ -57,7 +57,10 @@ public class SrmReview {
     private String subjectType;            // Counterparty | Facility | Application
 
     @Column(nullable = false, length = 60)
-    private String subjectRef;             // obligor / facility ref (also the MER reference)
+    private String subjectRef;             // obligor / facility ref (a counterparty ref when obligor-level)
+
+    @Column(length = 60)
+    private String applicationRef;         // explicit MER key (application ref); may differ from subjectRef
 
     private String counterpartyName;
 

@@ -1,6 +1,8 @@
 package com.helix.common.notify;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.query.QueryService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,10 +27,13 @@ public class NotificationController {
 
     private final NotificationService notifications;
     private final AuditService audit;
+    private final ObjectProvider<QueryService> queries;
 
-    public NotificationController(NotificationService notifications, AuditService audit) {
+    public NotificationController(NotificationService notifications, AuditService audit,
+                                  ObjectProvider<QueryService> queries) {
         this.notifications = notifications;
         this.audit = audit;
+        this.queries = queries;
     }
 
     @GetMapping
@@ -66,15 +71,27 @@ public class NotificationController {
         return Map.of("read", notifications.markAllRead(recipient, actor));
     }
 
-    /** Force-run both sweep jobs now (same code path as the scheduled sweeper). */
+    /**
+     * Force-run every sweep job now (same code path as the scheduled {@link NotificationSweeper}):
+     * dispatch due scheduled notifications, spawn due reminders, and release due SCHEDULED
+     * query/RFI threads (via the same {@code ObjectProvider<QueryService>} the sweeper uses, so the
+     * manual endpoint matches its documented contract and query threads release deterministically).
+     */
     @PostMapping("/sweep")
     public Map<String, Object> sweep(@RequestHeader(value = "X-Actor", defaultValue = "system") String actor) {
         int dispatched = notifications.dispatchDueScheduled();
         int reminders = notifications.sweepReminders();
+        int queriesReleased = 0;
+        QueryService q = queries.getIfAvailable();
+        if (q != null) {
+            queriesReleased = q.dispatchDueScheduled();
+        }
         audit.engine("NOTIFICATION_SWEEP", "Notification", "sweep",
-                "Notification sweep dispatched %d scheduled row(s), created %d reminder(s)"
-                        .formatted(dispatched, reminders),
-                Map.of("dispatched", dispatched, "remindersCreated", reminders, "triggeredBy", actor));
-        return Map.of("dispatched", dispatched, "remindersCreated", reminders);
+                "Notification sweep dispatched %d scheduled row(s), created %d reminder(s), released %d query thread(s)"
+                        .formatted(dispatched, reminders, queriesReleased),
+                Map.of("dispatched", dispatched, "remindersCreated", reminders,
+                        "queriesReleased", queriesReleased, "triggeredBy", actor));
+        return Map.of("dispatched", dispatched, "remindersCreated", reminders,
+                "queriesReleased", queriesReleased);
     }
 }

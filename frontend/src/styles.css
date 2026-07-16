@@ -981,6 +981,10 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
   display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
 }
 .coi-form .field { min-width: 160px; }
+.coi-actor {
+  padding: 10px 12px; border: 1px dashed var(--human); border-radius: var(--r-md);
+  background: var(--human-soft); color: var(--human); font-weight: 600;
+}
 .coi-hint {
   margin-top: 12px; padding: 8px 12px; font-size: 12px; line-height: 1.5;
   border-left: 3px solid var(--human); border-radius: 6px;

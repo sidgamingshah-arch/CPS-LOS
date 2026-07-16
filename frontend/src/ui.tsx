@@ -403,7 +403,13 @@ export function DataTable<T>({
 
   const exportCsv = () => {
     const cols = visibleCols.filter((c) => c.csv !== false);
-    const esc = (s: string) => (/[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s);
+    const esc = (s: string) => {
+      // Neutralise CSV/spreadsheet formula injection: a value whose first character is
+      // =,+,-,@,tab or CR is interpreted as a formula by Excel/Sheets. Prefix a single
+      // quote so the cell is rendered as inert text, then apply quote/comma escaping.
+      const guarded = /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+      return /[",\n]/.test(guarded) ? '"' + guarded.replace(/"/g, '""') + '"' : guarded;
+    };
     const lines = [cols.map((c) => esc(c.header)).join(",")];
     for (const row of sorted) lines.push(cols.map((c) => esc(basisStr(c, row))).join(","));
     const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });

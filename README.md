@@ -142,6 +142,107 @@ feeding model-fit governance.
 
 ---
 
+## Configuration
+
+Helix is **secure-by-config**: every external integration ships a real, production-grade
+implementation that is **inert by default** — with no configuration the platform runs exactly as the
+self-contained demo (in-memory identity, outbox-only notifications, local document storage, simulated
+downstream feeds, deterministic AI). Point the keys below at real infrastructure to switch each
+integration "live" at deployment. All keys bind from `application.yml`, JVM `-D` properties, or
+environment variables (Spring relaxed binding — `helix.security.mode` ⇄ `HELIX_SECURITY_MODE`).
+
+### Core runtime
+| Key / env | Default | Purpose |
+|---|---|---|
+| `HELIX_DATA_DIR` | `./data` | SQLite database + document store root (per service) |
+| `SERVER_PORT` | per service (8081–8089) | Service HTTP port; gateway is `8080` |
+| `helix.<svc>.base-url` | `http://localhost:<port>` | Inter-service `RestClient` targets (config/counterparty/origination/risk/decision/portfolio/limit/workflow) |
+
+### Authentication / SSO — `helix.security.mode` = `none` (default) · `oidc` · `ldap`
+Default `none` preserves the `X-Actor`-header identity model byte-identical (permit-all). Set a mode for real auth.
+| Key | Applies to | Notes |
+|---|---|---|
+| `helix.security.mode` | all | `none` \| `oidc` \| `ldap` |
+| `helix.security.issuer-uri` / `jwk-set-uri` / `jwt-secret` | `oidc` | JWT resource-server validation (IdP discovery, JWKS, or HS256 secret) |
+| `helix.security.username-claim` (`preferred_username`) / `roles-claim` | `oidc` | which token claims map to actor + roles (roles drive SoD) |
+| `helix.security.ldap.url` / `base-dn` / `user-dn-patterns` / `group-search-*` | `ldap` | directory bind + group→role mapping |
+| `management.health.ldap.enabled` | `ldap` | leave `false` (default) unless you want the LDAP health probe |
+
+The SPA reads `/api/security/mode` (unauthenticated) and, in `oidc`, runs an Authorization-Code + PKCE
+login; in `none` it uses the persona/actor selector. The legacy demo token shim
+(`helix.auth.mode` / `helix.auth.secret` / `helix.auth.token-ttl-seconds`) is unchanged and independent.
+
+### Field-level encryption at rest — `HELIX_FIELD_KEY`
+| Key | Default | Purpose |
+|---|---|---|
+| `HELIX_FIELD_KEY` | *(dev key)* | base64 AES-256 key encrypting sensitive PII columns |
+| `HELIX_ALLOW_DEV_KEY` | `false` | opt-in to run with the built-in dev key |
+
+**Production must set `HELIX_FIELD_KEY`** — under a `prod`/`production` Spring profile the service
+**fails closed** if it is unset (unless `HELIX_ALLOW_DEV_KEY=true`); otherwise it uses the built-in dev
+key and logs a loud warning (dev/CI convenience only — provides no real confidentiality).
+
+### Notifications transport — `helix.notify.transport` = `outbox` (default) · `smtp` · `sms` · `all`
+| Key | Notes |
+|---|---|
+| `helix.notify.transport` | `outbox` renders + persists only (no send); others transmit |
+| `spring.mail.host` / `port` / `username` / `password`, `helix.notify.smtp.from` | SMTP (JavaMail); the sender autoconfigures only when `spring.mail.host` is set |
+| `helix.notify.sms.gateway-url` / `api-key` / `api-key-header` | SMS HTTP gateway |
+| `helix.notify.sweep-interval-ms` / `sweep-initial-delay-ms` | schedule-later + reminder sweep cadence |
+
+Delivery is fail-soft (a transport error records `FAILED` on the outbox row and never breaks the business op).
+
+### Document store (DMS) — `helix.dms.store` = `filesystem` (default) · `s3`
+`/api/documents` upload/download/list. Filesystem stores under `${HELIX_DATA_DIR}/documents`.
+| Key (S3) | Purpose |
+|---|---|
+| `helix.dms.s3.bucket` / `endpoint` / `region` / `access-key` / `secret-key` / `path-style` | S3 / S3-compatible object store (SigV4 over `RestClient`, no SDK dep) |
+
+### CRM write-back — `helix.crm.mode` = `simulated` (default) · `live`
+| Key | Purpose |
+|---|---|
+| `helix.crm.base-url` / `path` / `auth-header` / `auth-token` | live CRM REST endpoint for case/decision back-updation (idempotent per case + as-of day) |
+
+### SharePoint / Excel-Online co-edit — `helix.coedit.provider` = `none` (default) · `graph`
+| Key / env | Purpose |
+|---|---|
+| `helix.coedit.tenant-id` / `client-id` / `client-secret` / `drive-id` (`HELIX_COEDIT_*`) | Microsoft Graph app registration + target SharePoint drive |
+| `helix.coedit.graph-base-url` / `token-url` / `scope` / `upload-folder` | Graph endpoints (overridable for private clouds) |
+
+> ⚠️ **Data egress:** with `provider=graph`, generated credit documents are uploaded to the configured
+> O365/SharePoint tenant. Default `none` returns the local artifact and makes **no external call**.
+
+### LLM endpoint — `helix.llm.provider` = `none` (default, deterministic) · `openai` · `anthropic` · `azure-openai`
+**Every** AI capability across the platform routes through this one governed client — copilot,
+document classification / extraction / language-normalisation / translation / consistency-check
+narratives, collateral extraction + revaluation narratives, financial-spreading extraction,
+screening rationale, group identification, UBO resolution narrative, RAG & macro-impact &
+pricing-optimiser & EWS rationales, client-planning-template & credit-proposal & group-insights
+drafts, covenant extraction, compliance-certificate assessment, and document-generation clause
+polishing. All of them are **deterministic/grounded by default** (no model call). Point them at a
+model to make the drafting generative, **without changing the governance contract**: LLM output
+stays **advisory + human-gated** and **never writes an authoritative figure/grade/price/decision**
+(deterministic engines — rating, capital, ECL, RAROC/pricing math, LTV, covenant recompute,
+match/ownership scores — are untouched; extractions remain human-confirm). This config is
+maintained separately from every other integration.
+| Key / env | Default | Purpose |
+|---|---|---|
+| `helix.llm.provider` (`HELIX_LLM_PROVIDER`) | `none` | `none` \| `openai` \| `anthropic` \| `azure-openai` |
+| `helix.llm.base-url` (`HELIX_LLM_BASE_URL`) | — | model API base URL (public API or a private gateway) |
+| `helix.llm.api-key` (`HELIX_LLM_API_KEY`) | — | credential (never logged) |
+| `helix.llm.model` (`HELIX_LLM_MODEL`) | — | default model id / Azure deployment name |
+| `helix.llm.timeout-ms` / `max-tokens` / `temperature` | 20000 / 1024 / 0.2 | request bounds (connect+read timeout, token cap, sampling) |
+| `helix.llm.anthropic-version` | `2023-06-01` | `anthropic-version` header (API version, not a model) — `anthropic` provider only |
+| `helix.llm.azure-api-version` | `2024-02-15-preview` | `api-version` query param (API version, not a model) — `azure-openai` provider only |
+| `helix.llm.capability-models.<capability>` | — | per-capability model override — one key per AI capability (`copilot`, `doc-extract`, `doc-classify`, `spreading-extract`, `language-normalise`, `translation`, `doc-checks`, `collateral-extract`, `collateral-monitor`, `screening-rationale`, `group-identification`, `ubo-narrative`, `rag-narrative`, `macro-narrative`, `pricing-narrative`, `ews-narrative`, `commentary`, `cpt-draft`, `proposal-draft`, `group-insights`, `covenant-extract`, `covenant-certificate`, `docgen-clause`); a missing key uses `helix.llm.model` |
+
+A model outage or timeout **falls back to the deterministic path** — a configured LLM is an enhancement, never a hard dependency.
+
+### Dev / test toggles
+`HELIX_NOTIFY_TEST_ENQUEUE_ENABLED`, `HELIX_RBAC_SIMULATE_OUTAGE_ENABLED` — off by default; used by the e2e suites.
+
+---
+
 ## The demo flow (UI)
 
 1. **Counterparties** → onboard a borrower. Risk flags drive the **CDD tier**; resolve the

@@ -1,6 +1,9 @@
 package com.helix.risk.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.llm.LlmClient;
+import com.helix.common.llm.LlmRequest;
+import com.helix.common.llm.LlmResult;
 import com.helix.common.web.ApiException;
 import com.helix.risk.client.OriginationClient;
 import com.helix.risk.dto.AdvisoryDtos.MacroScenarioRequest;
@@ -53,16 +56,19 @@ public class AdvisoryRiskService {
     private final OriginationClient origination;
     private final AuditService audit;
     private final com.helix.common.governance.AiGovernanceClient governance;
+    private final LlmClient llm;
 
     public AdvisoryRiskService(RatingRepository ratings, RagAssessmentRepository ragRepo,
                                MacroImpactAssessmentRepository macroRepo, OriginationClient origination,
-                               AuditService audit, com.helix.common.governance.AiGovernanceClient governance) {
+                               AuditService audit, com.helix.common.governance.AiGovernanceClient governance,
+                               LlmClient llm) {
         this.ratings = ratings;
         this.ragRepo = ragRepo;
         this.macroRepo = macroRepo;
         this.origination = origination;
         this.audit = audit;
         this.governance = governance;
+        this.llm = llm;
     }
 
     // --------------------------------------------------- statistical RAG
@@ -107,12 +113,35 @@ public class AdvisoryRiskService {
         factors.put("scale", "0-100 (higher = stronger)");
         factors.put("thresholds", Map.of("green", 67, "amber", 45));
         factors.put("breakdown", breakdown);
+
+        // Optional advisory LLM narrative: when a bank has configured an external model, it drafts the
+        // qualitative RAG rationale grounded in the SAME deterministic band / 0-100 score / per-factor
+        // contributions computed above. It is persisted as advisory prose on the RagAssessment (inside the
+        // factors map) and NEVER alters the authoritative rating, nor the band or the score. Provider 'none'
+        // (default) → no narrative key added, byte-identical to today.
+        LlmNarrative rag = llmRagNarrative(band, score, grade, rating == null ? 0.0 : rating.getPd(), breakdown);
+        boolean llmDrafted = rag != null;
+        if (llmDrafted) {
+            factors.put("narrative", rag.text());
+            factors.put("llmModel", rag.model());
+        }
         a.setFactors(factors);
         RagAssessment saved = ragRepo.save(a);
 
+        Map<String, Object> detail;
+        if (llmDrafted) {
+            detail = new LinkedHashMap<>();
+            detail.put("band", band);
+            detail.put("score", score);
+            detail.put("advisory", true);
+            detail.put("grade", String.valueOf(grade));
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", rag.model());
+        } else {
+            detail = Map.of("band", band, "score", score, "advisory", true, "grade", String.valueOf(grade));
+        }
         audit.ai("rag-scoring", "RAG_ASSESSED", "Application", reference,
-                "Statistical RAG %s (%.1f/100) — advisory, non-binding".formatted(band, score),
-                Map.of("band", band, "score", score, "advisory", true, "grade", String.valueOf(grade)));
+                "Statistical RAG %s (%.1f/100) — advisory, non-binding".formatted(band, score), detail);
         return saved;
     }
 
@@ -163,29 +192,51 @@ public class AdvisoryRiskService {
         double notch = round1(-(Math.log(stressedPd / basePd) / Math.log(1.6)));
         String direction = Math.abs(deltaBps) < 1 ? "STABLE" : (deltaBps > 0 ? "UP" : "DOWN");
 
+        String scenarioName = req.scenarioName() == null ? "custom" : req.scenarioName();
         String rationale = "Scenario '%s': base PD %.2f%% → stressed %.2f%% (Δ %+.0fbps), ~%.1f notch %s. %s"
-                .formatted(req.scenarioName() == null ? "custom" : req.scenarioName(),
+                .formatted(scenarioName,
                         basePd * 100, stressedPd * 100, deltaBps, Math.abs(notch),
                         notch < -0.05 ? "downgrade pressure" : notch > 0.05 ? "upgrade headroom" : "broadly stable",
                         "Advisory — does not alter the authoritative rating.");
+        contributions.put("net_multiplier", round4(multiplier));
+
+        // Optional advisory LLM narrative: when configured, the model redrafts the directional-impact
+        // rationale grounded in the SAME deterministic figures (baseline/stressed PD, Δbps, notch, direction,
+        // factor contributions). It only rewrites the advisory rationale TEXT — every PD, delta, notch and
+        // the direction are computed deterministically and untouched. Provider 'none' (default) → deterministic
+        // rationale, byte-identical to today.
+        LlmNarrative macro = llmMacroNarrative(scenarioName, basePd, round4(stressedPd), deltaBps, notch,
+                direction, contributions, rationale);
+        boolean llmDrafted = macro != null;
+        String finalRationale = llmDrafted ? macro.text() : rationale;
 
         MacroImpactAssessment a = new MacroImpactAssessment();
         a.setApplicationReference(reference);
-        a.setScenarioName(req.scenarioName() == null ? "custom" : req.scenarioName());
+        a.setScenarioName(scenarioName);
         a.setBaselinePd(basePd);
         a.setStressedPd(round4(stressedPd));
         a.setPdDeltaBps(deltaBps);
         a.setDirection(direction);
         a.setNotchEstimate(notch);
-        a.setRationale(rationale);
+        a.setRationale(finalRationale);
         a.setAdvisory(true);
-        contributions.put("net_multiplier", round4(multiplier));
         a.setContributions(contributions);
         MacroImpactAssessment saved = macroRepo.save(a);
 
+        Map<String, Object> detail;
+        if (llmDrafted) {
+            detail = new LinkedHashMap<>();
+            detail.put("direction", direction);
+            detail.put("pdDeltaBps", deltaBps);
+            detail.put("advisory", true);
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", macro.model());
+        } else {
+            detail = Map.of("direction", direction, "pdDeltaBps", deltaBps, "advisory", true);
+        }
         audit.ai("macro-impact", "MACRO_IMPACT_ASSESSED", "Application", reference,
                 "%s: PD %s %+.0fbps (~%.1f notch) — advisory".formatted(a.getScenarioName(), direction, deltaBps, notch),
-                Map.of("direction", direction, "pdDeltaBps", deltaBps, "advisory", true));
+                detail);
         return saved;
     }
 
@@ -232,5 +283,62 @@ public class AdvisoryRiskService {
 
     private double round4(double v) {
         return Math.round(v * 10_000.0) / 10_000.0;
+    }
+
+    // --------------------------------------------------- advisory LLM narratives (fail-soft)
+
+    /**
+     * Advisory RAG narrative grounded in the deterministic band / score / factor contributions.
+     * Prose only — reuses the supplied figures verbatim and never changes the authoritative rating,
+     * band or score. Returns {@code null} when not configured / failed / empty (deterministic fallback).
+     */
+    private LlmNarrative llmRagNarrative(String band, double score, String grade, double pd,
+                                         List<Map<String, Object>> breakdown) {
+        String system = "You are drafting an ADVISORY, non-binding risk narrative for a wholesale-credit "
+                + "RAG (Red/Amber/Green) overlay. capability=rag-narrative. Explain in professional prose why the "
+                + "name sits in its band, using ONLY the figures provided — the band, the 0-100 score, the "
+                + "authoritative grade and PD, and the per-factor contributions. Reuse every figure verbatim; never "
+                + "invent, estimate or change any value. Make explicit that this is advisory and does NOT change the "
+                + "authoritative rating. Reply with 2-4 sentences of plain prose.";
+        String user = "RAG band: " + band + "\nRAG score: " + score + " / 100 (higher = stronger)\n"
+                + "Authoritative grade: " + (grade == null ? "n/a" : grade) + "\n"
+                + "Authoritative PD: " + pd + "\n"
+                + "Per-factor contributions (source of truth — do not alter): " + breakdown;
+        LlmResult r = safeComplete(LlmRequest.of("rag-narrative", system, user));
+        return r.usable() ? new LlmNarrative(r.text().strip(), r.model()) : null;
+    }
+
+    /**
+     * Advisory macro directional-impact narrative grounded in the deterministic PD move, notch estimate
+     * and factor contributions. Prose only — reuses the supplied figures verbatim and never alters the
+     * authoritative rating. Returns {@code null} on not-configured / failed / empty (deterministic fallback).
+     */
+    private LlmNarrative llmMacroNarrative(String scenarioName, double basePd, double stressedPd,
+                                           double deltaBps, double notch, String direction,
+                                           Map<String, Object> contributions, String deterministic) {
+        String system = "You are drafting an ADVISORY, non-binding macro directional-impact narrative for a "
+                + "wholesale-credit name. capability=macro-narrative. Summarise how the macro scenario moves the PD "
+                + "and the implied rating-notch direction, using ONLY the figures provided. Reuse every figure "
+                + "verbatim; never invent, estimate or change any value. State explicitly that this is advisory and "
+                + "does NOT alter the authoritative rating. Reply with 2-4 sentences of plain prose.";
+        String user = "Scenario: " + scenarioName + "\nBaseline PD: " + basePd + "\nStressed PD: " + stressedPd
+                + "\nPD delta (bps): " + deltaBps + "\nNotch estimate (signed; negative = downgrade): " + notch
+                + "\nDirection: " + direction + "\nFactor contributions (source of truth): " + contributions
+                + "\nDeterministic rationale for reference (improve the wording, keep the facts): " + deterministic;
+        LlmResult r = safeComplete(LlmRequest.of("macro-narrative", system, user));
+        return r.usable() ? new LlmNarrative(r.text().strip(), r.model()) : null;
+    }
+
+    private LlmResult safeComplete(LlmRequest req) {
+        try {
+            LlmResult r = llm.complete(req);
+            return r == null ? LlmResult.notConfigured() : r;
+        } catch (Exception e) {
+            return LlmResult.failed(e.getMessage());
+        }
+    }
+
+    /** An advisory LLM-drafted narrative plus the model that produced it. */
+    private record LlmNarrative(String text, String model) {
     }
 }

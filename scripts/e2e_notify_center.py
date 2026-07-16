@@ -12,6 +12,8 @@ helix.notify.test-enqueue-enabled, same as the schedule/reminder suite):
   - a fresh, uniquely-scoped recipient starts at unread-count 0;
   - enqueue raises the scoped unread-count (recipient and role scopes both match the row);
   - immediate enqueue behaviour is unchanged (SENT, no schedule/reminder fields);
+  - mark-read is recipient-owned: a NON-recipient actor is forbidden (403) and the unread-count
+    is untouched; a recipient (holds the row's recipientRole) succeeds;
   - POST /{id}/read stamps readAt/readBy, decrements the count, and is idempotent
     (a second read keeps the original readAt/readBy and does not double-decrement);
   - POST /read-all?recipient= zeroes the scoped count and is idempotent (re-run marks 0);
@@ -31,7 +33,11 @@ NONCE = str(int(time.time()))
 EVENT = "E2E_NOTIFY_CENTER"
 SUBJECT_TYPE = "E2ENotifyCenter"
 ROLE = f"e2e.nc.{NONCE}"          # unique recipient/role scope so counts are deterministic
-ACTOR = "credit.ops"
+# Fix 2: mark-read / read-all are recipient-owned — the acting user must be a recipient of the
+# row (by id or by one of its recipientRoles). The rows below are role-scoped to ROLE, so the
+# acting user holds ROLE. A separate NON_RECIPIENT proves the 403 gate.
+ACTOR = ROLE
+NON_RECIPIENT = f"intruder.{NONCE}"
 
 
 def call(method, path, body=None, actor=ACTOR):
@@ -106,7 +112,12 @@ check("enqueued row starts unread (readAt null)", n1.get("readAt") is None, n1.g
 check("scoped unread-count reflects 3 enqueued rows (role scope)", unread("role") == 3, unread("role"))
 check("scoped unread-count matches on recipient scope too", unread("recipient") == 3, unread("recipient"))
 
-print("== 3. mark-read stamps readAt/readBy, decrements, and is idempotent")
+print("== 3. mark-read ownership (403 for a non-recipient), then stamp/decrement/idempotency")
+# Fix 2: an enumerable id is not enough — a non-recipient cannot flip an unread row's read-state.
+st, forb = call("POST", f"{SVC}/api/notifications/{n1['id']}/read", actor=NON_RECIPIENT)
+check("mark-read by a NON-recipient actor -> 403", st == 403, f"HTTP {st} {forb}")
+check("scoped unread-count unchanged by the forbidden mark-read (still 3)", unread("role") == 3, unread("role"))
+# A recipient (holds the row's recipientRole) marks it read.
 st, r = call("POST", f"{SVC}/api/notifications/{n1['id']}/read")
 read1 = must(st, r, "mark read n1")
 check("mark-read stamps readAt", read1.get("readAt") is not None, read1.get("readAt"))
