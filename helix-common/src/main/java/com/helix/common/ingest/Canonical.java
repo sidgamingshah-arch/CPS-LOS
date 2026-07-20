@@ -63,4 +63,10 @@ public final class Canonical {
     public record MarketDataPoint(String instrument, LocalDate asOf, double value, String unit,
                                   Provenance provenance) {
     }
+
+    /** Inbound CRM account/relationship profile (relationship-master back-fill for an obligor). */
+    public record CrmProfile(String crmId, String accountName, String relationshipManager, String segment,
+                             double relationshipValue, String primaryContactName, String primaryContactEmail,
+                             List<String> productsHeld, String lifecycleStage, Provenance provenance) {
+    }
 }

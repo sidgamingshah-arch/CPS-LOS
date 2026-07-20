@@ -9,5 +9,6 @@ public enum SourceSystem {
     CORE_BANKING,
     MARKET_DATA,
     DOCUMENT_STORE,
-    COLLATERAL_REGISTRY
+    COLLATERAL_REGISTRY,
+    CRM
 }
