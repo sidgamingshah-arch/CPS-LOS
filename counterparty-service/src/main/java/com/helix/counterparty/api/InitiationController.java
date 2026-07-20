@@ -1,5 +1,9 @@
 package com.helix.counterparty.api;
 
+import com.helix.counterparty.dto.CrmPullDtos.CrmPullBatchSummary;
+import com.helix.counterparty.dto.CrmPullDtos.CrmPullResult;
+import com.helix.counterparty.dto.CrmPullDtos.PullBatchRequest;
+import com.helix.counterparty.dto.CrmPullDtos.PullBorrowerRequest;
 import com.helix.counterparty.dto.InitiationDtos.AssignOwnershipRequest;
 import com.helix.counterparty.dto.InitiationDtos.CreateGroupRequest;
 import com.helix.counterparty.dto.InitiationDtos.CreateProspectRequest;
@@ -14,6 +18,7 @@ import com.helix.counterparty.entity.CounterpartyGroup;
 import com.helix.counterparty.entity.ExternalCheck;
 import com.helix.counterparty.entity.OwnershipAssignment;
 import com.helix.counterparty.repo.CounterpartyGroupRepository;
+import com.helix.counterparty.service.CrmObligorPullService;
 import com.helix.counterparty.service.ExternalCheckService;
 import com.helix.counterparty.service.GroupIdentificationService;
 import com.helix.counterparty.service.InitiationService;
@@ -41,16 +46,19 @@ public class InitiationController {
     private final RelationshipService relationship;
     private final GroupIdentificationService groupIdentification;
     private final CounterpartyGroupRepository groupRepository;
+    private final CrmObligorPullService crmPull;
 
     public InitiationController(InitiationService initiation, ExternalCheckService externalChecks,
                                 RelationshipService relationship,
                                 GroupIdentificationService groupIdentification,
-                                CounterpartyGroupRepository groupRepository) {
+                                CounterpartyGroupRepository groupRepository,
+                                CrmObligorPullService crmPull) {
         this.initiation = initiation;
         this.externalChecks = externalChecks;
         this.relationship = relationship;
         this.groupIdentification = groupIdentification;
         this.groupRepository = groupRepository;
+        this.crmPull = crmPull;
     }
 
     // ---- prospect lifecycle ----
@@ -91,6 +99,22 @@ public class InitiationController {
     @PostMapping("/auto-cleanup")
     public Map<String, Object> autoCleanup(@RequestHeader(value = "X-Actor", defaultValue = "system") String actor) {
         return initiation.autoCleanup(actor);
+    }
+
+    // ---- CRM as primary obligor-creation system (pull-and-create) ----
+    // Creation ALWAYS routes through createProspect above — a pull yields a governed PROSPECT,
+    // never an approved obligor. A human still promotes via /prospects/{id}/approve.
+
+    @PostMapping("/ingest/crm/pull-borrower")
+    public CrmPullResult pullBorrower(@RequestBody PullBorrowerRequest req,
+                                      @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
+        return crmPull.pullBorrower(req == null ? null : req.crmId(), actor);
+    }
+
+    @PostMapping("/ingest/crm/pull-batch")
+    public CrmPullBatchSummary pullBatch(@RequestBody(required = false) PullBatchRequest req,
+                                         @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
+        return crmPull.pullBatch(req == null ? null : req.crmIds(), actor);
     }
 
     // ---- external / source-system checks ----

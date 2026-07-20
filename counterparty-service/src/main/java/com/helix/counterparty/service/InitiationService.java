@@ -111,7 +111,21 @@ public class InitiationService {
 
     @Transactional(readOnly = true)
     public DedupResult dedupCheck(Long prospectId) {
-        Counterparty subject = get(prospectId);
+        return dedupAgainst(get(prospectId), prospectId, prospectId);
+    }
+
+    /**
+     * Dedup a NOT-YET-PERSISTED candidate (e.g. a borrower pulled from CRM before creation)
+     * against the existing book using the same DEDUP_RULES logic as {@link #dedupCheck(Long)}.
+     * Nothing is created — this only reports matches so the caller can link/enrich instead of
+     * creating a duplicate obligor.
+     */
+    @Transactional(readOnly = true)
+    public DedupResult dedupCandidate(Counterparty candidate) {
+        return dedupAgainst(candidate, null, null);
+    }
+
+    private DedupResult dedupAgainst(Counterparty subject, Long excludeId, Long reportProspectId) {
         Map<String, Object> rules = config.dedupRules();
         double threshold = ((Number) rules.getOrDefault("nameMatchThreshold", 0.82)).doubleValue();
         String strategy = String.valueOf(rules.getOrDefault("strategy", "NAME_AND_IDENTIFIER"));
@@ -122,7 +136,7 @@ public class InitiationService {
 
         List<DedupMatch> matches = new ArrayList<>();
         for (Counterparty c : repository.findAll()) {
-            if (c.getId().equals(prospectId) || "DISCARDED".equals(c.getLifecycleStatus())) {
+            if ((excludeId != null && c.getId().equals(excludeId)) || "DISCARDED".equals(c.getLifecycleStatus())) {
                 continue;
             }
             boolean idMatch = identifierMatch(subject, c, idFields, andCombine);
@@ -139,7 +153,7 @@ public class InitiationService {
                     c.getUpdatedAt() == null ? null : c.getUpdatedAt().toString()));
         }
         matches.sort((a, b) -> Double.compare(b.score(), a.score()));
-        return new DedupResult(prospectId, strategy, idFields, matches.size(), matches);
+        return new DedupResult(reportProspectId, strategy, idFields, matches.size(), matches);
     }
 
     /**

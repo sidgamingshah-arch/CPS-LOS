@@ -27,9 +27,18 @@ public final class IngestDtos {
     /**
      * Raw inbound CRM vendor payload (pre-canonical field names). Mapped onto
      * {@link com.helix.common.ingest.Canonical.CrmProfile} by CrmInboundConnector.
+     *
+     * <p>The trailing identity block is used only by the CRM <b>pull-and-create</b> path
+     * (CrmObligorPullService) — it maps onto {@code CreateProspectRequest} so a borrower pulled
+     * from CRM is created through the governed credit-initiation flow. These fields are optional
+     * and null-safe for the ENRICH path (an existing CRM feed omits them; Jackson leaves them null
+     * and the canonical connector mapping never reads them).
      */
     public record RawCrmPayload(String crmId, String accountName, String relationshipManager,
                                 String segment, Double relationshipValue, String primaryContactName,
-                                String primaryContactEmail, List<String> productsHeld, String lifecycleStage) {
+                                String primaryContactEmail, List<String> productsHeld, String lifecycleStage,
+                                // ---- identity fields for governed prospect CREATION (pull-and-create) ----
+                                String legalName, String borrowerType, String jurisdiction, String country,
+                                String registrationNo, String pan, String gstin, String lei, String cin) {
     }
 }
