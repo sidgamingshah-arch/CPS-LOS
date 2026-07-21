@@ -54,6 +54,12 @@ public class RiskController {
         return risk.latestRating(reference);
     }
 
+    /** Configurable, parameter-routed scoring-approval state for the latest rating. */
+    @GetMapping("/{reference}/scoring-approval")
+    public Map<String, Object> scoringApproval(@PathVariable String reference) {
+        return risk.scoringApproval(reference);
+    }
+
     @GetMapping("/override-stats")
     public OverrideStats overrideStats(@RequestParam String segment) {
         return risk.overrideStats(segment);

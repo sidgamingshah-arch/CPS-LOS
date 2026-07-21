@@ -170,6 +170,28 @@ export const MASTER_SCHEMAS: Record<string, MasterSchema> = {
       { name: "appliesTo", label: "Applies to", type: "text", hint: "e.g. PROPERTY" },
     ],
   },
+  SCORING_APPROVAL_POLICY: {
+    keyHint: "policy key, e.g. default (jurisdiction-overridable)",
+    fields: [
+      {
+        name: "rules",
+        label: "Approval rules (ordered · first-match-wins)",
+        type: "json",
+        required: true,
+        hint:
+          'Each rule: {"id","when":{...},"requireApproval":true,"approverAuthority":"CREDIT_OFFICER|CREDIT_COMMITTEE|CRO"}. ' +
+          "when keys (all optional, ALL must hold): exposureGte / exposureLte, gradeIn (list) / gradeWorseThan (BB), " +
+          "scoreBandIn (STRONG/ADEQUATE/WEAK), overrideNotchesGte, overriddenEq, segmentIn, jurisdictionIn. " +
+          "An empty when {} is the catch-all default.",
+        default: [
+          { id: "large-exposure", when: { exposureGte: 10000000000 }, requireApproval: true, approverAuthority: "CREDIT_COMMITTEE" },
+          { id: "deep-override", when: { overrideNotchesGte: 2 }, requireApproval: true, approverAuthority: "CRO" },
+          { id: "sub-investment", when: { gradeWorseThan: "BB" }, requireApproval: true, approverAuthority: "CREDIT_COMMITTEE" },
+          { id: "default", when: {}, requireApproval: true, approverAuthority: "CREDIT_OFFICER" },
+        ],
+      },
+    ],
+  },
 };
 
 export function schemaFor(type: string): MasterSchema | null {
