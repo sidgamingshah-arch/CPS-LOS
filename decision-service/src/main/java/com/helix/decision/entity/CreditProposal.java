@@ -58,6 +58,14 @@ public class CreditProposal {
     @Column(length = 2000)
     private List<String> sections;
 
+    /**
+     * The CAM format code the proposal was assembled under (e.g. STANDARD, PROJECT_FINANCE,
+     * LRD). Nullable for pre-existing rows; a no-format generate resolves STANDARD. Mapped to a
+     * non-reserved column name to dodge any SQLite keyword collision on {@code format}.
+     */
+    @Column(name = "proposal_format", length = 60)
+    private String format;
+
     private String generatedBy;
 
     @CreationTimestamp

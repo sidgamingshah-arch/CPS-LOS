@@ -354,14 +354,20 @@ export const decision = {
     call<any>(`/decision/api/covenants/intel/certificate/assessments/${id}/confirm`, "POST", body, actor),
   certReject: (id: number, body: any, actor: string) =>
     call<any>(`/decision/api/covenants/intel/certificate/assessments/${id}/reject`, "POST", body, actor),
-  generateProposal: (ref: string, actor: string) =>
-    call<any>(`/decision/api/decisions/${ref}/credit-proposal/generate`, "POST", undefined, actor),
+  // Credit proposal: optional CAM `format` (omitted -> deal-segment default -> STANDARD, byte-identical
+  // to the pre-format proposal). Existing callers pass no format and keep working unchanged.
+  generateProposal: (ref: string, actor: string, format?: string) =>
+    call<any>(`/decision/api/decisions/${ref}/credit-proposal/generate`, "POST",
+      format ? { format } : undefined, actor),
   latestProposal: (ref: string) => call<any>(`/decision/api/decisions/${ref}/credit-proposal`, "GET"),
   proposalVersions: (ref: string) => call<any[]>(`/decision/api/decisions/${ref}/credit-proposal/versions`, "GET"),
   // committee / quorum voting (D9/committee mode) + sanction letter (P1 decisioning loop)
   votes: (ref: string) => call<any[]>(`/decision/api/decisions/${ref}/votes`, "GET"),
   sanctionLetter: (ref: string, actor: string) =>
     call<any>(`/decision/api/decisions/${ref}/sanction-letter`, "POST", undefined, actor),
+  // Available CAM proposal formats for the picker; optional segment flags/sorts the default first.
+  proposalFormats: (segment?: string) =>
+    call<any[]>(`/decision/api/decisions/proposal-formats${segment ? `?segment=${encodeURIComponent(segment)}` : ""}`, "GET"),
 };
 
 // ---- conflict-of-interest (COI) attestations ----

@@ -95,6 +95,9 @@ export default function DealWorkspace({ reference }: { reference: string }) {
   const covTests = useAsync(() => decision.covenantTests(reference).catch(() => [] as any[]), [reference]);
   const rarocHist = useAsync(() => portfolio.rarocHistory(reference).catch(() => [] as any[]), [reference]);
   const proposalLatest = useAsync(() => decision.latestProposal(reference).catch(() => null as any), [reference]);
+  // Available CAM proposal formats for the picker (read-only). Degrades to an empty list.
+  const proposalFormats = useAsync(() => decision.proposalFormats().catch(() => [] as any[]), [reference]);
+  const [proposalFormat, setProposalFormat] = useState<string>("");
   // Workflow instance (current lifecycle stage + SLA). Chrome only — degrades
   // silently (renders nothing) when the engine errors or has no instance.
   const wfView = useAsync(() => workflow.view(reference).catch(() => null as WorkflowView | null), [reference]);
@@ -107,6 +110,14 @@ export default function DealWorkspace({ reference }: { reference: string }) {
 
   const a = app.data, an = analysis.data, sum = summary.data, d = dec.data;
   const rating = sum?.rating, capital = sum?.capital, pricing = sum?.pricing;
+
+  // CAM proposal format picker: default to the deal segment's format (else STANDARD); the user may
+  // pick another. The chosen code is passed to generate — STANDARD stays byte-identical to today.
+  const fmtList = (proposalFormats.data || []) as any[];
+  const segFmtDefault =
+    fmtList.find((f) => f.segment && a?.segment && String(f.segment).toUpperCase() === String(a.segment).toUpperCase())?.code
+    || "STANDARD";
+  const chosenFormat = proposalFormat || segFmtDefault;
 
   const steps = [
     { k: "Intake", done: !!a },
@@ -397,12 +408,23 @@ export default function DealWorkspace({ reference }: { reference: string }) {
       {/* Credit proposal */}
       <section id="ws-proposal" className="ws-anchor">
       <Card title="Credit proposal"
-        sub="A formal committee memo grounded in this deal's data — every figure quoted from the engines, section-to-source citations stored (PRD §8 US-8.3, §13)."
-        right={<Button onClick={() => run(() => decision.generateProposal(reference, actor), "Proposal generated")}>{proposalLatest.data ? "Re-generate" : "Generate proposal"}</Button>}>
+        sub="A formal committee memo grounded in this deal's data — every figure quoted from the engines, section-to-source citations stored (PRD §8 US-8.3, §13). Pick a CAM format to reshape the section layout; the figures are unchanged (a format is a rendering, not a figure source)."
+        right={
+          <div className="btnrow">
+            <select value={chosenFormat} onChange={(e) => setProposalFormat(e.target.value)} title="CAM format" style={{ maxWidth: 220 }}>
+              {fmtList.length === 0 && <option value="STANDARD">Standard universal CAM</option>}
+              {fmtList.map((f) => (
+                <option key={f.code} value={f.code}>{(f.label || f.code)}{f.code === segFmtDefault ? " · default" : ""}</option>
+              ))}
+            </select>
+            <Button onClick={() => run(() => decision.generateProposal(reference, actor, chosenFormat), "Proposal generated")}>{proposalLatest.data ? "Re-generate" : "Generate proposal"}</Button>
+          </div>
+        }>
         {!proposalLatest.data ? <div className="muted">No proposal yet.</div> : (
           <>
             <div className="btnrow" style={{ marginBottom: 10 }}>
               <Badge kind="info">v{proposalLatest.data.version}</Badge>
+              {proposalLatest.data.format && <Badge kind="info">CAM · {proposalLatest.data.format}</Badge>}
               <small className="prov">Generated {fmt.dateTime(proposalLatest.data.generatedAt)} by {proposalLatest.data.generatedBy}</small>
             </div>
             <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16, maxHeight: 460, overflow: "auto", fontSize: 13 }}

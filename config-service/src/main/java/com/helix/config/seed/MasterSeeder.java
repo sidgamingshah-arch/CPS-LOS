@@ -410,6 +410,118 @@ public class MasterSeeder implements CommandLineRunner {
         seedActor("credit.ops.bot", "Credit Ops Bot", "CREDIT_OPS");
         seedActor("credit.officer.bot", "Credit Officer Bot", "CREDIT_OFFICER", "CREDIT_COMMITTEE", "BOARD_COMMITTEE");
         seedActor("portfolio.bot", "Portfolio Bot", "PORTFOLIO");
+
+        // ---- PROPOSAL_FORMAT master — CAM formats that shape the credit-proposal layout ----
+        // Appended LAST to minimise merge surface. One record per CAM format keyed by a format code;
+        // payload = { label, segment (for defaulting from the deal's segment), sections:[{key,title}] }.
+        // Section keys map to the CreditProposalService section builders. STANDARD is the DEFAULT: its
+        // sections == the universal proposal layout in the universal order, so a no-format generate is
+        // byte-identical to the pre-format proposal. The other formats reorder/subset those keys and
+        // add a segment-specific section (dscr_waterfall / rent_roll / scf_program). Codes + segments
+        // align with the existing SEGMENT / CAM-format catalogue.
+        seedProposalFormats();
+    }
+
+    // ---------------------------------------------------------------- proposal formats
+
+    private void seedProposalFormats() {
+        // STANDARD (default) — universal layout, universal order, exact universal section titles.
+        masters.seedActive("PROPOSAL_FORMAT", "STANDARD", null, map(
+                "label", "Standard universal CAM", "segment", "",
+                "sections", java.util.List.of(
+                        sec("executive_summary", "Executive summary"),
+                        sec("facilities", "Facilities proposed"),
+                        sec("collateral", "Collateral and security"),
+                        sec("financials", "Financials"),
+                        sec("ratios", "Ratios"),
+                        sec("rating", "Rating"),
+                        sec("capital", "Capital projection"),
+                        sec("pricing", "Pricing"),
+                        sec("covenants", "Covenants"),
+                        sec("routing", "Routing & decision"),
+                        sec("provenance", "Provenance"))));
+
+        // PROJECT_FINANCE — DSCR & cashflow-waterfall centric; defaults from the PROJECT_FINANCE segment.
+        masters.seedActive("PROPOSAL_FORMAT", "PROJECT_FINANCE", null, map(
+                "label", "Project Finance CAM", "segment", "PROJECT_FINANCE",
+                "sections", java.util.List.of(
+                        sec("executive_summary", "Executive Summary"),
+                        sec("facilities", "Facilities & Structure"),
+                        sec("financials", "Financial Analysis"),
+                        sec("dscr_waterfall", "DSCR & Cashflow Waterfall"),
+                        sec("rating", "Rating"),
+                        sec("capital", "Capital"),
+                        sec("pricing", "Pricing"),
+                        sec("covenants", "Covenants"),
+                        sec("routing", "Approval Routing"),
+                        sec("provenance", "Provenance"))));
+
+        // LRD (lease-rental discounting) — rent-roll + security centric.
+        masters.seedActive("PROPOSAL_FORMAT", "LRD", null, map(
+                "label", "Lease Rental Discounting CAM", "segment", "LEASE_RENTAL_DISCOUNTING",
+                "sections", java.util.List.of(
+                        sec("executive_summary", "Executive Summary"),
+                        sec("facilities", "Facilities"),
+                        sec("collateral", "Security & Property"),
+                        sec("financials", "Financial Analysis"),
+                        sec("rent_roll", "Rent Roll & Lease Profile"),
+                        sec("rating", "Rating"),
+                        sec("capital", "Capital"),
+                        sec("pricing", "Pricing"),
+                        sec("covenants", "Covenants"),
+                        sec("routing", "Approval Routing"),
+                        sec("provenance", "Provenance"))));
+
+        // SCF (supply-chain finance) — programme centric.
+        masters.seedActive("PROPOSAL_FORMAT", "SCF", null, map(
+                "label", "Supply-Chain Finance CAM", "segment", "SCF_VENDOR",
+                "sections", java.util.List.of(
+                        sec("executive_summary", "Executive Summary"),
+                        sec("facilities", "Programme Facilities"),
+                        sec("scf_program", "Supply-Chain-Finance Programme"),
+                        sec("financials", "Financial Analysis"),
+                        sec("rating", "Rating"),
+                        sec("capital", "Capital"),
+                        sec("pricing", "Pricing"),
+                        sec("covenants", "Covenants"),
+                        sec("routing", "Approval Routing"),
+                        sec("provenance", "Provenance"))));
+
+        // WORKING_CAPITAL — sublimits/interchangeability as a distinct section.
+        masters.seedActive("PROPOSAL_FORMAT", "WORKING_CAPITAL", null, map(
+                "label", "Working Capital CAM", "segment", "WORKING_CAPITAL",
+                "sections", java.util.List.of(
+                        sec("executive_summary", "Executive Summary"),
+                        sec("facilities", "Facilities & Sublimits"),
+                        sec("sublimits", "Sublimits & Interchangeability"),
+                        sec("collateral", "Security"),
+                        sec("financials", "Financial Analysis"),
+                        sec("ratios", "Key Ratios"),
+                        sec("rating", "Rating"),
+                        sec("capital", "Capital"),
+                        sec("pricing", "Pricing"),
+                        sec("covenants", "Covenants"),
+                        sec("routing", "Approval Routing"),
+                        sec("provenance", "Provenance"))));
+
+        // NBFC (lending to NBFCs) — prudential-ratio centric.
+        masters.seedActive("PROPOSAL_FORMAT", "NBFC", null, map(
+                "label", "NBFC CAM", "segment", "NBFC",
+                "sections", java.util.List.of(
+                        sec("executive_summary", "Executive Summary"),
+                        sec("facilities", "Facilities"),
+                        sec("financials", "Financial Analysis"),
+                        sec("ratios", "Prudential Ratios"),
+                        sec("rating", "Rating"),
+                        sec("capital", "Capital"),
+                        sec("pricing", "Pricing"),
+                        sec("covenants", "Covenants"),
+                        sec("routing", "Approval Routing"),
+                        sec("provenance", "Provenance"))));
+    }
+
+    private Map<String, Object> sec(String key, String title) {
+        return map("key", key, "title", title);
     }
 
     // ---------------------------------------------------------------- model definitions
