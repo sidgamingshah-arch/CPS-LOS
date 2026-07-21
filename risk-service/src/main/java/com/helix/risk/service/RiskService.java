@@ -7,6 +7,9 @@ import com.helix.risk.client.ConfigClient;
 import com.helix.risk.client.ModelDefinitionClient;
 import com.helix.risk.client.ModelDefinitionClient.ResolvedModel;
 import com.helix.risk.client.OriginationClient;
+import com.helix.risk.client.ScoringApprovalPolicyClient;
+import com.helix.risk.client.ScoringApprovalPolicyClient.Params;
+import com.helix.risk.client.ScoringApprovalPolicyClient.Resolution;
 import com.helix.risk.dto.CreditInputsDto;
 import com.helix.risk.dto.RiskDtos;
 import com.helix.risk.dto.RiskDtos.OverrideStats;
@@ -39,6 +42,19 @@ public class RiskService {
     private static final Map<String, Integer> NOTCH_LIMITS = Map.of(
             "ANALYST", 1, "CREDIT_OFFICER", 2, "CREDIT_COMMITTEE", 99, "CRO", 99);
 
+    /**
+     * Rating-confirm authority ladder (ANALYST &lt; CREDIT_OFFICER &lt; CREDIT_COMMITTEE / CRO).
+     * Maps both the required-authority string resolved from the SCORING_APPROVAL_POLICY and the
+     * roles an actor holds (ACTOR_ROLE master) onto one rank. CREDIT_OFFICER is the behaviour-
+     * preserving baseline: a confirmer must always hold at least CREDIT_OFFICER, exactly the
+     * pre-existing flat gate. Higher-tier scores route to CREDIT_COMMITTEE / CRO.
+     */
+    private static final Map<String, Integer> AUTHORITY_RANK = Map.of(
+            "ANALYST", 1, "CREDIT_OFFICER", 2, "CREDIT_COMMITTEE", 3, "CRO", 3, "BOARD_COMMITTEE", 4);
+
+    /** The baseline confirm authority — the legacy mandatory gate every rating still clears. */
+    private static final int BASELINE_AUTHORITY_RANK = AUTHORITY_RANK.get("CREDIT_OFFICER");
+
     /** Model-fit alert threshold (PRD §11): override rate above this warrants challenge. */
     private static final double OVERRIDE_ALERT_THRESHOLD = 0.25;
 
@@ -55,13 +71,33 @@ public class RiskService {
     private final AuditService audit;
     private final ModelInstanceRepository modelInstances;
     private final ModelDefinitionClient modelDefinitions;
+
+    /**
+     * Configurable, parameter-routed scoring-approval policy engine. Optional (fails open to the
+     * flat CREDIT_OFFICER gate when the bean/property is absent) so the deterministic figure path
+     * never depends on it.
+     */
+    private final ScoringApprovalPolicyClient scoringApprovalPolicy;
+
+    /**
+     * Optional best-effort case-management mirror; bean absent when the workflow-service URL isn't
+     * configured. The RATING_APPROVAL work-item mirrors the authoritative approval routing — a
+     * mirror failure is swallowed by the client and never reaches this transaction (never blocks
+     * a rating on a workflow outage).
+     */
+    private final com.helix.common.workflow.TaskClient taskClient;
+
     private static final Logger log = LoggerFactory.getLogger(RiskService.class);
 
     public RiskService(RatingEngine ratingEngine, CapitalEngine capitalEngine, PricingEngine pricingEngine,
                        FtpService ftpService, ConfigClient config, OriginationClient origination,
                        RatingRepository ratings, CapitalResultRepository capitalResults,
                        PricingResultRepository pricingResults, ActorDirectory roles, AuditService audit,
-                       ModelInstanceRepository modelInstances, ModelDefinitionClient modelDefinitions) {
+                       ModelInstanceRepository modelInstances, ModelDefinitionClient modelDefinitions,
+                       @org.springframework.beans.factory.annotation.Autowired(required = false)
+                       ScoringApprovalPolicyClient scoringApprovalPolicy,
+                       @org.springframework.beans.factory.annotation.Autowired(required = false)
+                       com.helix.common.workflow.TaskClient taskClient) {
         this.ratingEngine = ratingEngine;
         this.capitalEngine = capitalEngine;
         this.pricingEngine = pricingEngine;
@@ -75,6 +111,8 @@ public class RiskService {
         this.audit = audit;
         this.modelInstances = modelInstances;
         this.modelDefinitions = modelDefinitions;
+        this.scoringApprovalPolicy = scoringApprovalPolicy;
+        this.taskClient = taskClient;
     }
 
     // ------------------------------------------------------------------- rating
@@ -127,6 +165,10 @@ public class RiskService {
         rating.setLgd(c.lgd());                              // LGD/EAD are grade-independent — unchanged
         rating.setEad(c.ead());
         rating.setScoreBreakdown(breakdown);
+        // Route the scoring (score) approval per the configurable SCORING_APPROVAL_POLICY. This is a
+        // GATE, never a figure change: the grade/PD/LGD/EAD above are untouched by the routing.
+        applyScoringApproval(rating, new Params(rating.getEad(), grade, scoreBand(score),
+                0, false, in.segment(), in.jurisdiction()));
         Rating saved = ratings.save(rating);
 
         // Deterministic figure path → SYSTEM actor; a human analyst proposes and an approver confirms.
@@ -135,6 +177,7 @@ public class RiskService {
                         .formatted(gradeSource.equals("MODEL_OF_RECORD") ? "Rating model of record" : "Scorecard",
                                 grade, score, pd * 100),
                 Map.of("grade", grade, "score", score, "pd", pd, "gradeSource", gradeSource));
+        raiseRatingApprovalTask(saved, "Score proposed: grade " + grade, actor);
         return saved;
     }
 
@@ -181,7 +224,8 @@ public class RiskService {
                             .formatted(actor, limit, magnitude, signedNotches > 0 ? "upgrade" : "downgrade"));
         }
 
-        RulePackDto pdPack = config.activePack(jurisdictionOf(reference), "RATING_PD_MAP");
+        String jurisdiction = jurisdictionOf(reference);
+        RulePackDto pdPack = config.activePack(jurisdiction, "RATING_PD_MAP");
         rating.setFinalGrade(proposed);
         rating.setOverridden(true);
         rating.setOverrideNotches(signedNotches);
@@ -191,6 +235,11 @@ public class RiskService {
         rating.setEscalated(magnitude >= 2);
         rating.setPd(pdPack.number(proposed, rating.getPd()));
         rating.setConfirmed(false);   // override re-opens the confirmation gate
+        // Re-route the scoring approval against the OVERRIDDEN params (final grade + override
+        // magnitude). Still a gate, never a figure change — finalGrade/PD above are authoritative.
+        // Jurisdiction via jurisdictionOf(...); segment is the rating's own persisted value.
+        applyScoringApproval(rating, new Params(rating.getEad(), proposed, scoreBand(rating.getModelScore()),
+                signedNotches, true, rating.getSegment(), jurisdiction));
         Rating saved = ratings.save(rating);
 
         audit.human(actor, "RATING_OVERRIDDEN", "Application", reference,
@@ -199,19 +248,24 @@ public class RiskService {
                 Map.of("model_grade", rating.getModelGrade(), "final_grade", proposed,
                         "override_notches", signedNotches, "reason_code", req.reasonCode(),
                         "approver_id", actor, "escalated", saved.isEscalated()));
+        raiseRatingApprovalTask(saved, "Override to " + proposed + " (" + signedNotches + " notch)", actor);
         return saved;
     }
 
     @Transactional
     public Rating confirmRating(String reference, String actor) {
         Rating rating = latestRating(reference);
-        // G1: confirm is authoritative (it unlocks DoA routing) — require CREDIT_OFFICER
-        // authority or higher, resolved from the ACTOR_ROLE master (never a request-body
-        // role). Phase C adds maker != checker (the confirmer must differ from the analyst
-        // who proposed / overrode the rating).
-        if (resolveNotchLimit(actor) < NOTCH_LIMITS.get("CREDIT_OFFICER")) {
+        // G1: confirm is authoritative (it unlocks DoA routing). The required authority is now
+        // resolved from the configurable SCORING_APPROVAL_POLICY (persisted on the rating when it
+        // was scored/overridden), floored at CREDIT_OFFICER — so ordinary scores keep the exact
+        // pre-existing flat gate, while a large-exposure / deep-override / sub-investment score
+        // routes to CREDIT_COMMITTEE / CRO. Authority is resolved from the ACTOR_ROLE master,
+        // never a request-body role.
+        int requiredRank = requiredConfirmRank(rating);
+        if (actorAuthorityRank(actor) < requiredRank) {
             throw ApiException.forbiddenAutonomy(
-                    "Actor '" + actor + "' is not authorised to confirm a rating — needs CREDIT_OFFICER authority or higher");
+                    "Actor '" + actor + "' is not authorised to confirm this score — needs "
+                            + requiredAuthorityLabel(rating) + " authority or higher");
         }
         // Phase C — maker != checker: a human maker exists only when a grade was overridden.
         // The overrider cannot rubber-stamp their own override; a pure engine rating (no human
@@ -223,10 +277,101 @@ public class RiskService {
         rating.setConfirmed(true);
         rating.setConfirmedBy(actor);
         rating.setConfirmedAt(Instant.now());
+        // A confirmation always means "approved" — its downstream contract (DecisionService checks
+        // confirmed()) is unchanged. When approval was required, the approval status flips APPROVED.
+        if (Boolean.TRUE.equals(rating.getApprovalRequired())) {
+            rating.setApprovalStatus("APPROVED");
+        }
         audit.human(actor, "RATING_CONFIRMED", "Application", reference,
-                "Approver confirmed final grade %s".formatted(rating.getFinalGrade()),
-                Map.of("final_grade", rating.getFinalGrade()));
-        return ratings.save(rating);
+                "Approver confirmed final grade %s (%s authority)".formatted(
+                        rating.getFinalGrade(), requiredAuthorityLabel(rating)),
+                Map.of("final_grade", rating.getFinalGrade(),
+                        "required_authority", requiredAuthorityLabel(rating),
+                        "approval_status", rating.getApprovalStatus() == null ? "NOT_REQUIRED" : rating.getApprovalStatus()));
+        Rating saved = ratings.save(rating);
+        // Best-effort completion of the mirrored RATING_APPROVAL work-item (resolved by dedupeKey).
+        if (taskClient != null) {
+            taskClient.complete("RATING:" + reference, "Score approved by " + actor, actor);
+        }
+        return saved;
+    }
+
+    /**
+     * Read view of the configurable scoring-approval routing on the latest rating (requireApproval,
+     * requiredAuthority, status). Additive — does not touch any authoritative figure.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> scoringApproval(String reference) {
+        Rating r = latestRating(reference);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("applicationReference", reference);
+        m.put("finalGrade", r.getFinalGrade());
+        m.put("approvalRequired", r.getApprovalRequired());
+        m.put("requiredAuthority", requiredAuthorityLabel(r));
+        m.put("approvalStatus", r.getApprovalStatus() == null ? "NOT_REQUIRED" : r.getApprovalStatus());
+        m.put("confirmed", r.isConfirmed());
+        m.put("overridden", r.isOverridden());
+        m.put("overrideNotches", r.getOverrideNotches());
+        return m;
+    }
+
+    // ------------------------------------------------------ scoring-approval routing (gate only)
+
+    /** Resolve + persist the SCORING_APPROVAL_POLICY routing onto a scored/overridden rating. */
+    private void applyScoringApproval(Rating rating, Params params) {
+        Resolution res = scoringApprovalPolicy == null
+                ? ScoringApprovalPolicyClient.FLAT
+                : scoringApprovalPolicy.resolve(params);
+        rating.setApprovalRequired(res.requireApproval());
+        rating.setRequiredAuthority(res.requiredAuthority());
+        rating.setApprovalStatus(res.requireApproval() ? "PENDING_APPROVAL" : "NOT_REQUIRED");
+    }
+
+    /** Best-effort RATING_APPROVAL work-item, routed to a queue derived from the required authority. */
+    private void raiseRatingApprovalTask(Rating r, String reason, String actor) {
+        if (taskClient == null) return;
+        if (!Boolean.TRUE.equals(r.getApprovalRequired()) || !"PENDING_APPROVAL".equals(r.getApprovalStatus())) {
+            return;
+        }
+        String authority = requiredAuthorityLabel(r);
+        taskClient.createTask("Rating", r.getApplicationReference(), "RATING_APPROVAL",
+                "RATING_APPROVAL_" + authority, null, "RATING:" + r.getApplicationReference(), null, actor,
+                Map.of("ratingId", r.getId(),
+                        "requiredAuthority", authority,
+                        "finalGrade", r.getFinalGrade() == null ? "" : r.getFinalGrade(),
+                        "reason", reason == null ? "" : reason));
+    }
+
+    /** The required confirm authority string, floored at CREDIT_OFFICER (the legacy baseline gate). */
+    private String requiredAuthorityLabel(Rating r) {
+        String a = r.getRequiredAuthority();
+        return (a == null || a.isBlank()) ? "CREDIT_OFFICER" : a.toUpperCase();
+    }
+
+    /** Required confirm rank = max(baseline CREDIT_OFFICER, policy-resolved authority rank). */
+    private int requiredConfirmRank(Rating r) {
+        int resolved = AUTHORITY_RANK.getOrDefault(requiredAuthorityLabel(r), BASELINE_AUTHORITY_RANK);
+        return Math.max(BASELINE_AUTHORITY_RANK, resolved);
+    }
+
+    /**
+     * The actor's maximum authority rank on the rating-confirm ladder, resolved from the roles the
+     * ACTOR_ROLE master grants them (never a request-body role). A cold-start directory outage
+     * fails open (MAX_VALUE), consistent with {@link #resolveNotchLimit(String)} / ActorDirectory.
+     */
+    private int actorAuthorityRank(String actor) {
+        Set<String> actorRoles = roles.rolesFor(actor);
+        if (actorRoles == null) return Integer.MAX_VALUE;   // directory outage — fail open
+        return actorRoles.stream()
+                .mapToInt(role -> AUTHORITY_RANK.getOrDefault(role.toUpperCase(), 0))
+                .max().orElse(0);
+    }
+
+    /** Coarse score band (STRONG / ADEQUATE / WEAK) — matches the model-scoring band cut-points. */
+    private static String scoreBand(double score) {
+        if (score >= 67) return "STRONG";
+        if (score >= 45) return "ADEQUATE";
+        return "WEAK";
     }
 
     /**

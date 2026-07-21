@@ -420,6 +420,7 @@ public class MasterSeeder implements CommandLineRunner {
         // add a segment-specific section (dscr_waterfall / rent_roll / scf_program). Codes + segments
         // align with the existing SEGMENT / CAM-format catalogue.
         seedProposalFormats();
+        seedScoringApprovalPolicy();
     }
 
     // ---------------------------------------------------------------- proposal formats
@@ -522,6 +523,31 @@ public class MasterSeeder implements CommandLineRunner {
 
     private Map<String, Object> sec(String key, String title) {
         return map("key", key, "title", title);
+    }
+
+    private void seedScoringApprovalPolicy() {
+        // ---- SCORING_APPROVAL_POLICY master — configurable, parameter-routed rating (score) approval ----
+        // Ordered rules, FIRST-MATCH-WINS. A rule matches when ALL of its present conditions hold.
+        // The consumer (risk-service ScoringApprovalPolicyClient) evaluates a scored rating's params
+        // (exposure/EAD, finalGrade, score band, override notch magnitude, overridden flag, segment,
+        // jurisdiction) against these rules to resolve {requireApproval, approverAuthority}. It then
+        // raises a routed RATING_APPROVAL work-item and gates confirmation on the resolved authority.
+        // Condition keys (all optional): exposureGte/exposureLte, gradeIn(list)/gradeWorseThan(ladder),
+        // scoreBandIn, overrideNotchesGte, overriddenEq(bool), segmentIn, jurisdictionIn.
+        // BEHAVIOUR-PRESERVING DEFAULT: ordinary deals fall on the "default" rule -> CREDIT_OFFICER
+        // (today's flat confirm gate). The higher tiers are pitched high enough (>=10bn exposure,
+        // >=2-notch override, sub-BB grade) that ordinary lifecycle deals never reach them. The client
+        // fails open to this flat CREDIT_OFFICER behaviour when the master/config-service is absent.
+        masters.seedActive("SCORING_APPROVAL_POLICY", "default", null, map(
+                "rules", List.of(
+                        map("id", "large-exposure", "when", map("exposureGte", 10_000_000_000L),
+                                "requireApproval", true, "approverAuthority", "CREDIT_COMMITTEE"),
+                        map("id", "deep-override", "when", map("overrideNotchesGte", 2),
+                                "requireApproval", true, "approverAuthority", "CRO"),
+                        map("id", "sub-investment", "when", map("gradeWorseThan", "BB"),
+                                "requireApproval", true, "approverAuthority", "CREDIT_COMMITTEE"),
+                        map("id", "default", "when", map(),
+                                "requireApproval", true, "approverAuthority", "CREDIT_OFFICER"))));
     }
 
     // ---------------------------------------------------------------- model definitions

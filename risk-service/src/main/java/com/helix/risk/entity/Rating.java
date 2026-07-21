@@ -72,6 +72,19 @@ public class Rating {
     private String confirmedBy;
     private Instant confirmedAt;
 
+    // ---- configurable, parameter-routed scoring approval (additive, all nullable) ----
+    // Resolved from the SCORING_APPROVAL_POLICY master when the rating is scored/overridden.
+    // approvalRequired/requiredAuthority route a RATING_APPROVAL work-item and gate the confirm
+    // authority; approvalStatus tracks PENDING_APPROVAL | APPROVED | NOT_REQUIRED. All names are
+    // SQLite-reserved-word-safe. `confirmed` remains the unchanged downstream signal (== approved).
+    private Boolean approvalRequired;
+
+    @Column(length = 30)
+    private String requiredAuthority;
+
+    @Column(length = 20)
+    private String approvalStatus;
+
     @Convert(converter = JsonAttributeConverters.MapConverter.class)
     @Column(length = 8000)
     private Map<String, Object> scoreBreakdown;

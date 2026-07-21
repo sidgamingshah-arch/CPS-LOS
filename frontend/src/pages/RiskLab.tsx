@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { origination, risk, models, fmt } from "../api";
 import { useApp } from "../app-context";
-import { AiBadge, Badge, Button, Card, EmptyState, Field, GradeBadge, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
 import { useCodes } from "../code-values";
 
 type SectorOutlook = string;
@@ -41,6 +41,49 @@ function directionKind(dir: string): string {
   return "info";
 }
 
+function approvalStatusKind(status?: string): string {
+  if (status === "APPROVED") return "ok";
+  if (status === "PENDING_APPROVAL") return "warn";
+  return "info";
+}
+
+/**
+ * Configurable, parameter-routed scoring approval. The score is computed deterministically (AI
+ * where it helps stays out of the figure path); a named human holding the routed authority
+ * APPROVES it. Approval is a gate — it never moves the authoritative grade / PD.
+ */
+function ScoringApproval({ approval, confirmed, busy, actor, onApprove }: {
+  approval: any;
+  confirmed: boolean;
+  busy: boolean;
+  actor: string;
+  onApprove: () => void;
+}) {
+  const authority: string = approval?.requiredAuthority ?? "CREDIT_OFFICER";
+  const status: string = approval?.approvalStatus ?? (confirmed ? "APPROVED" : "PENDING_APPROVAL");
+  const required: boolean = approval?.approvalRequired !== false;
+  const decided = status === "APPROVED" || confirmed;
+  return (
+    <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }}>
+      <div className="inline" style={{ gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <GovFlow ai="AI SCORES" human="HUMAN APPROVES" note="deterministic figure · human gate" />
+        <Badge kind="info">Routed to {authority}</Badge>
+        <Badge kind={approvalStatusKind(status)}>{status}</Badge>
+        {!required && <Badge>approval not required</Badge>}
+        <Unchanged label="GRADE / PD PRESERVED" />
+      </div>
+      <div className="inline" style={{ gap: 10, marginTop: 10, alignItems: "center" }}>
+        <Button kind="primary" busy={busy} disabled={busy || decided} onClick={onApprove}>
+          {decided ? "Approved" : `Approve as ${authority}`}
+        </Button>
+        <span className="muted" style={{ fontSize: 12 }}>
+          Acting as {actor} · confirming actor must hold {authority} authority; the overrider cannot self-approve.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function RiskLab() {
   const { actor, notify, ref: ctxRef } = useApp();
   const apps = useAsync(() => origination.list(), []);
@@ -72,8 +115,15 @@ export default function RiskLab() {
     [ref],
   );
 
+  // Configurable, parameter-routed scoring approval — the routed authority + status.
+  const approvalAsync = useAsync(
+    () => (ref ? risk.scoringApproval(ref).catch(() => null) : Promise.resolve(null)),
+    [ref],
+  );
+
   // RAG busy state
   const [ragBusy, setRagBusy] = useState(false);
+  const [approveBusy, setApproveBusy] = useState(false);
 
   // Macro form state
   const [macroForm, setMacroForm] = useState<MacroForm>(BLANK_MACRO);
@@ -84,6 +134,24 @@ export default function RiskLab() {
     ragAsync.reload();
     macroAsync.reload();
     modelAsync.reload();
+    approvalAsync.reload();
+  };
+
+  // Human approval gate: confirming the score (the confirming actor must hold ≥ the routed
+  // authority; the overrider cannot self-confirm). The authoritative figures never move.
+  const handleApproveScore = async () => {
+    if (!ref) return;
+    setApproveBusy(true);
+    try {
+      await risk.confirmRating(ref, actor);
+      notify("Score approved (rating confirmed)");
+      ratingAsync.reload();
+      approvalAsync.reload();
+    } catch (e: any) {
+      notify(e.message, true);
+    } finally {
+      setApproveBusy(false);
+    }
   };
 
   const handleAssessRag = async () => {
@@ -181,11 +249,20 @@ export default function RiskLab() {
               <div className="muted">Rate the deal first to see the authoritative rating here.</div>
             )}
             {!ratingAsync.loading && rating && (
-              <div className="grid cols-3">
-                <Stat label="Final grade" value={<GradeBadge grade={rating.finalGrade} />} />
-                <Stat label="Model grade" value={<GradeBadge grade={rating.modelGrade} />} />
-                <Stat label="PD" value={fmt.pct(rating.pd, 2)} />
-              </div>
+              <>
+                <div className="grid cols-3">
+                  <Stat label="Final grade" value={<GradeBadge grade={rating.finalGrade} />} />
+                  <Stat label="Model grade" value={<GradeBadge grade={rating.modelGrade} />} />
+                  <Stat label="PD" value={fmt.pct(rating.pd, 2)} />
+                </div>
+                <ScoringApproval
+                  approval={approvalAsync.data}
+                  confirmed={!!rating.confirmed}
+                  busy={approveBusy}
+                  actor={actor}
+                  onApprove={handleApproveScore}
+                />
+              </>
             )}
           </div>
         )}

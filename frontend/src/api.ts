@@ -204,6 +204,8 @@ export const risk = {
   ragHistory: (ref: string) => call<any[]>(`/risk/api/risk/${ref}/rag`, "GET"),
   macroImpact: (ref: string, body: any, actor: string) => call<any>(`/risk/api/risk/${ref}/macro-impact`, "POST", body, actor),
   macroHistory: (ref: string) => call<any[]>(`/risk/api/risk/${ref}/macro-impact`, "GET"),
+  // ---- configurable, parameter-routed scoring approval (gate, not a figure change) ----
+  scoringApproval: (ref: string) => call<any>(`/risk/api/risk/${ref}/scoring-approval`, "GET"),
 };
 
 // ---- configurable scoring-model engine (sections of typed questions; advisory composite) ----
