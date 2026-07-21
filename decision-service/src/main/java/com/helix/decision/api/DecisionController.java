@@ -120,10 +120,28 @@ public class DecisionController {
 
     // ---- credit proposal ----
 
+    /** Available CAM formats for the picker; optional {@code segment} flags/sorts the default first. */
+    @GetMapping("/proposal-formats")
+    public List<CreditProposalService.ProposalFormatView> proposalFormats(
+            @RequestParam(required = false) String segment) {
+        return proposals.proposalFormats(segment);
+    }
+
+    /**
+     * Generate the credit proposal. The optional body {@code {"format": "..."}} selects a CAM format;
+     * an empty body (or null format) resolves the deal-segment default, else STANDARD — byte-identical
+     * to the pre-format universal proposal.
+     */
     @PostMapping("/{reference}/credit-proposal/generate")
     public CreditProposal generateProposal(@PathVariable String reference,
+                                           @RequestBody(required = false) ProposalGenerateRequest req,
                                            @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
-        return proposals.generate(reference, actor);
+        String format = req == null ? null : req.format();
+        return proposals.generate(reference, format, actor);
+    }
+
+    /** Optional generate body — carries the chosen CAM format code (nullable). */
+    public record ProposalGenerateRequest(String format) {
     }
 
     @GetMapping("/{reference}/credit-proposal")
