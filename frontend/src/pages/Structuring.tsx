@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { amendments, origination, structure, syndication, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, Stat, useAsync } from "../ui";
+import { Badge, Button, Card, type Col, DataTable, Field, Stat, useAsync } from "../ui";
 import { useCodes } from "../code-values";
 
 // CODE_VALUE domain fallbacks — used ONLY for non-hook initial-state defaults
@@ -149,6 +149,20 @@ export default function Structuring() {
   }
 
   const otherDeals = (deals.data ?? []).filter((d: any) => d.reference !== ref);
+
+  const participantCols: Col<any>[] = [
+    { key: "ordinal", header: "#", align: "right", width: "48px", render: (p) => p.ordinal, value: (p) => p.ordinal ?? 0 },
+    { key: "role", header: "Role", render: (p) => <Badge kind="info">{p.role}</Badge>, value: (p) => p.role ?? "" },
+    { key: "name", header: "Name", render: (p) => p.name, value: (p) => p.name ?? "" },
+    { key: "externalRef", header: "Ext ref", render: (p) => <span className="mono">{p.externalRef || "—"}</span>, value: (p) => p.externalRef ?? "" },
+    { key: "sharePct", header: "Share %", align: "right", render: (p) => (p.sharePct ? `${fmt.num(p.sharePct, 1)}%` : "—"), value: (p) => p.sharePct ?? 0 },
+    { key: "committedAmount", header: "Committed", align: "right", render: (p) => (p.committedAmount != null ? fmt.money(p.committedAmount) : "—"), value: (p) => p.committedAmount ?? 0 },
+    { key: "liabilityType", header: "Liability", render: (p) => (p.liabilityType ? <Badge>{p.liabilityType}</Badge> : <span className="muted">—</span>), value: (p) => p.liabilityType ?? "" },
+    {
+      key: "_actions", header: "", sortable: false, filterable: false, csv: false,
+      render: (p) => <Button kind="subtle" onClick={() => handleRemoveParticipant(p.id)}>Remove</Button>,
+    },
+  ];
 
   return (
     <div className="grid">
@@ -292,40 +306,13 @@ export default function Structuring() {
               </Button>
             }
           >
-            {parts.length === 0 ? (
-              <div className="muted">No participants yet — add obligors, guarantors, or lenders.</div>
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Role</th>
-                    <th>Name</th>
-                    <th>Ext ref</th>
-                    <th className="num">Share %</th>
-                    <th className="num">Committed</th>
-                    <th>Liability</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {parts.map((p: any) => (
-                    <tr key={p.id}>
-                      <td className="num">{p.ordinal}</td>
-                      <td><Badge kind="info">{p.role}</Badge></td>
-                      <td>{p.name}</td>
-                      <td className="mono">{p.externalRef || "—"}</td>
-                      <td className="num">{p.sharePct ? `${fmt.num(p.sharePct, 1)}%` : "—"}</td>
-                      <td className="num">{p.committedAmount != null ? fmt.money(p.committedAmount) : "—"}</td>
-                      <td>{p.liabilityType ? <Badge>{p.liabilityType}</Badge> : <span className="muted">—</span>}</td>
-                      <td>
-                        <Button kind="subtle" onClick={() => handleRemoveParticipant(p.id)}>Remove</Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <DataTable
+              id="structuring-participants"
+              columns={participantCols}
+              rows={parts}
+              rowKey={(p) => String(p.id)}
+              empty={<div className="muted">No participants yet — add obligors, guarantors, or lenders.</div>}
+            />
 
             {/* Add participant inline form */}
             {pOpen && (

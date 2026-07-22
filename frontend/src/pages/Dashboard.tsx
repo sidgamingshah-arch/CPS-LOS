@@ -1,7 +1,6 @@
-import { useState } from "react";
 import { portfolio, risk, mis, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, DeterministicBadge, Stat, useAsync } from "../ui";
+import { Badge, Button, Card, type Col, DataTable, DeterministicBadge, Stat, useAsync } from "../ui";
 
 export default function Dashboard() {
   const { actor, notify } = useApp();
@@ -14,8 +13,6 @@ export default function Dashboard() {
   const dash = useAsync(() => mis.dashboard(), []);
   const p360 = useAsync(() => mis.portfolio360(), []);
   const multi = useAsync(() => portfolio.concentrationMulti("IN-RBI"), []);
-  const [showAllVariance, setShowAllVariance] = useState(false);
-  const [showAllWatch, setShowAllWatch] = useState(false);
 
   const reloadAll = () => {
     summary.reload(); conc.reload(); watch.reload(); stress.reload(); overrides.reload();
@@ -57,6 +54,36 @@ export default function Dashboard() {
   const critical = (sev.SEVERE || 0) + (sev.HIGH || 0);
   const segmentCount = Object.keys(comp.bySegment || {}).length;
   const jurisdictionCount = Object.keys(comp.byJurisdiction || {}).length;
+
+  // RAROC variance ("worst by |Δ|") — model-fit / override-governance stats (PRD §11).
+  const varianceRows: any[] = (variance.worstByVariance ?? []).map((r: any, i: number) => ({ ...r, _k: `${r.reference}:${r.period}:${i}` }));
+  const varianceCols: Col<any>[] = [
+    { key: "reference", header: "Deal", render: (r) => <span className="mono">{r.reference}</span>, value: (r) => r.reference ?? "" },
+    { key: "period", header: "Period", value: (r) => r.period ?? "" },
+    { key: "projectedRaroc", header: "Proj.", align: "right", render: (r) => fmt.pct(r.projectedRaroc, 2), value: (r) => r.projectedRaroc ?? 0 },
+    { key: "actualRaroc", header: "Actual", align: "right", render: (r) => fmt.pct(r.actualRaroc, 2), value: (r) => r.actualRaroc ?? 0 },
+    {
+      key: "variance", header: "Δ", align: "right",
+      render: (r) => <span style={{ color: r.variance < 0 ? "var(--bad)" : "var(--ok)" }}>{fmt.pct(r.variance, 2)}</span>,
+      value: (r) => r.variance ?? 0,
+    },
+    {
+      key: "material", header: "", sortable: false, filterable: false, csv: false,
+      render: (r) => (r.absVariancePct > 0.25 ? <Badge kind="bad">material</Badge> : <Badge kind="ok">within</Badge>),
+    },
+  ];
+
+  // Early-warning watchlist — agentic EWS flags; humans classify (never auto-reclassified).
+  const watchCols: Col<any>[] = [
+    { key: "counterpartyName", header: "Counterparty", value: (s) => s.counterpartyName ?? "" },
+    { key: "signalType", header: "Signal", render: (s) => <span className="mono">{s.signalType}</span>, value: (s) => s.signalType ?? "" },
+    {
+      key: "severity", header: "Severity",
+      render: (s) => <Badge kind={s.severity === "SEVERE" ? "bad" : s.severity === "HIGH" ? "warn" : "info"}>{s.severity}</Badge>,
+      value: (s) => s.severity ?? "",
+    },
+    { key: "score", header: "Score", align: "right", render: (s) => fmt.num(s.score, 2), value: (s) => s.score ?? 0 },
+  ];
 
   return (
     <div className="grid">
@@ -163,35 +190,14 @@ export default function Dashboard() {
 
         <Card title="RAROC variance — worst by |Δ|"
           sub="Material miss = |actual − projected| / projected &gt; 25% (PRD §11 model governance).">
-          {!variance.worstByVariance || variance.worstByVariance.length === 0 ? (
-            <div className="muted">No actual-RAROC observations yet — compute actuals on the workspace.</div>
-          ) : (
-            <>
-            <div className="table-scroll">
-              <table>
-                <thead><tr><th>Deal</th><th>Period</th><th className="num">Proj.</th><th className="num">Actual</th><th className="num">Δ</th><th></th></tr></thead>
-                <tbody>
-                  {(showAllVariance ? variance.worstByVariance : variance.worstByVariance.slice(0, 8)).map((r: any, i: number) => (
-                    <tr key={i}>
-                      <td className="mono">{r.reference}</td>
-                      <td>{r.period}</td>
-                      <td className="num">{fmt.pct(r.projectedRaroc, 2)}</td>
-                      <td className="num">{fmt.pct(r.actualRaroc, 2)}</td>
-                      <td className="num" style={{ color: r.variance < 0 ? "var(--bad)" : "var(--ok)" }}>{fmt.pct(r.variance, 2)}</td>
-                      <td>{r.absVariancePct > 0.25 ? <Badge kind="bad">material</Badge> : <Badge kind="ok">within</Badge>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {variance.worstByVariance.length > 8 && (
-              <div className="table-more">
-                <span>showing {showAllVariance ? variance.worstByVariance.length : 8} of {variance.worstByVariance.length}</span>
-                <button onClick={() => setShowAllVariance((s) => !s)}>{showAllVariance ? "show less" : "show all"}</button>
-              </div>
-            )}
-            </>
-          )}
+          <DataTable
+            id="dashboard-raroc-variance"
+            columns={varianceCols}
+            rows={varianceRows}
+            rowKey={(r) => r._k}
+            initialPageSize={10}
+            empty={<div className="muted">No actual-RAROC observations yet — compute actuals on the workspace.</div>}
+          />
         </Card>
       </div>
 
@@ -269,29 +275,14 @@ export default function Dashboard() {
 
       <div className="grid cols-2">
         <Card title="Early-warning watchlist" sub="Agentic EWS flags & ranks; humans classify and remediate (never auto-reclassified).">
-          {watch.data && watch.data.length ? (
-            <>
-            <table>
-              <thead><tr><th>Counterparty</th><th>Signal</th><th>Severity</th><th className="num">Score</th></tr></thead>
-              <tbody>
-                {(showAllWatch ? watch.data : watch.data.slice(0, 12)).map((sig: any) => (
-                  <tr key={sig.id}>
-                    <td>{sig.counterpartyName}</td>
-                    <td><span className="mono">{sig.signalType}</span></td>
-                    <td><Badge kind={sig.severity === "SEVERE" ? "bad" : sig.severity === "HIGH" ? "warn" : "info"}>{sig.severity}</Badge></td>
-                    <td className="num">{fmt.num(sig.score, 2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {watch.data.length > 12 && (
-              <div className="table-more">
-                <span>showing {showAllWatch ? watch.data.length : 12} of {watch.data.length}</span>
-                <button onClick={() => setShowAllWatch((s) => !s)}>{showAllWatch ? "show less" : "show all"}</button>
-              </div>
-            )}
-            </>
-          ) : <div className="muted">No open signals. Run an EWS scan.</div>}
+          <DataTable
+            id="dashboard-watchlist"
+            columns={watchCols}
+            rows={watch.data ?? []}
+            rowKey={(s) => String(s.id)}
+            initialPageSize={10}
+            empty={<div className="muted">No open signals. Run an EWS scan.</div>}
+          />
         </Card>
 
         <Card title="Stress testing" sub="Baseline / adverse / severe — PD/LGD stress to ECL & RWA impact.">

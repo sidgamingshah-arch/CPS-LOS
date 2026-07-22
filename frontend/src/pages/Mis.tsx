@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import { mis, fmt, portfolio } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, Field, Stat, useAsync } from "../ui";
+import { Badge, Button, Card, type Col, DataTable, Field, Stat, useAsync } from "../ui";
 
 function bandBadge(band: string) {
   if (band === "BREACH") return <Badge kind="bad">breach</Badge>;
@@ -47,16 +47,16 @@ export default function Mis() {
 
       <div className="grid cols-2">
         <Card title="Composition by segment" sub="Total EAD per segment.">
-          <DistTable map={comp.bySegment} />
+          <DistTable id="mis-comp-segment" map={comp.bySegment} />
         </Card>
         <Card title="Composition by final grade">
-          <DistTable map={comp.byGrade} />
+          <DistTable id="mis-comp-grade" map={comp.byGrade} />
         </Card>
         <Card title="By jurisdiction">
-          <DistTable map={comp.byJurisdiction} />
+          <DistTable id="mis-comp-jurisdiction" map={comp.byJurisdiction} />
         </Card>
         <Card title="By status">
-          <DistTable map={comp.byStatus} />
+          <DistTable id="mis-comp-status" map={comp.byStatus} />
         </Card>
       </div>
 
@@ -102,9 +102,9 @@ export default function Mis() {
         </Card>
         <Card title="Watchlist summary">
           <h4>By severity</h4>
-          <DistCounts map={watch.bySeverity} />
+          <DistCounts id="mis-watch-severity" map={watch.bySeverity} />
           <h4 style={{ marginTop: 10 }}>By signal type</h4>
-          <DistCounts map={watch.bySignalType} />
+          <DistCounts id="mis-watch-signaltype" map={watch.bySignalType} />
         </Card>
       </div>
 
@@ -197,40 +197,37 @@ export default function Mis() {
   );
 }
 
-function DistTable({ map }: { map: Record<string, number> | undefined }) {
+type DistRow = { key: string; ead: number };
+function DistTable({ id, map }: { id: string; map: Record<string, number> | undefined }) {
   if (!map || Object.keys(map).length === 0) return <div className="muted">—</div>;
   const total = Object.values(map).reduce((a, b) => a + b, 0);
-  const sorted = Object.entries(map).sort((a: any, b: any) => b[1] - a[1]);
-  return (
-    <table>
-      <thead><tr><th>Key</th><th className="num">EAD</th><th>Share</th></tr></thead>
-      <tbody>
-        {sorted.map(([k, v]) => (
-          <tr key={k}>
-            <td>{k}</td>
-            <td className="num">{fmt.money(v as number, "")}</td>
-            <td style={{ width: 180 }}>
-              <div className="bar"><span style={{ width: `${total > 0 ? ((v as number) / total) * 100 : 0}%` }} /></div>
-              <small className="prov">{total > 0 ? (((v as number) / total) * 100).toFixed(1) + "%" : ""}</small>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+  const rows: DistRow[] = Object.entries(map).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ key: k, ead: v }));
+  const cols: Col<DistRow>[] = [
+    { key: "key", header: "Key", value: (r) => r.key },
+    { key: "ead", header: "EAD", align: "right", render: (r) => fmt.money(r.ead, ""), value: (r) => r.ead },
+    {
+      key: "share", header: "Share", filterable: false, width: "200px",
+      value: (r) => (total > 0 ? r.ead / total : 0),
+      render: (r) => (
+        <>
+          <div className="bar"><span style={{ width: `${total > 0 ? (r.ead / total) * 100 : 0}%` }} /></div>
+          <small className="prov">{total > 0 ? ((r.ead / total) * 100).toFixed(1) + "%" : ""}</small>
+        </>
+      ),
+    },
+  ];
+  return <DataTable id={id} columns={cols} rows={rows} rowKey={(r) => r.key} />;
 }
 
-function DistCounts({ map }: { map: Record<string, number> | undefined }) {
+type CountRow = { key: string; count: number };
+function DistCounts({ id, map }: { id: string; map: Record<string, number> | undefined }) {
   if (!map || Object.keys(map).length === 0) return <div className="muted">—</div>;
-  return (
-    <table>
-      <tbody>
-        {Object.entries(map).sort((a: any, b: any) => b[1] - a[1]).map(([k, v]) => (
-          <tr key={k}><td><Badge>{k}</Badge></td><td className="num">{v as number}</td></tr>
-        ))}
-      </tbody>
-    </table>
-  );
+  const rows: CountRow[] = Object.entries(map).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ key: k, count: v }));
+  const cols: Col<CountRow>[] = [
+    { key: "key", header: "Key", render: (r) => <Badge>{r.key}</Badge>, value: (r) => r.key },
+    { key: "count", header: "Count", align: "right", value: (r) => r.count },
+  ];
+  return <DataTable id={id} columns={cols} rows={rows} rowKey={(r) => r.key} />;
 }
 
 /**
