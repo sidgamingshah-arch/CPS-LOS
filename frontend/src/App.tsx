@@ -26,6 +26,8 @@ import Perfection from "./pages/Perfection";
 import Monitoring from "./pages/Monitoring";
 import MonitoringArtifacts from "./pages/MonitoringArtifacts";
 import Escrow from "./pages/Escrow";
+import GlobalCashflow from "./pages/GlobalCashflow";
+import Exceptions from "./pages/Exceptions";
 import Srm from "./pages/Srm";
 import Limits from "./pages/Limits";
 import Masters from "./pages/Masters";
@@ -34,9 +36,12 @@ import Scf from "./pages/Scf";
 import Syndication from "./pages/Syndication";
 import DocIntel from "./pages/DocIntel";
 import RiskLab from "./pages/RiskLab";
+import RiskNotes from "./pages/RiskNotes";
 import CreditProposal from "./pages/CreditProposal";
+import DocCompare from "./pages/DocCompare";
 import ApprovalRules from "./pages/ApprovalRules";
 import DocGen from "./pages/DocGen";
+import Execution from "./pages/Execution";
 import Commentary from "./pages/Commentary";
 import PricingLab from "./pages/PricingLab";
 import Spreading from "./pages/Spreading";
@@ -53,7 +58,9 @@ import Coi from "./pages/Coi";
 import DrawingPower from "./pages/DrawingPower";
 import Notifications from "./pages/Notifications";
 import Notings from "./pages/Notings";
+import Annexures from "./pages/Annexures";
 import IpNotes from "./pages/IpNotes";
+import BankingAsr from "./pages/BankingAsr";
 import PostureChip from "./pages/PostureChip";
 import NotificationBell from "./notification-center";
 import { prefetchAllCodes } from "./code-values";
@@ -87,6 +94,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "scf", label: "Supply-Chain Finance" },
       { key: "syndication", label: "Syndication" },
       { key: "spreading", label: "Financial Spreading" },
+      { key: "bankingasr", label: "Banking ASR" },
       { key: "docintel", label: "Doc Intelligence" },
     ],
   },
@@ -94,13 +102,17 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Assess & Decide",
     items: [
       { key: "risklab", label: "Risk Lab" },
+      { key: "risknotes", label: "Risk Notes" },
       { key: "projections", label: "Projections" },
       { key: "pricinglab", label: "Pricing Lab" },
       { key: "cad", label: "CAD · Documentation" },
       { key: "perfection", label: "MOE Perfection" },
       { key: "docgen", label: "Doc Generation" },
+      { key: "execution", label: "Document Execution" },
       { key: "commentary", label: "AI Commentary" },
       { key: "creditproposal", label: "Credit Proposal" },
+      { key: "annexures", label: "CAM Annexures" },
+      { key: "doccompare", label: "Document Compare" },
       { key: "committee", label: "Committee Room" },
       { key: "coi", label: "Conflict of Interest" },
       { key: "notings", label: "Notings" },
@@ -116,6 +128,8 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "srm", label: "SRM · Renewals" },
       { key: "monitoringartifacts", label: "Monitoring Artifacts" },
       { key: "escrow", label: "Escrow Monitoring" },
+      { key: "globalcashflow", label: "Global Cash-flow" },
+      { key: "exceptions", label: "Exceptions · Ticklers" },
       { key: "customer360", label: "Customer-360" },
       { key: "mis", label: "MIS · Reports" },
       { key: "reportbuilder", label: "Ad-hoc Reports" },
@@ -151,6 +165,7 @@ const CRUMB: Record<string, string> = {
   dashboard: "Portfolio & book-level intelligence",
   deals: "Origination pipeline",
   spreading: "SpreadJS-style grid · multi-period · cell provenance · override-with-reason gate · ratios",
+  bankingasr: "Account statement review · deterministic conduct metrics · advisory narrative (human-confirmed) · never touches a figure",
   structuring: "Specialised CP variants · group · joint/dual-obligor · syndication · FI ICR · renewal copy",
   scf: "Supply-chain finance · anchor programme · deterministic spoke eligibility · PRODUCT_PAPER noting · limit via limit-service",
   syndication: "Syndicate book · fee waterfall · agency reconciliation · participant feed",
@@ -163,16 +178,22 @@ const CRUMB: Record<string, string> = {
   cad: "Credit Administration · checklist · waivers/deviations · limit release",
   perfection: "Mortgage / MOE security perfection · ordered role-gated steps · MOE-vetting SoD · vendor RFQ · optional limit-release gate",
   docgen: "Template-driven document generation · clause add/remove/edit · human-confirm gate",
+  execution: "Document execution workflow · signatory matrix (INTERNAL/CUSTOMER) · e-sign facade · status stepper · deferral/waiver tags · source document unchanged",
   commentary: "AI narrative commentary · grounded · advisory · human-confirm gate",
   creditproposal: "CAM authoring · format picker · generate (versioned) · side-by-side format compare (non-persisting preview) · figures identical across formats",
+  annexures: "CAM annexures · ANNEXURE_TYPE-master-driven · sections materialised + version-pinned · optional advisory AI draft · DRAFT→SUBMITTED→REVIEWED→APPROVED (SoD reviewer/approver≠author) · deal grade/PD/spread untouched",
+  doccompare: "Deterministic incremental-change diff · two proposal or document versions · ADDED/REMOVED/CHANGED/UNCHANGED change table · side-by-side · read-only over sources",
   approvalrules: "Scoring-approval policy · visual matrix · first-match-wins routing · simulate · maker-checker save · never touches a figure",
   pricinglab: "Pricing scenario optimiser · goal-seek · advisory (authoritative pricing untouched)",
   monitoring: "Deferred docs · conditions subsequent · renewals · reminders · escalation · DMS feed",
   srm: "Structured review / renewal on the Noting engine · SRM_CHECKLIST · linked SRM_RENEWAL noting · AUTHORIZED advances the MER next-review date",
   monitoringartifacts: "One master-driven lifecycle · call memo/plant visit/LCR/QPR/broker/stock audit/audit note · review→approve→authorize SoD · vendor RFQ · ECL/exposure untouched",
   escrow: "Escrow monitoring · append-only versioned budget lines · category-tagged transactions · deterministic budget-vs-actual + RAG (VALIDATION_PARAMETER) · ECL/exposure/limit untouched",
+  globalcashflow: "Global / combined cash-flow · relationship consolidated debt-service across obligor + guarantors + group members · deterministic combined DSCR + per-member contribution · member spreads untouched",
+  exceptions: "Unified exception cockpit · read-only rollup of open covenant/MER/CAD/limit/EWS items (best-effort, never mutates a source) · manual ticklers with maker-checker resolve (resolver ≠ owner)",
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
   risklab: "Advisory overlays · statistical RAG scoring · macro directional impact (non-binding)",
+  risknotes: "Independent risk note · risk-function opinion record · draft → submit → review → approve · reassign / reject / reverse · rating of record never moves",
   projections: "Multi-year proforma · driver assumptions · projected DSCR · sensitivity (advisory)",
   mis: "Composition · RAROC variance · ECL · ageing · watchlist",
   reportbuilder: "Self-service · whitelisted datasets · maker-checker on saved defs · deterministic figures",
@@ -455,6 +476,7 @@ export default function App() {
             {view === "dashboard" && <Dashboard />}
             {view === "deals" && <Deals />}
             {view === "ipnotes" && <IpNotes />}
+            {view === "bankingasr" && <BankingAsr />}
             {view === "spreading" && <Spreading />}
             {view === "structuring" && <Structuring />}
             {view === "scf" && <Scf />}
@@ -468,8 +490,11 @@ export default function App() {
             {view === "cad" && <Cad />}
             {view === "perfection" && <Perfection />}
             {view === "docgen" && <DocGen />}
+            {view === "execution" && <Execution />}
             {view === "commentary" && <Commentary />}
             {view === "creditproposal" && <CreditProposal />}
+            {view === "annexures" && <Annexures />}
+            {view === "doccompare" && <DocCompare />}
             {view === "committee" && <Committee />}
             {view === "coi" && <Coi />}
             {view === "notings" && <Notings />}
@@ -480,8 +505,11 @@ export default function App() {
             {view === "srm" && <Srm />}
             {view === "monitoringartifacts" && <MonitoringArtifacts />}
             {view === "escrow" && <Escrow />}
+            {view === "globalcashflow" && <GlobalCashflow />}
+            {view === "exceptions" && <Exceptions />}
             {view === "customer360" && <Customer360 />}
             {view === "risklab" && <RiskLab />}
+            {view === "risknotes" && <RiskNotes />}
             {view === "projections" && <Projections />}
             {view === "mis" && <Mis />}
             {view === "reportbuilder" && <ReportBuilder />}

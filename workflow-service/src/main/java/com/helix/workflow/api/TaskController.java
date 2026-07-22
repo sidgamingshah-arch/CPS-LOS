@@ -53,8 +53,11 @@ public class TaskController {
 
     @GetMapping("/inbox")
     public List<WorkItem> inbox(@RequestParam("assignee") String assignee,
+                                @RequestParam(value = "scope", required = false) String scope,
                                 @RequestHeader(value = "X-Actor", required = false) String actor) {
-        return tasks.inbox(assignee, actor);
+        // No scope (or scope=self) is byte-identical to the pre-U9 inbox; scope=team folds in the
+        // caller's subordinates resolved from USER_HIERARCHY (best-effort, fail-open to self-only).
+        return tasks.inbox(assignee, actor, scope);
     }
 
     @GetMapping("/queue/{key}")

@@ -24,6 +24,8 @@ import {
   Badge,
   Button,
   Card,
+  type Col,
+  DataTable,
   DeterministicBadge,
   EmptyState,
   Field,
@@ -409,6 +411,114 @@ export default function Disbursement() {
     rpmts.reload();
   });
 
+  // Conditions Precedent register columns. Row action buttons open an inline panel
+  // (rendered below the table, since DataTable owns the tbody and cannot host
+  // interleaved expansion rows).
+  const cpCols: Col<any>[] = [
+    { key: "code", header: "Code", render: (cp) => <span className="mono">{cp.code}</span>, value: (cp) => cp.code ?? "" },
+    {
+      key: "title", header: "Title", value: (cp) => cp.title ?? "",
+      render: (cp) => (
+        <>
+          <div>{cp.title}</div>
+          {cp.description && <div className="muted" style={{ fontSize: 12 }}>{cp.description}</div>}
+        </>
+      ),
+    },
+    { key: "facilityRef", header: "Facility", render: (cp) => <span className="mono">{cp.facilityRef}</span>, value: (cp) => cp.facilityRef ?? "" },
+    {
+      key: "mandatory", header: "Mandatory", value: (cp) => (cp.mandatory ? "MANDATORY" : "advisory"),
+      render: (cp) => (cp.mandatory ? <Badge kind="warn">MANDATORY</Badge> : <Badge kind="">advisory</Badge>),
+    },
+    {
+      key: "status", header: "Status", value: (cp) => cp.status ?? "",
+      render: (cp) => <Badge kind={cp.status === "CLEARED" ? "ok" : cp.status === "WAIVED" ? "info" : cp.status === "REJECTED" ? "bad" : "warn"}>{cp.status}</Badge>,
+    },
+    {
+      key: "source", header: "Source", value: (cp) => cp.source ?? "",
+      render: (cp) => <Badge kind={cp.source === "TEMPLATE" ? "" : "info"}>{cp.source}</Badge>,
+    },
+    {
+      key: "by", header: "Cleared / waived by", sortable: false,
+      value: (cp) => [cp.clearedBy && `cleared by ${cp.clearedBy}`, cp.waivedBy && `waived by ${cp.waivedBy}`, cp.waivedReason].filter(Boolean).join(" "),
+      render: (cp) => (
+        <span className="muted" style={{ fontSize: 12 }}>
+          {cp.clearedBy && <>cleared by {cp.clearedBy}<br /></>}
+          {cp.waivedBy && <>waived by {cp.waivedBy}<br /></>}
+          {cp.waivedReason && <span className="muted">"{cp.waivedReason}"</span>}
+        </span>
+      ),
+    },
+    {
+      key: "_actions", header: "", sortable: false, filterable: false, csv: false,
+      render: (cp) => cp.status === "OPEN" ? (
+        <div style={{ display: "flex", gap: 4 }}>
+          <Button kind="subtle" onClick={() => togglePanel(`cp-clear:${cp.id}`)}>Clear</Button>
+          <Button kind="ghost" onClick={() => togglePanel(`cp-waive:${cp.id}`)}>Waive</Button>
+        </div>
+      ) : null,
+    },
+  ];
+  const cpForPanel = (prefix: string) =>
+    panel?.startsWith(prefix) ? (register.data ?? []).find((x: any) => String(x.id) === panel.slice(prefix.length)) : null;
+
+  // Drawdown tranche columns. Same panel-below-table pattern as the CP register.
+  const trancheCols: Col<any>[] = [
+    { key: "drawdownNo", header: "#", render: (d) => `#${d.drawdownNo}`, value: (d) => d.drawdownNo ?? 0 },
+    { key: "amount", header: "Amount", render: (d) => <span className="mono">{fmt.money(d.amount, d.currency)}</span>, value: (d) => d.amount ?? 0 },
+    {
+      key: "requested", header: "Requested (orig.)", value: (d) => d.requestedAmount ?? 0,
+      render: (d) => d.fxRate ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span className="mono">{fmt.money(d.requestedAmount, d.requestedCurrency)}</span>
+          <Badge kind="info">FX @ {Number(d.fxRate).toFixed(4)}</Badge>
+        </div>
+      ) : <span className="muted">—</span>,
+    },
+    {
+      key: "status", header: "Status", value: (d) => d.status ?? "",
+      render: (d) => <Badge kind={d.status === "RELEASED" ? "ok" : d.status === "AUTHORIZED" ? "info" : d.status === "REJECTED" || d.status === "CANCELLED" ? "bad" : "warn"}>{d.status}</Badge>,
+    },
+    {
+      key: "actors", header: "Requested · authorised · released", sortable: false,
+      value: (d) => [d.requestedBy, d.authorizedBy, d.releasedBy ?? d.cancelledBy ?? d.rejectedBy].map((x: any) => x ?? "—").join(" · "),
+      render: (d) => (
+        <div className="muted" style={{ fontSize: 12 }}>
+          <div>{d.requestedBy ?? "—"}</div>
+          <div>{d.authorizedBy ?? "—"}</div>
+          <div>{d.releasedBy ?? d.cancelledBy ?? d.rejectedBy ?? "—"}</div>
+        </div>
+      ),
+    },
+    { key: "utilisationRef", header: "Utilisation ref", render: (d) => <span className="mono" style={{ fontSize: 12 }}>{d.utilisationRef ?? "—"}</span>, value: (d) => d.utilisationRef ?? "" },
+    {
+      key: "_actions", header: "", sortable: false, filterable: false, csv: false,
+      render: (d) => (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {d.status === "DRAFT" && (
+            <>
+              <Button kind="primary" onClick={() => authorize(d.id)}>Authorise</Button>
+              <Button kind="subtle" onClick={() => togglePanel(`dd-amend:${d.id}`)}>Amend</Button>
+              <Button kind="ghost" onClick={() => togglePanel(`dd-cancel:${d.id}`)}>Cancel</Button>
+              <Button kind="ghost" onClick={() => togglePanel(`dd-reject:${d.id}`)}>Reject</Button>
+            </>
+          )}
+          {d.status === "AUTHORIZED" && (
+            <>
+              <Button kind="primary" onClick={() => togglePanel(`dd-release:${d.id}`)}>Release</Button>
+              <Button kind="ghost" onClick={() => togglePanel(`dd-cancel:${d.id}`)}>Cancel</Button>
+            </>
+          )}
+          {d.status === "RELEASED" && (
+            <Button kind="ghost" onClick={() => togglePanel(`dd-reverse:${d.id}`)}>Reverse</Button>
+          )}
+        </div>
+      ),
+    },
+  ];
+  const drawForPanel = (prefix: string) =>
+    panel?.startsWith(prefix) ? (history.data ?? []).find((x: any) => String(x.id) === panel.slice(prefix.length)) : null;
+
   return (
     <div className="grid">
       <Card title="Pre-disbursement workflow"
@@ -485,89 +595,35 @@ export default function Disbursement() {
       {ref && (
         <Card title="Conditions Precedent register"
           sub="Seeded from CP_MASTER (by facility type · jurisdiction-overridable). Clear / waive flows with named-human SoD.">
-          {(register.data ?? []).length === 0 ? (
-            <EmptyState glyph="○" title="No CPs yet"
-              sub="Click 'Seed CPs from master' to populate from CP_MASTER, or add a custom item." />
-          ) : (
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Code</th>
-                    <th>Title</th>
-                    <th>Facility</th>
-                    <th>Mandatory</th>
-                    <th>Status</th>
-                    <th>Source</th>
-                    <th>Cleared / waived by</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {(register.data ?? []).map((cp: any) => (
-                    <Fragment key={cp.id}>
-                      <tr>
-                        <td className="mono">{cp.code}</td>
-                        <td>
-                          <div>{cp.title}</div>
-                          {cp.description && (
-                            <div className="muted" style={{ fontSize: 12 }}>{cp.description}</div>
-                          )}
-                        </td>
-                        <td className="mono">{cp.facilityRef}</td>
-                        <td>
-                          {cp.mandatory ? <Badge kind="warn">MANDATORY</Badge>
-                                        : <Badge kind="">advisory</Badge>}
-                        </td>
-                        <td>
-                          <Badge kind={cp.status === "CLEARED" ? "ok"
-                                      : cp.status === "WAIVED" ? "info"
-                                      : cp.status === "REJECTED" ? "bad" : "warn"}>
-                            {cp.status}
-                          </Badge>
-                        </td>
-                        <td>
-                          <Badge kind={cp.source === "TEMPLATE" ? "" : "info"}>
-                            {cp.source}
-                          </Badge>
-                        </td>
-                        <td className="muted" style={{ fontSize: 12 }}>
-                          {cp.clearedBy && <>cleared by {cp.clearedBy}<br /></>}
-                          {cp.waivedBy && <>waived by {cp.waivedBy}<br /></>}
-                          {cp.waivedReason && <span className="muted">"{cp.waivedReason}"</span>}
-                        </td>
-                        <td>
-                          {cp.status === "OPEN" && (
-                            <div style={{ display: "flex", gap: 4 }}>
-                              <Button kind="subtle" onClick={() => togglePanel(`cp-clear:${cp.id}`)}>Clear</Button>
-                              <Button kind="ghost" onClick={() => togglePanel(`cp-waive:${cp.id}`)}>Waive</Button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                      {panel === `cp-clear:${cp.id}` && (
-                        <PanelRow colSpan={8}>
-                          <TextForm title={`Clear ${cp.code} — ${cp.title}`}
-                            label="Evidence reference" placeholder="e.g. DOC-12345"
-                            hint="Optional — reference to the document that satisfies this CP"
-                            submitLabel="Clear CP" busy={panelBusy}
-                            onSubmit={(v) => clearCp(cp.id, v)} onCancel={closePanel} />
-                        </PanelRow>
-                      )}
-                      {panel === `cp-waive:${cp.id}` && (
-                        <PanelRow colSpan={8}>
-                          <TextForm title={`Waive ${cp.code} — a waiver reason is mandatory`}
-                            label="Waiver reason" required multiline
-                            submitLabel="Waive CP" busy={panelBusy}
-                            onSubmit={(v) => waiveCp(cp.id, v)} onCancel={closePanel} />
-                        </PanelRow>
-                      )}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DataTable
+            id="disbursement-cp-register"
+            columns={cpCols}
+            rows={register.data ?? []}
+            rowKey={(cp) => String(cp.id)}
+            empty={
+              <EmptyState glyph="○" title="No CPs yet"
+                sub="Click 'Seed CPs from master' to populate from CP_MASTER, or add a custom item." />
+            }
+          />
+          {(() => {
+            const cp = cpForPanel("cp-clear:");
+            return cp ? (
+              <TextForm title={`Clear ${cp.code} — ${cp.title}`}
+                label="Evidence reference" placeholder="e.g. DOC-12345"
+                hint="Optional — reference to the document that satisfies this CP"
+                submitLabel="Clear CP" busy={panelBusy}
+                onSubmit={(v) => clearCp(cp.id, v)} onCancel={closePanel} />
+            ) : null;
+          })()}
+          {(() => {
+            const cp = cpForPanel("cp-waive:");
+            return cp ? (
+              <TextForm title={`Waive ${cp.code} — a waiver reason is mandatory`}
+                label="Waiver reason" required multiline
+                submitLabel="Waive CP" busy={panelBusy}
+                onSubmit={(v) => waiveCp(cp.id, v)} onCancel={closePanel} />
+            ) : null;
+          })()}
         </Card>
       )}
 
@@ -695,120 +751,61 @@ export default function Disbursement() {
               milestones={milestones.data ?? []} busy={panelBusy}
               onSubmit={requestDraw} onCancel={closePanel} />
           )}
-          {(history.data ?? []).length === 0 ? (
-            <EmptyState glyph="◯" title="No drawdowns yet"
-              sub="Request the first tranche once the gate is open." />
-          ) : (
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Amount</th>
-                    <th>Requested (orig.)</th>
-                    <th>Status</th>
-                    <th>Requested · authorised · released</th>
-                    <th>Utilisation ref</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {(history.data ?? []).map((d: any) => (
-                    <Fragment key={d.id}>
-                      <tr>
-                        <td>#{d.drawdownNo}</td>
-                        <td className="mono">{fmt.money(d.amount, d.currency)}</td>
-                        <td>
-                          {d.fxRate ? (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                              <span className="mono">{fmt.money(d.requestedAmount, d.requestedCurrency)}</span>
-                              <Badge kind="info">FX @ {Number(d.fxRate).toFixed(4)}</Badge>
-                            </div>
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
-                        </td>
-                        <td>
-                          <Badge kind={d.status === "RELEASED" ? "ok"
-                                      : d.status === "AUTHORIZED" ? "info"
-                                      : d.status === "REJECTED" || d.status === "CANCELLED" ? "bad" : "warn"}>
-                            {d.status}
-                          </Badge>
-                        </td>
-                        <td className="muted" style={{ fontSize: 12 }}>
-                          <div>{d.requestedBy ?? "—"}</div>
-                          <div>{d.authorizedBy ?? "—"}</div>
-                          <div>{d.releasedBy ?? d.cancelledBy ?? d.rejectedBy ?? "—"}</div>
-                        </td>
-                        <td className="mono" style={{ fontSize: 12 }}>{d.utilisationRef ?? "—"}</td>
-                        <td>
-                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                            {d.status === "DRAFT" && (
-                              <>
-                                <Button kind="primary" onClick={() => authorize(d.id)}>Authorise</Button>
-                                <Button kind="subtle" onClick={() => togglePanel(`dd-amend:${d.id}`)}>Amend</Button>
-                                <Button kind="ghost" onClick={() => togglePanel(`dd-cancel:${d.id}`)}>Cancel</Button>
-                                <Button kind="ghost" onClick={() => togglePanel(`dd-reject:${d.id}`)}>Reject</Button>
-                              </>
-                            )}
-                            {d.status === "AUTHORIZED" && (
-                              <>
-                                <Button kind="primary" onClick={() => togglePanel(`dd-release:${d.id}`)}>Release</Button>
-                                <Button kind="ghost" onClick={() => togglePanel(`dd-cancel:${d.id}`)}>Cancel</Button>
-                              </>
-                            )}
-                            {d.status === "RELEASED" && (
-                              <Button kind="ghost" onClick={() => togglePanel(`dd-reverse:${d.id}`)}>Reverse</Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                      {panel === `dd-amend:${d.id}` && (
-                        <PanelRow colSpan={7}>
-                          <AmendForm current={d} busy={panelBusy}
-                            onSubmit={(amt, purpose) => amend(d.id, d, amt, purpose)}
-                            onCancel={closePanel} />
-                        </PanelRow>
-                      )}
-                      {panel === `dd-cancel:${d.id}` && (
-                        <PanelRow colSpan={7}>
-                          <TextForm title={`Cancel drawdown #${d.drawdownNo}`}
-                            label="Cancellation reason" required
-                            submitLabel="Cancel drawdown" busy={panelBusy}
-                            onSubmit={(v) => cancel(d.id, v)} onCancel={closePanel} />
-                        </PanelRow>
-                      )}
-                      {panel === `dd-reject:${d.id}` && (
-                        <PanelRow colSpan={7}>
-                          <TextForm title={`Reject drawdown #${d.drawdownNo}`}
-                            label="Rejection reason" required
-                            submitLabel="Reject drawdown" busy={panelBusy}
-                            onSubmit={(v) => reject(d.id, v)} onCancel={closePanel} />
-                        </PanelRow>
-                      )}
-                      {panel === `dd-release:${d.id}` && (
-                        <PanelRow colSpan={7}>
-                          <InlinePanel danger busy={panelBusy}
-                            title={`Release drawdown #${d.drawdownNo} · ${fmt.money(d.amount, d.currency)} — books limit utilisation on the ledger; undo requires a reversal entry`}
-                            submitLabel="Confirm release"
-                            onSubmit={() => release(d.id)} onCancel={closePanel} />
-                        </PanelRow>
-                      )}
-                      {panel === `dd-reverse:${d.id}` && (
-                        <PanelRow colSpan={7}>
-                          <TextForm danger multiline required
-                            title={`Reverse drawdown #${d.drawdownNo} — this undoes the limit booking`}
-                            label="Reversal reason"
-                            submitLabel="Reverse drawdown" busy={panelBusy}
-                            onSubmit={(v) => reverse(d.id, v)} onCancel={closePanel} />
-                        </PanelRow>
-                      )}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DataTable
+            id="disbursement-tranches"
+            columns={trancheCols}
+            rows={history.data ?? []}
+            rowKey={(d) => String(d.id)}
+            empty={
+              <EmptyState glyph="◯" title="No drawdowns yet"
+                sub="Request the first tranche once the gate is open." />
+            }
+          />
+          {(() => {
+            const d = drawForPanel("dd-amend:");
+            return d ? (
+              <AmendForm current={d} busy={panelBusy}
+                onSubmit={(amt, purpose) => amend(d.id, d, amt, purpose)}
+                onCancel={closePanel} />
+            ) : null;
+          })()}
+          {(() => {
+            const d = drawForPanel("dd-cancel:");
+            return d ? (
+              <TextForm title={`Cancel drawdown #${d.drawdownNo}`}
+                label="Cancellation reason" required
+                submitLabel="Cancel drawdown" busy={panelBusy}
+                onSubmit={(v) => cancel(d.id, v)} onCancel={closePanel} />
+            ) : null;
+          })()}
+          {(() => {
+            const d = drawForPanel("dd-reject:");
+            return d ? (
+              <TextForm title={`Reject drawdown #${d.drawdownNo}`}
+                label="Rejection reason" required
+                submitLabel="Reject drawdown" busy={panelBusy}
+                onSubmit={(v) => reject(d.id, v)} onCancel={closePanel} />
+            ) : null;
+          })()}
+          {(() => {
+            const d = drawForPanel("dd-release:");
+            return d ? (
+              <InlinePanel danger busy={panelBusy}
+                title={`Release drawdown #${d.drawdownNo} · ${fmt.money(d.amount, d.currency)} — books limit utilisation on the ledger; undo requires a reversal entry`}
+                submitLabel="Confirm release"
+                onSubmit={() => release(d.id)} onCancel={closePanel} />
+            ) : null;
+          })()}
+          {(() => {
+            const d = drawForPanel("dd-reverse:");
+            return d ? (
+              <TextForm danger multiline required
+                title={`Reverse drawdown #${d.drawdownNo} — this undoes the limit booking`}
+                label="Reversal reason"
+                submitLabel="Reverse drawdown" busy={panelBusy}
+                onSubmit={(v) => reverse(d.id, v)} onCancel={closePanel} />
+            ) : null;
+          })()}
         </Card>
       )}
 

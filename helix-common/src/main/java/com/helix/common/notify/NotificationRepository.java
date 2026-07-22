@@ -29,4 +29,10 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     /** Unread rows, newest first — the recipient/role scope (JSON list columns) is filtered in code. */
     List<Notification> findByReadAtIsNullOrderByIdDesc();
+
+    /** Resolve the row carrying a live approve token by its SHA-256 hash (email-actionable approval). */
+    Optional<Notification> findByApproveTokenHash(String approveTokenHash);
+
+    /** Resolve the row carrying a live reject token by its SHA-256 hash (email-actionable approval). */
+    Optional<Notification> findByRejectTokenHash(String rejectTokenHash);
 }

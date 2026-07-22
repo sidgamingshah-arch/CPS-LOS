@@ -1232,3 +1232,167 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .cmp-yes { color: #136b24; font-weight: 700; }
 .cmp-no { color: var(--muted-soft); }
 
+
+/* ---- Banking ASR (account statement review) ---- */
+.asr-note { font-size: 12.5px; color: var(--ocean-7); margin-bottom: 12px; line-height: 1.5; }
+.asr-summary { line-height: 1.55; }
+.asr-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 10px; }
+.asr-lines-head { display: flex; justify-content: space-between; align-items: center; margin: 14px 0 8px; }
+.asr-lines { display: grid; gap: 12px; margin-bottom: 14px; }
+.asr-line { border: 1px solid var(--hairline); border-radius: var(--r-sm); padding: 10px 12px; background: var(--canvas); }
+.asr-line-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.asr-month { font-weight: 600; max-width: 140px; }
+.asr-line-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; }
+.asr-line-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--ocean-7); text-transform: uppercase; letter-spacing: .04em; }
+.asr-line-grid input { font-size: 13px; }
+button.btn.small { padding: 3px 10px; font-size: 12px; }
+.asr-month-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.asr-month-table th, .asr-month-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--hairline); }
+.asr-month-table th { color: var(--ocean-7); font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+.asr-confirmed { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ocean-7); }
+/* ---- CAM annexures (U2) ---- */
+.anx-section { display: flex; flex-direction: column; gap: 4px; }
+.anx-section .lbl { font-size: 12px; font-weight: 600; color: var(--muted); }
+.anx-sec-label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.anx-ai-row {
+  display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border);
+}
+.anx-ai-row .sub { font-size: 12px; color: var(--muted-soft); }
+
+/* ---- Independent Risk Note (CLoM R1-13) narrative ---- */
+.rn-narrative .rn-section { margin-bottom: 14px; }
+.rn-narrative .rn-section:last-child { margin-bottom: 0; }
+.rn-narrative .rn-section h4 { margin: 0 0 4px; font-size: 13px; letter-spacing: .02em; }
+.rn-narrative .rn-section p { white-space: pre-wrap; margin: 0; }
+/* ── Document Execution workflow + signatory matrix (CLoM R1-14 / F73-F74) ── */
+.exec-gate {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 10px; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--human-soft, var(--surface-soft)); font-size: 12.5px; color: var(--muted);
+}
+.exec-stepper { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.exec-step {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600;
+  color: var(--muted-soft); letter-spacing: .02em;
+}
+.exec-step.done { color: var(--ink); }
+.exec-step.current {
+  padding: 2px 9px; border-radius: var(--r-pill); background: var(--ocean-8); color: #fff;
+}
+.exec-step-sep { color: var(--muted-soft); margin-right: 4px; font-weight: 400; }
+.exec-matrix-title { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.exec-add-sig { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+/* ============================================================================
+   Document Comparison (CLoM F57) — deterministic incremental-change diff.
+   Change-type accents: ADDED (green) · REMOVED (red) · CHANGED (amber) ·
+   UNCHANGED (neutral). Read-only over the sources.
+   ============================================================================ */
+.cmp-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+.cmp-controls label.field { min-width: 260px; flex: 1 1 260px; }
+.cmp-controls button.btn { flex: 0 0 auto; }
+
+.cmp-summary { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.cmp-diff { width: 100%; border-collapse: collapse; }
+.cmp-diff th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 6px 10px; border-bottom: 1px solid var(--hairline); }
+.cmp-diff td { padding: 8px 10px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+.cmp-diff tr:hover td { background: var(--surface-soft); }
+.cmp-section { font-weight: 600; color: var(--ink); }
+.cmp-diff tr.cmp-row { border-left: 3px solid transparent; }
+.cmp-diff tr.cmp-added td:first-child   { box-shadow: inset 3px 0 0 var(--up); }
+.cmp-diff tr.cmp-removed td:first-child { box-shadow: inset 3px 0 0 var(--down); }
+.cmp-diff tr.cmp-changed td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+
+.cmp-sxs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .cmp-sxs { grid-template-columns: 1fr; } }
+.cmp-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cmp-col-head { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding-bottom: 6px; border-bottom: 1px solid var(--hairline); }
+
+.cmp-pane { border: 1px solid var(--hairline); border-radius: var(--r-md); overflow: hidden; }
+.cmp-pane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; background: var(--surface-soft); border-bottom: 1px solid var(--hairline); }
+.cmp-pane-title { font-weight: 600; font-size: 12.5px; color: var(--ink); }
+.cmp-body { margin: 0; padding: 10px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; background: var(--canvas); }
+.cmp-pane.cmp-added   { border-color: var(--up); background: rgba(27,141,47,.04); }
+.cmp-pane.cmp-removed { border-color: var(--down); background: rgba(178,0,35,.04); }
+.cmp-pane.cmp-changed { border-color: var(--warn); background: rgba(157,87,0,.05); }
+
+.cmp-history { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.cmp-history th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 6px 10px; border-bottom: 1px solid var(--hairline); }
+.cmp-history td { padding: 7px 10px; border-bottom: 1px solid var(--hairline); }
+.cmp-open { color: var(--det); cursor: pointer; font-weight: 600; }
+.cmp-open:hover { text-decoration: underline; }
+
+/* email-actionable approve/reject (CLoM F12) */
+.notif-action { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border, #d8dee3); }
+/* ============================================================================
+   DataTable inline cell editing (CLoM F5). Opt-in per column via `editable` +
+   the table's `onCellSave`; inert (nothing here applies) unless a cell opts in,
+   so existing tables stay visually identical. Appended section.
+   ============================================================================ */
+.dt-cell-edit { cursor: text; }
+.dt-edit-trigger {
+  display: inline-flex; align-items: center; gap: 6px; cursor: text;
+  border-radius: var(--r-sm); outline: none;
+}
+.dt-edit-trigger:focus-visible { box-shadow: 0 0 0 2px var(--ocean-8); }
+.dt-edit-pencil { opacity: 0; font-size: 11px; color: var(--muted); transition: opacity .12s ease; }
+.dt-cell-edit:hover .dt-edit-pencil,
+.dt-edit-trigger:focus-visible .dt-edit-pencil { opacity: .7; }
+.dt-edit { display: inline-flex; flex-direction: column; gap: 3px; min-width: 90px; }
+.dt-edit-input {
+  padding: 4px 8px; font: inherit; font-size: 12.5px; width: 100%;
+  border: 1px solid var(--ocean-8); border-radius: var(--r-sm);
+  background: var(--canvas); color: var(--ink);
+}
+.dt-edit-input:focus { outline: none; box-shadow: 0 0 0 2px var(--light-blue-soft); }
+.dt-edit.has-error .dt-edit-input { border-color: var(--bad); }
+.dt-edit.busy .dt-edit-input { opacity: .6; }
+.dt-edit-err { font-size: 11px; color: var(--bad); }
+.dt-edit-spin {
+  width: 12px; height: 12px; border-radius: 50%; align-self: flex-start;
+  border: 2px solid var(--hairline); border-top-color: var(--ocean-8);
+  animation: dt-edit-spin .6s linear infinite;
+}
+@keyframes dt-edit-spin { to { transform: rotate(360deg); } }
+
+/* selected row marker for DataTable adoptions that had a click-to-select row */
+.dt-table tr.dt-row-selected > td { background: var(--surface-soft); }
+
+/* global / combined cash-flow (relationship consolidated debt-service) */
+.gcf-stats { margin-bottom: 10px; }
+.gcf-formula {
+  padding: 10px 14px; border-radius: var(--r-md); border: 1px dashed var(--hairline);
+  background: var(--det-soft); color: var(--muted); font-size: 12.5px; margin-bottom: 8px;
+}
+.gcf-formula .mono { color: var(--text); }
+.gcf-warn {
+  padding: 8px 12px; border-radius: var(--r-md); border: 1px solid var(--hairline);
+  background: var(--surface-soft); font-size: 12px; margin-bottom: 8px;
+}
+.gcf-warn ul { margin: 4px 0 0; padding-left: 18px; }
+.gcf-note { margin-top: 10px; font-size: 11.5px; color: var(--muted-soft); }
+/* ---- unified exception / tickler register (U7) ---- */
+.exc-warnings {
+  border: 1px solid var(--warn, #b7791f);
+  background: rgba(183, 121, 31, .08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.exc-warnings ul { margin: 6px 0 0; padding-left: 18px; }
+.exc-warnings li { margin: 2px 0; color: var(--muted); }
+.exc-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+/* U9: role-dashboard "view my team" scope toggle + field-access note */
+.team-scope-bar {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; border: 1px solid var(--line, #e2e6ea);
+  border-radius: 8px; background: var(--panel, #fff);
+}
+.team-scope-note { font-size: 12px; }
+

@@ -187,6 +187,18 @@ export const fieldPolicy = {
     call<{ formKey: string; fields: any[] }>(`/origination/api/field-policy/${formKey}`, "GET"),
 };
 
+// ---- field-level access control (FIELD_ACCESS, helix-common auto-exposed; U9) ----
+// Field -> READ|WRITE|HIDDEN for a form + role. DEFAULT-PERMISSIVE: an unmapped form/role
+// returns an empty map = full access. Read via workflow-service (has config-service.base-url,
+// so the FieldAccessService bean is live there); server-side enforce() is the real gate.
+export const fieldAccess = {
+  get: (formKey: string, role?: string) =>
+    call<{ formKey: string; role: string | null; fields: Record<string, string> }>(
+      `/workflow/api/field-access/${encodeURIComponent(formKey)}${role ? `?role=${encodeURIComponent(role)}` : ""}`,
+      "GET",
+    ),
+};
+
 // ---- risk ----
 export const risk = {
   summary: (ref: string) => call<any>(`/risk/api/risk/${ref}`, "GET"),
@@ -214,6 +226,32 @@ export const risk = {
     segment?: string; jurisdiction?: string; scoreBand?: string;
   }) => call<{ matchedRuleId: string; requireApproval: boolean; requiredAuthority: string | null }>(
     "/risk/api/risk/scoring-approval/simulate", "POST", body),
+};
+
+// ---- independent risk note (risk-function opinion record; advisory, own lifecycle) ----
+export const riskNotes = {
+  list: (subjectRef?: string) =>
+    call<any[]>(`/risk/api/risk-notes${subjectRef ? `?subjectRef=${encodeURIComponent(subjectRef)}` : ""}`, "GET"),
+  get: (ref: string) => call<any>(`/risk/api/risk-notes/${ref}`, "GET"),
+  create: (body: { subjectRef: string; sections?: Record<string, string>; recommendedAction?: string }, actor: string) =>
+    call<any>("/risk/api/risk-notes", "POST", body, actor),
+  updateSections: (
+    ref: string,
+    body: { sections?: Record<string, string>; aiDraft?: boolean; recommendedAction?: string },
+    actor: string,
+  ) => call<any>(`/risk/api/risk-notes/${ref}/sections`, "PUT", body, actor),
+  submit: (ref: string, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/submit`, "POST", undefined, actor),
+  review: (ref: string, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/review`, "POST", undefined, actor),
+  approve: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/approve`, "POST", { note }, actor),
+  reject: (ref: string, reason: string, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/reject`, "POST", { reason }, actor),
+  reassign: (ref: string, toActor: string, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/reassign`, "POST", { toActor }, actor),
+  reverse: (ref: string, reason: string, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/reverse`, "POST", { reason }, actor),
 };
 
 // ---- configurable scoring-model engine (sections of typed questions; advisory composite) ----
@@ -399,6 +437,54 @@ export const coi = {
   ) => call<any>("/decision/api/coi", "POST", body, actor),
 };
 
+// ---- CAM annexures (master-driven authoring artifacts attached to a deal/proposal) ----
+export const annexures = {
+  list: (q?: { subjectRef?: string; status?: string; type?: string }) => {
+    const p = new URLSearchParams();
+    if (q?.subjectRef) p.set("subjectRef", q.subjectRef);
+    if (q?.status) p.set("status", q.status);
+    if (q?.type) p.set("type", q.type);
+    const qs = p.toString();
+    return call<any[]>("/decision/api/annexures" + (qs ? `?${qs}` : ""), "GET");
+  },
+  get: (ref: string) => call<any>(`/decision/api/annexures/${ref}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/decision/api/annexures", "POST", body, actor),
+  updateSections: (ref: string, body: { sections?: any; aiDraft?: boolean; hint?: string }, actor: string) =>
+    call<any>(`/decision/api/annexures/${ref}/sections`, "PUT", body, actor),
+  submit: (ref: string, actor: string) =>
+    call<any>(`/decision/api/annexures/${ref}/submit`, "POST", undefined, actor),
+  review: (ref: string, notes: string, actor: string) =>
+    call<any>(`/decision/api/annexures/${ref}/review`, "POST", { notes }, actor),
+  approve: (ref: string, notes: string, actor: string) =>
+    call<any>(`/decision/api/annexures/${ref}/approve`, "POST", { notes }, actor),
+  reject: (ref: string, reason: string, actor: string) =>
+    call<any>(`/decision/api/annexures/${ref}/reject`, "POST", { reason }, actor),
+};
+// ---- document comparison / incremental-change diff (CLoM F57) ----
+// Deterministic, read-only structured comparison of two versioned artifacts already in
+// decision-service: two credit-proposal versions (leftRef/rightRef = version numbers) or two
+// generated-document versions (leftRef/rightRef = document ids). Returns a change table
+// (ADDED/REMOVED/CHANGED/UNCHANGED). Never mutates either source.
+export type DiffRow = {
+  section: string; changeType: "ADDED" | "REMOVED" | "CHANGED" | "UNCHANGED";
+  oldValue: string | null; newValue: string | null;
+};
+export type Comparison = {
+  comparisonRef: string; kind: string; subjectRef: string;
+  leftRef: string; rightRef: string; leftLabel: string; rightLabel: string;
+  added: number; removed: number; changed: number; unchanged: number;
+  advisory: boolean; createdBy: string; createdAt: string; diff: DiffRow[];
+};
+export const docCompare = {
+  list: (subjectRef: string) =>
+    call<Comparison[]>(`/decision/api/doc-compare?subjectRef=${encodeURIComponent(subjectRef)}`, "GET"),
+  get: (comparisonRef: string) => call<Comparison>(`/decision/api/doc-compare/${comparisonRef}`, "GET"),
+  compare: (
+    body: { kind: string; subjectRef: string; leftRef: string; rightRef: string },
+    actor: string,
+  ) => call<Comparison>("/decision/api/doc-compare", "POST", body, actor),
+};
+
 // ---- notings (governed decision records: TOD, CAM note, product paper, deferrals, …) ----
 export const notings = {
   list: (params?: { subjectRef?: string; status?: string; type?: string }) => {
@@ -488,6 +574,24 @@ export const cap = {
   sweep: (actor: string) => call<any>("/portfolio/api/cap/sweep", "POST", undefined, actor),
 };
 
+// ---- unified exception / tickler register (U7) ----
+export const exceptions = {
+  rollup: (subjectRef?: string) =>
+    call<any>("/portfolio/api/exceptions/rollup" + (subjectRef ? `?subjectRef=${encodeURIComponent(subjectRef)}` : ""), "GET"),
+  ticklers: (q?: { status?: string; subjectRef?: string }) => {
+    const p = new URLSearchParams();
+    if (q?.status) p.set("status", q.status);
+    if (q?.subjectRef) p.set("subjectRef", q.subjectRef);
+    const qs = p.toString();
+    return call<any[]>("/portfolio/api/exceptions/ticklers" + (qs ? `?${qs}` : ""), "GET");
+  },
+  create: (body: any, actor: string) => call<any>("/portfolio/api/exceptions/ticklers", "POST", body, actor),
+  assign: (ref: string, toActor: string, actor: string) =>
+    call<any>(`/portfolio/api/exceptions/ticklers/${ref}/assign`, "POST", { toActor }, actor),
+  resolve: (ref: string, note: string, actor: string) =>
+    call<any>(`/portfolio/api/exceptions/ticklers/${ref}/resolve`, "POST", { note }, actor),
+};
+
 // ---- monitoring artifacts (post-disbursement; ONE lifecycle, master-driven) ----
 export const monitoringArtifacts = {
   list: (q?: { subjectRef?: string; status?: string; type?: string }) => {
@@ -530,6 +634,16 @@ export const escrow = {
   budgetVsActual: (ref: string) => call<any>(`/portfolio/api/escrow/accounts/${ref}/budget-vs-actual`, "GET"),
 };
 
+// ---- global / combined cash-flow (relationship consolidated debt-service; deterministic) ----
+export const globalCashflow = {
+  list: (groupReference?: string) =>
+    call<any[]>("/portfolio/api/portfolio/global-cashflow"
+      + (groupReference ? `?groupReference=${encodeURIComponent(groupReference)}` : ""), "GET"),
+  get: (gcfRef: string) => call<any>(`/portfolio/api/portfolio/global-cashflow/${gcfRef}`, "GET"),
+  assemble: (groupReference: string, actor: string) =>
+    call<any>("/portfolio/api/portfolio/global-cashflow", "POST", { groupReference }, actor),
+};
+
 // ---- CAD ----
 export const cad = {
   initiate: (body: any, actor: string) => call<any>("/decision/api/cad/cases", "POST", body, actor),
@@ -560,6 +674,24 @@ export const perfection = {
     call<any>(`/decision/api/perfection/cases/${perfRef}/steps/${stepKey}/waive`, "POST", body, actor),
   vendorRfq: (perfRef: string, stepKey: string, body: any, actor: string) =>
     call<any>(`/decision/api/perfection/cases/${perfRef}/steps/${stepKey}/vendor-rfq`, "POST", body, actor),
+};
+
+// ---- document execution workflow + signatory matrix (CLoM R1-14 / F73-F74) ----
+export const execution = {
+  list: (subjectRef?: string) =>
+    call<any[]>("/decision/api/execution/packages" + (subjectRef ? `?subjectRef=${encodeURIComponent(subjectRef)}` : ""), "GET"),
+  view: (execRef: string) => call<any>(`/decision/api/execution/packages/${execRef}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/decision/api/execution/packages", "POST", body, actor),
+  addSignatory: (execRef: string, docId: number, body: any, actor: string) =>
+    call<any>(`/decision/api/execution/packages/${execRef}/documents/${docId}/signatories`, "POST", body, actor),
+  sign: (execRef: string, docId: number, sigId: number, actor: string) =>
+    call<any>(`/decision/api/execution/packages/${execRef}/documents/${docId}/signatories/${sigId}/sign`, "POST", undefined, actor),
+  setStatus: (execRef: string, docId: number, body: any, actor: string) =>
+    call<any>(`/decision/api/execution/packages/${execRef}/documents/${docId}/status`, "POST", body, actor),
+  defer: (execRef: string, docId: number, body: any, actor: string) =>
+    call<any>(`/decision/api/execution/packages/${execRef}/documents/${docId}/defer`, "POST", body, actor),
+  waive: (execRef: string, docId: number, body: any, actor: string) =>
+    call<any>(`/decision/api/execution/packages/${execRef}/documents/${docId}/waive`, "POST", body, actor),
 };
 
 // ---- MER (monitoring of exceptions & renewals) ----
@@ -929,6 +1061,11 @@ export const notifications = {
     call<{ read: number }>(
       `/${svc}/api/notifications/read-all` + (recipient ? `?recipient=${encodeURIComponent(recipient)}` : ""),
       "POST", undefined, actor),
+  // ---- email-actionable approve/reject (CLoM F12) ----
+  // The addressed recipient records a decision from the one-time link carried in the body.
+  // `token` is the sole credential (single-use); a replayed/unknown token is a 403.
+  action: (svc: string, token: string, comment: string, actor: string) =>
+    call<any>(`/${svc}/api/notifications/action/${encodeURIComponent(token)}`, "POST", { comment }, actor),
 };
 
 /** Currency symbol per ISO code; falls back to the code itself for anything unmapped. */
@@ -1012,6 +1149,18 @@ export const ipNotes = {
     call<any>(`/origination/api/ip-notes/${ref}/convert`, "POST", undefined, actor),
 };
 
+// ---- Banking ASR (account statement review) — deterministic conduct metrics + advisory summary ----
+export const bankingAsr = {
+  list: (applicationRef?: string) =>
+    call<any[]>(`/origination/api/banking-asr${applicationRef ? `?applicationRef=${encodeURIComponent(applicationRef)}` : ""}`, "GET"),
+  get: (asrRef: string) => call<any>(`/origination/api/banking-asr/${asrRef}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/origination/api/banking-asr", "POST", body, actor),
+  summary: (asrRef: string, actor: string) =>
+    call<any>(`/origination/api/banking-asr/${asrRef}/summary`, "POST", undefined, actor),
+  confirm: (asrRef: string, note: string | undefined, actor: string) =>
+    call<any>(`/origination/api/banking-asr/${asrRef}/confirm`, "POST", { note }, actor),
+};
+
 // ---- TAT / MIS reporting over the case & query operational data (deterministic, read-only) ----
 export const tatMis = {
   // Cycle-time / SLA / rework / throughput aggregations over WorkItem + WorkItemEvent.
@@ -1034,8 +1183,12 @@ export const tatMis = {
 // ---- case-management tasks (WorkItem inbox; workflow-service /api/tasks) ----
 // Read-only surfaces used by the role-scoped landing dashboards ("my tasks").
 export const tasks = {
-  inbox: (assignee: string) =>
-    call<any[]>(`/workflow/api/tasks/inbox?assignee=${encodeURIComponent(assignee)}`, "GET"),
+  // scope: undefined/"self" -> own inbox (byte-identical to pre-U9). "team" folds in the
+  // caller's subordinates (USER_HIERARCHY); pass `actor` so the X-Actor is the supervisor.
+  inbox: (assignee: string, scope?: "self" | "team", actor?: string) =>
+    call<any[]>(
+      `/workflow/api/tasks/inbox?assignee=${encodeURIComponent(assignee)}${scope ? `&scope=${scope}` : ""}`,
+      "GET", undefined, actor),
   queue: (key: string) =>
     call<any[]>(`/workflow/api/tasks/queue/${encodeURIComponent(key)}`, "GET"),
   subject: (ref: string, type?: string) =>
@@ -1120,4 +1273,52 @@ export const printing = {
       notify?.(e?.message ?? "Print render failed", true);
     }
   },
+
+  // ---- Word / Excel / CSV office output (same print endpoints, ?format=) ----
+  // The office formats are served as an attachment (Content-Disposition), so we fetch the
+  // body as a Blob and trigger a browser download using the server-supplied filename. The
+  // request forwards the auth token + X-Actor (persisted as a DOCUMENT_RENDERED audit event);
+  // the source artifact is never mutated by a render.
+  downloadFile: async (
+    path: string,
+    actor: string,
+    notify?: (m: string, err?: boolean) => void,
+  ): Promise<void> => {
+    try {
+      const headers: Record<string, string> = { "X-Actor": actor };
+      if (authToken) headers["Authorization"] = "Bearer " + authToken;
+      const res = await fetch(GATEWAY + path, { method: "GET", headers });
+      if (!res.ok) throw new Error((await res.text()) || res.statusText || "Download failed");
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename="?([^"]+)"?/.exec(cd);
+      const filename = m ? m[1] : "helix-download";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: any) {
+      notify?.(e?.message ?? "Download failed", true);
+    }
+  },
+  // Download a generated document as Word (.rtf) / Excel (.xls SpreadsheetML) / CSV.
+  downloadDocument: (
+    id: number,
+    format: "rtf" | "xlsx" | "csv",
+    actor: string,
+    notify?: (m: string, err?: boolean) => void,
+  ) => printing.downloadFile(`/decision/api/docs/${id}/print?format=${format}`, actor, notify),
+  // Download the latest credit proposal as Word (.rtf) / Excel (.xls SpreadsheetML) / CSV.
+  downloadProposal: (
+    ref: string,
+    format: "rtf" | "xlsx" | "csv",
+    actor: string,
+    notify?: (m: string, err?: boolean) => void,
+  ) => printing.downloadFile(
+    `/decision/api/decisions/${encodeURIComponent(ref)}/credit-proposal/print?format=${format}`,
+    actor, notify),
 };

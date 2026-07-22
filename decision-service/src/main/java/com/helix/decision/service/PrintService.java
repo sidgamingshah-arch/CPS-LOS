@@ -1,27 +1,39 @@
 package com.helix.decision.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.web.ApiException;
 import com.helix.decision.entity.CreditProposal;
 import com.helix.decision.entity.GeneratedDocument;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.Map;
 
 /**
- * Print / PDF rendering for the confirmed credit artifacts (credit proposal,
+ * Print / office rendering for the confirmed credit artifacts (credit proposal,
  * sanction letter, generated documents). This is a <b>pure rendering</b> path — it
  * takes an artifact that has <em>already</em> been generated (and, for documents,
- * human-confirmed via the existing confirm-lock) and wraps its authoritative HTML
- * body, verbatim, in a self-contained, print-optimised standalone HTML page
- * (letterhead, governance header, {@code @media print} page-break styling).
+ * human-confirmed via the existing confirm-lock) and re-emits its authoritative body
+ * in the requested output format:
  *
- * <p>Dependency-free by design: rather than pull a heavy or copyleft HTML→PDF
- * library into the reactor, we emit a standalone print document that the browser
- * turns into a PDF via its native print-to-PDF (the frontend opens the page and
- * calls {@code window.print()}). No figure is recomputed and no source artifact is
- * mutated — the artifact entities are loaded through the owning services'
- * read-only transactions and are never re-saved here; the only write is an
+ * <ul>
+ *   <li>the default (no {@code format}, or {@code html}) — a self-contained,
+ *       print-optimised standalone HTML page (letterhead, governance header,
+ *       {@code @media print} page-break styling) that the browser turns into a PDF via
+ *       its native print-to-PDF. This path is <b>byte-identical</b> to the pre-existing
+ *       behaviour;</li>
+ *   <li>{@code rtf} — a Word-openable RTF document;</li>
+ *   <li>{@code xlsx} — a SpreadsheetML 2003 XML workbook (Excel-openable, no zip/OOXML
+ *       library) of the artifact's tabular content;</li>
+ *   <li>{@code csv} — the tabular content as CSV (formula-injection guarded).</li>
+ * </ul>
+ *
+ * <p>Dependency-free by design (see {@link OfficeRenderer}). No figure is recomputed and
+ * no source artifact is mutated — the artifact entities are loaded through the owning
+ * services' read-only transactions and are never re-saved here; the only write is an
  * append-only {@code *_RENDERED} audit event in this render's own transaction.
  */
 @Service
@@ -37,20 +49,131 @@ public class PrintService {
         this.audit = audit;
     }
 
+    /** The output formats a print endpoint can serve. HTML is the default (byte-identical). */
+    private enum Fmt {HTML, RTF, XLSX, CSV}
+
+    /**
+     * Resolve the {@code ?format=} query value. Absent / blank / {@code html} → the existing
+     * HTML behaviour; {@code rtf|doc|docx|word} → RTF; {@code xlsx|xls|excel|spreadsheet} →
+     * SpreadsheetML; {@code csv} → CSV; anything else → 400 (never a silent HTML fallback that
+     * would surprise a caller who asked for a specific format).
+     */
+    private static Fmt parse(String format) {
+        if (format == null || format.isBlank() || "html".equalsIgnoreCase(format)) return Fmt.HTML;
+        return switch (format.trim().toLowerCase()) {
+            case "rtf", "doc", "docx", "word" -> Fmt.RTF;
+            case "xlsx", "xls", "excel", "spreadsheet", "spreadsheetml" -> Fmt.XLSX;
+            case "csv" -> Fmt.CSV;
+            default -> throw ApiException.badRequest("Unsupported print format: " + format);
+        };
+    }
+
     // ------------------------------------------------------------- generated document / sanction letter
 
     /**
-     * Renders a generated document (facility letter, sanction letter, …) to a
-     * print-optimised standalone HTML page. The document body is reproduced
-     * verbatim from {@link GeneratedDocument#getHtml()} — the authoritative,
-     * already-assembled (and, once confirmed, locked) content.
+     * Renders a generated document (facility letter, sanction letter, …) in the requested
+     * format. The HTML default reproduces {@link GeneratedDocument#getHtml()} verbatim in a
+     * print-optimised standalone page (unchanged behaviour); the office formats re-emit the
+     * same authoritative body as RTF / SpreadsheetML / CSV. Unknown id → 404.
      */
-    public String renderDocument(Long id, String actor) {
-        // docGen.get(...) runs in DocGenService's own read-only transaction, so the
-        // entity comes back detached — building the page can never dirty-flush it.
+    public ResponseEntity<String> renderDocument(Long id, String format, String actor) {
+        Fmt fmt = parse(format);
+        // docGen.get(...) runs in DocGenService's own read-only transaction, so the entity
+        // comes back detached — building the output can never dirty-flush it. Unknown → 404.
         GeneratedDocument d = docGen.get(id);
-        boolean confirmed = "CONFIRMED".equals(d.getStatus()) || "ISSUED".equals(d.getStatus());
 
+        if (fmt == Fmt.HTML) {
+            boolean confirmed = "CONFIRMED".equals(d.getStatus()) || "ISSUED".equals(d.getStatus());
+            String html = documentHtml(d, confirmed);
+            audit.human(actor, "DOCUMENT_RENDERED", "GeneratedDocument", String.valueOf(id),
+                    "Rendered %s (%s) to print/PDF view".formatted(d.getTitle(), d.getStatus()),
+                    Map.of("templateKey", d.getTemplateKey(), "status", d.getStatus(),
+                            "confirmed", confirmed, "rendering", true));
+            return htmlResponse(html);
+        }
+
+        String base = sanitizeFilename(nb(d.getTemplateKey(), "document") + "-" + id);
+        Office office = office(fmt, "Document", d.getTitle(), d.getHtml(), base);
+        audit.human(actor, "DOCUMENT_RENDERED", "GeneratedDocument", String.valueOf(id),
+                "Rendered %s (%s) to %s".formatted(d.getTitle(), d.getStatus(), fmt.name().toLowerCase()),
+                Map.of("templateKey", d.getTemplateKey(), "status", d.getStatus(),
+                        "format", fmt.name().toLowerCase(), "rendering", true));
+        return officeResponse(office);
+    }
+
+    // ------------------------------------------------------------- credit proposal
+
+    /**
+     * Renders the latest credit proposal for an application in the requested format. The HTML
+     * default reproduces {@link CreditProposal#getHtml()} verbatim in a print-optimised
+     * standalone page (unchanged behaviour, stamped {@code CREDIT_PROPOSAL_RENDERED}); the
+     * office formats re-emit the same authoritative body as RTF / SpreadsheetML / CSV (stamped
+     * {@code DOCUMENT_RENDERED}). Unknown reference → 404.
+     */
+    public ResponseEntity<String> renderProposal(String reference, String format, String actor) {
+        Fmt fmt = parse(format);
+        // proposals.latest(...) runs read-only in CreditProposalService. Unknown → 404.
+        CreditProposal p = proposals.latest(reference);
+        String title = "Credit proposal · " + reference + " (v" + p.getVersion() + ")";
+
+        if (fmt == Fmt.HTML) {
+            String html = proposalHtml(reference, p, title);
+            audit.human(actor, "CREDIT_PROPOSAL_RENDERED", "Application", reference,
+                    "Rendered credit proposal v%d to print/PDF view".formatted(p.getVersion()),
+                    Map.of("version", p.getVersion(), "rendering", true));
+            return htmlResponse(html);
+        }
+
+        String base = sanitizeFilename("credit-proposal-" + reference + "-v" + p.getVersion());
+        Office office = office(fmt, "Credit proposal", title, p.getHtml(), base);
+        audit.human(actor, "DOCUMENT_RENDERED", "Application", reference,
+                "Rendered credit proposal v%d to %s".formatted(p.getVersion(), fmt.name().toLowerCase()),
+                Map.of("version", p.getVersion(), "artifact", "CreditProposal",
+                        "format", fmt.name().toLowerCase(), "rendering", true));
+        return officeResponse(office);
+    }
+
+    // ------------------------------------------------------------- office assembly
+
+    /** A rendered office body plus the response metadata (content type + download filename). */
+    private record Office(String body, MediaType contentType, String filename) {
+    }
+
+    private static Office office(Fmt fmt, String sheetName, String title, String html, String base) {
+        return switch (fmt) {
+            case RTF -> new Office(OfficeRenderer.rtf(title, html),
+                    MediaType.parseMediaType("application/rtf"), base + ".rtf");
+            // SpreadsheetML 2003 XML — Excel-openable via the mso-application PI; named .xls (it
+            // is NOT a zipped OOXML .xlsx, so a .xlsx name would make Excel reject it).
+            case XLSX -> new Office(OfficeRenderer.spreadsheetXml(sheetName, title, html),
+                    MediaType.parseMediaType("application/vnd.ms-excel"), base + ".xls");
+            case CSV -> new Office(OfficeRenderer.csv(html),
+                    MediaType.parseMediaType("text/csv; charset=utf-8"), base + ".csv");
+            case HTML -> throw new IllegalStateException("HTML handled on the caller path");
+        };
+    }
+
+    // A rendered credit artifact carries authoritative (and possibly sensitive) figures — it must
+    // never be persisted by a shared/intermediary cache or the browser's disk cache.
+    private ResponseEntity<String> htmlResponse(String html) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .contentType(MediaType.TEXT_HTML)
+                .body(html);
+    }
+
+    private ResponseEntity<String> officeResponse(Office office) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + office.filename() + "\"")
+                .contentType(office.contentType())
+                .body(office.body());
+    }
+
+    // ------------------------------------------------------------- HTML assembly (unchanged output)
+
+    /** Assemble the print-optimised standalone HTML for a generated document (byte-identical). */
+    private String documentHtml(GeneratedDocument d, boolean confirmed) {
         StringBuilder gov = new StringBuilder();
         if (d.isAdvisory() && !confirmed) {
             gov.append(chip("ai", "AI-DRAFTED &middot; ADVISORY"));
@@ -77,27 +200,11 @@ public class PrintService {
                 ? "AI ASSEMBLES &rarr; HUMAN CONFIRMS &rarr; RENDERED (figures unchanged)"
                 : "AI ASSEMBLES &rarr; awaiting HUMAN CONFIRM";
 
-        String html = standalone(d.getTitle(), gov.toString(), meta.toString(), flow, d.getHtml());
-
-        audit.human(actor, "DOCUMENT_RENDERED", "GeneratedDocument", String.valueOf(id),
-                "Rendered %s (%s) to print/PDF view".formatted(d.getTitle(), d.getStatus()),
-                Map.of("templateKey", d.getTemplateKey(), "status", d.getStatus(),
-                        "confirmed", confirmed, "rendering", true));
-        return html;
+        return standalone(d.getTitle(), gov.toString(), meta.toString(), flow, d.getHtml());
     }
 
-    // ------------------------------------------------------------- credit proposal
-
-    /**
-     * Renders the latest credit proposal for an application to a print-optimised
-     * standalone HTML page. The body is reproduced verbatim from
-     * {@link CreditProposal#getHtml()} — every figure was already quoted from a
-     * platform service; nothing is recomputed here.
-     */
-    public String renderProposal(String reference, String actor) {
-        // proposals.latest(...) runs read-only in CreditProposalService.
-        CreditProposal p = proposals.latest(reference);
-
+    /** Assemble the print-optimised standalone HTML for a credit proposal (byte-identical). */
+    private String proposalHtml(String reference, CreditProposal p, String title) {
         String gov = chip("ai", "AI-ASSEMBLED &middot; GROUNDED")
                 + chip("human", "HUMAN SIGNS")
                 + chip("det", "DETERMINISTIC FIGURES &middot; QUOTED VERBATIM");
@@ -111,22 +218,14 @@ public class PrintService {
                 + "no number is invented or recomputed by this rendering. A named human at the required "
                 + "authority signs the proposal — AI cannot approve.</div>");
 
-        String title = "Credit proposal · " + reference + " (v" + p.getVersion() + ")";
-        String html = standalone(title, gov, meta.toString(),
+        return standalone(title, gov, meta.toString(),
                 "AI ASSEMBLES (grounded) &rarr; HUMAN SIGNS &rarr; RENDERED (figures unchanged)", p.getHtml());
-
-        audit.human(actor, "CREDIT_PROPOSAL_RENDERED", "Application", reference,
-                "Rendered credit proposal v%d to print/PDF view".formatted(p.getVersion()),
-                Map.of("version", p.getVersion(), "rendering", true));
-        return html;
     }
 
-    // ------------------------------------------------------------- HTML assembly
-
     /**
-     * Wraps an already-rendered authoritative HTML body in a self-contained,
-     * print-optimised page. All CSS is inlined (no external hosts); an auto-print
-     * script fires the browser print dialog so the caller can save as PDF.
+     * Wraps an already-rendered authoritative HTML body in a self-contained, print-optimised
+     * page. All CSS is inlined (no external hosts); an auto-print script fires the browser print
+     * dialog so the caller can save as PDF.
      */
     private String standalone(String title, String govChips, String metaRows, String flow, String bodyHtml) {
         String safeTitle = escape(stripTags(title));
@@ -232,5 +331,16 @@ public class PrintService {
 
     private String escape(String s) {
         return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    private static String nb(String s, String dflt) {
+        return s == null || s.isBlank() ? dflt : s;
+    }
+
+    /** Keep a download filename to safe characters so it can never break the header. */
+    private static String sanitizeFilename(String s) {
+        if (s == null || s.isBlank()) return "helix-document";
+        String safe = s.replaceAll("[^A-Za-z0-9._-]", "_");
+        return safe.length() > 120 ? safe.substring(0, 120) : safe;
     }
 }

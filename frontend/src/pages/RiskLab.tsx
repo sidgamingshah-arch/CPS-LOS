@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { origination, risk, models, fmt } from "../api";
 import { useApp } from "../app-context";
-import { AiBadge, Badge, Button, Card, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, type Col, DataTable, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
 import { useCodes } from "../code-values";
 
 type SectorOutlook = string;
@@ -205,6 +205,40 @@ export default function RiskLab() {
   const latestRag = (ragAsync.data ?? [])[0] ?? null;
   const latestMacro = (macroAsync.data ?? [])[0] ?? null;
 
+  // Advisory RAG overlay — factor breakdown table.
+  const ragBreakdownCols: Col<any>[] = [
+    { key: "key", header: "Factor", render: (r) => <span className="mono">{r.key}</span>, value: (r) => r.key ?? "" },
+    { key: "value", header: "Value", align: "right", render: (r) => fmt.num(r.value, 2), value: (r) => r.value ?? 0 },
+    { key: "subScore", header: "Sub-score", align: "right", render: (r) => fmt.num(r.subScore, 1), value: (r) => r.subScore ?? 0 },
+    { key: "weight", header: "Weight", align: "right", render: (r) => fmt.num(r.weight, 2), value: (r) => r.weight ?? 0 },
+    { key: "contribution", header: "Contribution", align: "right", render: (r) => fmt.num(r.contribution, 2), value: (r) => r.contribution ?? 0 },
+    { key: "imputed", header: "", sortable: false, filterable: false, csv: false, render: (r) => (r.imputed ? <Badge kind="info">imputed</Badge> : null) },
+  ];
+
+  // Advisory macro overlay — per-driver PD-multiplier contributions.
+  const macroContribCols: Col<any>[] = [
+    { key: "key", header: "Driver", value: (r) => r.key ?? "", render: (r) => <span className="mono">{r.isNet ? <b>{r.key}</b> : r.key}</span> },
+    {
+      key: "delta", header: "PD multiplier Δ", align: "right",
+      value: (r) => { const base = r.isNet ? r.raw : r.deltaVal; return typeof base === "number" ? base : 0; },
+      render: (r) => r.isNet
+        ? <b>×{typeof r.raw === "number" ? r.raw.toFixed(2) : String(r.raw)}</b>
+        : (typeof r.deltaVal === "number" ? (r.deltaVal >= 0 ? "+" : "") + (r.deltaVal * 100).toFixed(1) + "%" : String(r.deltaVal)),
+    },
+    { key: "note", header: "Basis", render: (r) => <small className="prov">{r.note}</small>, value: (r) => r.note ?? "" },
+  ];
+  const macroContribRows: any[] = latestMacro?.contributions
+    ? Object.entries(latestMacro.contributions).map(([k, v]: [string, any]) => {
+        const isObj = v && typeof v === "object";
+        const isNet = k === "net_multiplier";
+        return {
+          key: k, isNet, raw: v,
+          deltaVal: isNet ? v : (isObj ? v.pdMultiplierDelta : v),
+          note: isNet ? "applied to baseline PD" : (isObj ? v.note : ""),
+        };
+      })
+    : [];
+
   return (
     <div className="grid">
       {/* Governance banner */}
@@ -341,32 +375,12 @@ export default function RiskLab() {
             {latestRag.factors?.breakdown?.length > 0 && (
               <div style={{ marginTop: 14 }}>
                 <h4>Factor breakdown</h4>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Factor</th>
-                      <th className="num">Value</th>
-                      <th className="num">Sub-score</th>
-                      <th className="num">Weight</th>
-                      <th className="num">Contribution</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {latestRag.factors.breakdown.map((row: any) => (
-                      <tr key={row.key}>
-                        <td className="mono">{row.key}</td>
-                        <td className="num">{fmt.num(row.value, 2)}</td>
-                        <td className="num">{fmt.num(row.subScore, 1)}</td>
-                        <td className="num">{fmt.num(row.weight, 2)}</td>
-                        <td className="num">{fmt.num(row.contribution, 2)}</td>
-                        <td>
-                          {row.imputed && <Badge kind="info">imputed</Badge>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <DataTable
+                  id="risklab-rag-breakdown"
+                  columns={ragBreakdownCols}
+                  rows={latestRag.factors.breakdown}
+                  rowKey={(r) => String(r.key)}
+                />
               </div>
             )}
 
@@ -509,34 +523,12 @@ export default function RiskLab() {
             {latestMacro.contributions && Object.keys(latestMacro.contributions).length > 0 && (
               <div style={{ marginTop: 14 }}>
                 <h4>Contributions</h4>
-                <table>
-                  <thead>
-                    <tr><th>Driver</th><th className="num">PD multiplier Δ</th><th>Basis</th></tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(latestMacro.contributions).map(([k, v]: [string, any]) => {
-                      const isObj = v && typeof v === "object";
-                      if (k === "net_multiplier") {
-                        return (
-                          <tr key={k}>
-                            <td className="mono"><b>{k}</b></td>
-                            <td className="num"><b>×{typeof v === "number" ? v.toFixed(2) : String(v)}</b></td>
-                            <td><small className="prov">applied to baseline PD</small></td>
-                          </tr>
-                        );
-                      }
-                      const delta = isObj ? v.pdMultiplierDelta : v;
-                      const note = isObj ? v.note : "";
-                      return (
-                        <tr key={k}>
-                          <td className="mono">{k}</td>
-                          <td className="num">{typeof delta === "number" ? (delta >= 0 ? "+" : "") + (delta * 100).toFixed(1) + "%" : String(delta)}</td>
-                          <td><small className="prov">{note}</small></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <DataTable
+                  id="risklab-macro-contributions"
+                  columns={macroContribCols}
+                  rows={macroContribRows}
+                  rowKey={(r) => String(r.key)}
+                />
               </div>
             )}
 

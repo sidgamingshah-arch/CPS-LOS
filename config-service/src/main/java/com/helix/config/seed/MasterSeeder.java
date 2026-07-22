@@ -67,6 +67,29 @@ public class MasterSeeder implements CommandLineRunner {
                                 "visibleWhen", map("field", "collateralType", "op", "PRESENT"),
                                 "requiredWhen", map("field", "collateralType", "op", "PRESENT"),
                                 "requiredSeverity", "ERROR"))));
+        // USER_HIERARCHY — organisational supervisor tree (U9 / CLoM F13,F47,F77). recordKey =
+        // actorId; payload {supervisor, department, role}. Read best-effort by workflow-service to
+        // resolve a supervisor's subordinates for the "view my team" inbox scope. ADDITIVE and
+        // DEFAULT-PERMISSIVE: an unmapped actor -> no team (self-only inbox), so no scope param
+        // leaves every existing flow byte-identical.
+        masters.seedActive("USER_HIERARCHY", "rm.user", null, map(
+                "supervisor", "credit.head", "department", "WHOLESALE_CREDIT", "role", "RM"));
+        masters.seedActive("USER_HIERARCHY", "analyst.user", null, map(
+                "supervisor", "credit.head", "department", "WHOLESALE_CREDIT", "role", "ANALYST"));
+        masters.seedActive("USER_HIERARCHY", "credit.head", null, map(
+                "supervisor", "cro", "department", "WHOLESALE_CREDIT", "role", "CREDIT_HEAD"));
+        // FIELD_ACCESS — field-level access control per form + role (U9 / CLoM F13,F47,F77).
+        // recordKey = a business-form key; payload.roles {role -> {field -> READ|WRITE|HIDDEN}}.
+        // Enforced by helix-common FieldAccessService (TTL-cached, DEFAULT-PERMISSIVE: an unmapped
+        // form/role/field -> full access). Demo row for the origination application-capture form:
+        // an RM may edit the requested amount but never sees the internal risk grade; an analyst
+        // sees both read-only; the credit head may edit both. This is inert w.r.t. existing flows
+        // (no engine reads it) — it is exercised only via the auto-exposed /api/field-access surface.
+        masters.seedActive("FIELD_ACCESS", "ORIGINATION_APPLICATION", null, map(
+                "roles", map(
+                        "RM", map("requestedAmount", "WRITE", "internalRiskGrade", "HIDDEN"),
+                        "ANALYST", map("requestedAmount", "READ", "internalRiskGrade", "READ"),
+                        "CREDIT_HEAD", map("requestedAmount", "WRITE", "internalRiskGrade", "WRITE"))));
         masters.seedActive("NEGATIVE_LIST", "country:CU", null, map("type", "COUNTRY", "value", "CU", "reason", "sanctions"));
         masters.seedActive("NEGATIVE_LIST", "country:KP", null, map("type", "COUNTRY", "value", "KP", "reason", "sanctions"));
         masters.seedActive("NEGATIVE_LIST", "country:IR", null, map("type", "COUNTRY", "value", "IR", "reason", "sanctions"));
@@ -421,6 +444,67 @@ public class MasterSeeder implements CommandLineRunner {
         // align with the existing SEGMENT / CAM-format catalogue.
         seedProposalFormats();
         seedScoringApprovalPolicy();
+        seedAnnexureTypes();
+    }
+
+    // ---------------------------------------------------------------- annexure types
+
+    /**
+     * ANNEXURE_TYPE master — CAM annexures attached to a deal / proposal (CLoM R1-09).
+     * ONE master-driven engine in decision-service materialises an annexure's section
+     * skeleton from the keyed row (payload = { sections:[{key,title}] }), version-pinned;
+     * a new annexure type is a new master row, never a code change. Appended LAST to
+     * minimise merge surface.
+     */
+    private void seedAnnexureTypes() {
+        masters.seedActive("ANNEXURE_TYPE", "CRI_SHEET", null, map(
+                "label", "Credit Risk Information sheet",
+                "sections", java.util.List.of(
+                        sec("borrower_profile", "Borrower profile"),
+                        sec("exposure_summary", "Exposure summary"),
+                        sec("rating_summary", "Rating summary"),
+                        sec("key_risks", "Key risks"),
+                        sec("recommendation", "Recommendation"))));
+        masters.seedActive("ANNEXURE_TYPE", "INDUSTRY_SCENARIO", null, map(
+                "label", "Industry scenario analysis",
+                "sections", java.util.List.of(
+                        sec("industry_overview", "Industry overview"),
+                        sec("demand_supply", "Demand-supply dynamics"),
+                        sec("regulatory_landscape", "Regulatory landscape"),
+                        sec("outlook", "Sector outlook"),
+                        sec("borrower_positioning", "Borrower positioning"))));
+        masters.seedActive("ANNEXURE_TYPE", "ESG_ASSESSMENT", null, map(
+                "label", "ESG assessment",
+                "sections", java.util.List.of(
+                        sec("environmental", "Environmental"),
+                        sec("social", "Social"),
+                        sec("governance", "Governance"),
+                        sec("esg_risk_rating", "ESG risk rating"),
+                        sec("mitigants", "Mitigants"))));
+        masters.seedActive("ANNEXURE_TYPE", "EXCHANGE_RISK", null, map(
+                "label", "Exchange-risk assessment",
+                "sections", java.util.List.of(
+                        sec("fx_exposure", "FX exposure"),
+                        sec("hedging_policy", "Hedging policy"),
+                        sec("natural_hedge", "Natural hedge"),
+                        sec("stress_scenario", "Stress scenario"),
+                        sec("residual_risk", "Residual risk"))));
+        masters.seedActive("ANNEXURE_TYPE", "PROJECT_DEFERMENT", null, map(
+                "label", "Project deferment note",
+                "sections", java.util.List.of(
+                        sec("project_status", "Project status"),
+                        sec("deferment_reason", "Deferment reason"),
+                        sec("revised_timeline", "Revised timeline"),
+                        sec("cost_overrun", "Cost overrun"),
+                        sec("impact_on_repayment", "Impact on repayment"))));
+        masters.seedActive("ANNEXURE_TYPE", "GROUP_ANALYSIS", null, map(
+                "label", "Group analysis",
+                "sections", java.util.List.of(
+                        sec("group_structure", "Group structure"),
+                        sec("intra_group_exposure", "Intra-group exposure"),
+                        sec("group_financials", "Group financials"),
+                        sec("related_party", "Related-party transactions"),
+                        sec("group_risk_assessment", "Group risk assessment"))));
     }
 
     // ---------------------------------------------------------------- proposal formats

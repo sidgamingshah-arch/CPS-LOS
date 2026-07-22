@@ -33,13 +33,20 @@ public class NotificationTestEnqueueController {
      * @param scheduleInSeconds optional relative alternative to {@code scheduleAt} (wins if both set)
      * @param reminderEveryHours optional explicit reminder cadence (needs {@code maxReminders} too)
      * @param maxReminders      optional explicit reminder cap
+     * @param approval          when true, enqueue as an actionable-approval notification (CLoM F12):
+     *                          the row is minted one-time approve/reject tokens + links
+     * @param approveRouteUrl   optional absolute callback URL POSTed fail-soft on APPROVE
+     * @param rejectRouteUrl    optional absolute callback URL POSTed fail-soft on REJECT
+     * @param actionLinkBase    optional base for the rendered action links (default relative path)
      */
     public record TestEnqueueRequest(String eventType, String templateKey, String subjectType,
                                      String subjectRef, String dedupeKey, String jurisdiction,
                                      Map<String, Object> vars, List<String> recipientRoles,
                                      List<String> recipients,
                                      String scheduleAt, Long scheduleInSeconds,
-                                     Integer reminderEveryHours, Integer maxReminders) {
+                                     Integer reminderEveryHours, Integer maxReminders,
+                                     Boolean approval, String approveRouteUrl, String rejectRouteUrl,
+                                     String actionLinkBase) {
     }
 
     @PostMapping("/api/notifications/_test-enqueue")
@@ -54,6 +61,11 @@ public class NotificationTestEnqueueController {
         NotificationService.Enqueue cmd = new NotificationService.Enqueue(req.eventType(),
                 req.templateKey(), req.subjectType(), req.subjectRef(), req.dedupeKey(),
                 req.jurisdiction(), req.vars(), req.recipientRoles(), req.recipients());
-        return notifications.enqueue(cmd, actor, scheduleAt, req.reminderEveryHours(), req.maxReminders());
+        NotificationService.ApprovalAction approval = Boolean.TRUE.equals(req.approval())
+                ? new NotificationService.ApprovalAction(req.actionLinkBase(), req.approveRouteUrl(),
+                        req.rejectRouteUrl())
+                : null;
+        return notifications.enqueue(cmd, actor, scheduleAt, req.reminderEveryHours(),
+                req.maxReminders(), approval);
     }
 }
