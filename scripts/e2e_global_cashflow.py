@@ -158,8 +158,9 @@ check("combinedDscr = combinedCfo ÷ combinedDebtService (self-consistent)",
       approx(gcf["combinedDscr"], expected_dscr, 1e-6), f"{gcf['combinedDscr']} vs {expected_dscr}")
 check("combinedDscr = hand-computed 2.80", approx(gcf["combinedDscr"], 2.80, 1e-6), gcf["combinedDscr"])
 
-# per-member contributions carry the exact confirmed-spread figures.
-by_ref = {m["ref"]: m for m in gcf["members"]}
+# per-member contributions carry the exact confirmed-spread figures. Each member is keyed by its
+# counterparty `ref`; the app reference we tracked above is exposed as `applicationRef`, so key on that.
+by_ref = {m["applicationRef"]: m for m in gcf["members"]}
 ma, mb = by_ref.get(a_ref), by_ref.get(b_ref)
 check("member A contribution = its exact spread (rev 5.0e9, EBITDA 1.2e9, CFO 0.9e9, DS 0.30e9, DSCR 3.00)",
       ma and approx(ma["revenue"], 5.0e9) and approx(ma["ebitda"], 1.2e9) and approx(ma["cfo"], 0.9e9)
