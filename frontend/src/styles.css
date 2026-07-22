@@ -1283,4 +1283,43 @@ button.btn.small { padding: 3px 10px; font-size: 12px; }
 .exec-step-sep { color: var(--muted-soft); margin-right: 4px; font-weight: 400; }
 .exec-matrix-title { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .exec-add-sig { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+/* ============================================================================
+   Document Comparison (CLoM F57) — deterministic incremental-change diff.
+   Change-type accents: ADDED (green) · REMOVED (red) · CHANGED (amber) ·
+   UNCHANGED (neutral). Read-only over the sources.
+   ============================================================================ */
+.cmp-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+.cmp-controls label.field { min-width: 260px; flex: 1 1 260px; }
+.cmp-controls button.btn { flex: 0 0 auto; }
+
+.cmp-summary { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.cmp-diff { width: 100%; border-collapse: collapse; }
+.cmp-diff th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 6px 10px; border-bottom: 1px solid var(--hairline); }
+.cmp-diff td { padding: 8px 10px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+.cmp-diff tr:hover td { background: var(--surface-soft); }
+.cmp-section { font-weight: 600; color: var(--ink); }
+.cmp-diff tr.cmp-row { border-left: 3px solid transparent; }
+.cmp-diff tr.cmp-added td:first-child   { box-shadow: inset 3px 0 0 var(--up); }
+.cmp-diff tr.cmp-removed td:first-child { box-shadow: inset 3px 0 0 var(--down); }
+.cmp-diff tr.cmp-changed td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+
+.cmp-sxs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .cmp-sxs { grid-template-columns: 1fr; } }
+.cmp-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cmp-col-head { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding-bottom: 6px; border-bottom: 1px solid var(--hairline); }
+
+.cmp-pane { border: 1px solid var(--hairline); border-radius: var(--r-md); overflow: hidden; }
+.cmp-pane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; background: var(--surface-soft); border-bottom: 1px solid var(--hairline); }
+.cmp-pane-title { font-weight: 600; font-size: 12.5px; color: var(--ink); }
+.cmp-body { margin: 0; padding: 10px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; background: var(--canvas); }
+.cmp-pane.cmp-added   { border-color: var(--up); background: rgba(27,141,47,.04); }
+.cmp-pane.cmp-removed { border-color: var(--down); background: rgba(178,0,35,.04); }
+.cmp-pane.cmp-changed { border-color: var(--warn); background: rgba(157,87,0,.05); }
+
+.cmp-history { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.cmp-history th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 6px 10px; border-bottom: 1px solid var(--hairline); }
+.cmp-history td { padding: 7px 10px; border-bottom: 1px solid var(--hairline); }
+.cmp-open { color: var(--det); cursor: pointer; font-weight: 600; }
+.cmp-open:hover { text-decoration: underline; }
 
