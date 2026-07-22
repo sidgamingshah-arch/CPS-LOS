@@ -26,11 +26,13 @@ import com.helix.origination.dto.Dtos.OverrideRequest;
 import com.helix.origination.dto.Dtos.SublimitView;
 import com.helix.origination.dto.Dtos.PeriodAnalysis;
 import com.helix.origination.dto.Dtos.SpreadAnalysis;
+import com.helix.origination.dto.Dtos.SpreadFromExtractionRequest;
 import com.helix.origination.dto.Dtos.SpreadRequest;
 import com.helix.origination.dto.Dtos.SpreadVersionDetail;
 import com.helix.origination.dto.Dtos.SpreadVersionView;
 import com.helix.origination.dto.Dtos.UploadDocumentRequest;
 import com.helix.origination.entity.Collateral;
+import com.helix.origination.entity.DocExtraction;
 import com.helix.origination.entity.Document;
 import com.helix.origination.entity.FinancialPeriod;
 import com.helix.origination.entity.LoanApplication;
@@ -39,6 +41,7 @@ import com.helix.origination.entity.SpreadCell;
 import com.helix.origination.entity.SpreadVersion;
 import com.helix.origination.entity.Sublimit;
 import com.helix.origination.repo.CollateralRepository;
+import com.helix.origination.repo.DocExtractionRepository;
 import com.helix.origination.repo.DocumentRepository;
 import com.helix.origination.repo.FinancialPeriodRepository;
 import com.helix.origination.repo.LoanApplicationRepository;
@@ -87,6 +90,7 @@ public class OriginationService {
     private final CollateralRepository collaterals;
     private final SublimitRepository sublimits;
     private final SpreadVersionRepository spreadVersions;
+    private final DocExtractionRepository extractions;
     private final DocumentClassifier classifier;
     private final AuditService audit;
     /** The app's Jackson mapper — serialises the append-only spread version snapshots. */
@@ -110,6 +114,7 @@ public class OriginationService {
                               FinancialPeriodRepository periods, SpreadCellRepository cells,
                               ProposedFacilityRepository facilities, CollateralRepository collaterals,
                               SublimitRepository sublimits, SpreadVersionRepository spreadVersions,
+                              DocExtractionRepository extractions,
                               DocumentClassifier classifier, AuditService audit, ObjectMapper json,
                               com.helix.origination.client.FxRatesClient fx,
                               com.helix.origination.client.FinancialTemplateClient financialTemplates,
@@ -128,6 +133,7 @@ public class OriginationService {
         this.collaterals = collaterals;
         this.sublimits = sublimits;
         this.spreadVersions = spreadVersions;
+        this.extractions = extractions;
         this.classifier = classifier;
         this.financialTemplates = financialTemplates;
         this.audit = audit;
@@ -506,6 +512,183 @@ public class OriginationService {
         SpreadAnalysis result = analysis(reference);
         recordSpreadVersion(app, reference, req, result, actor);
         return result;
+    }
+
+    // ------------------------------------------------- AI-extract -> grid -> human-confirm
+
+    /**
+     * Pre-fills a DRAFT spread from a CONFIRMED {@link DocExtraction} — the AI-EXTRACT → GRID →
+     * HUMAN-CONFIRM link made real and honest. It maps the extraction's recognised figure fields
+     * onto canonical INPUT taxonomy keys and rebuilds the working spread as an unconfirmed DRAFT
+     * (source DOC_INTEL on the version timeline).
+     * <p>CRITICAL GOVERNANCE: this NEVER confirms the spread — {@link #spread} resets the
+     * confirm-gate to {@code false}, so the authoritative figure path (rating / capital / pricing
+     * read the CONFIRMED spread) is untouched until the analyst separately calls
+     * {@link #confirmSpread}. Derived lines (EBITDA, TOTAL_DEBT, …) are computed by the engine,
+     * never seeded here; fields with no taxonomy match are reported as {@code unmappedFields},
+     * not invented. The extraction row itself is left byte-identical.
+     */
+    @Transactional
+    public SpreadAnalysis spreadFromExtraction(String reference, SpreadFromExtractionRequest req, String actor) {
+        LoanApplication app = get(reference);
+        Long extractionId = req == null ? null : req.extractionId();
+        DocExtraction ext;
+        if (extractionId != null) {
+            ext = extractions.findById(extractionId)
+                    .orElseThrow(() -> ApiException.notFound("No extraction: " + extractionId));
+            if (!reference.equals(ext.getApplicationReference())) {
+                throw ApiException.badRequest("Extraction #" + extractionId + " does not belong to " + reference);
+            }
+        } else {
+            ext = extractions.findByApplicationReferenceAndStatusOrderByIdDesc(reference, "CONFIRMED").stream()
+                    .findFirst().orElse(null);
+        }
+        if (ext == null) {
+            throw ApiException.badRequest(
+                    "No confirmed extraction to populate from — extract a document and confirm it first");
+        }
+        if (!"CONFIRMED".equals(ext.getStatus())) {
+            throw ApiException.badRequest("Extraction #" + ext.getId() + " is " + ext.getStatus()
+                    + " — only a CONFIRMED extraction may pre-fill the spread");
+        }
+
+        Map<String, Object> exFields = ext.getFields() == null ? Map.of() : ext.getFields();
+        Map<String, SpreadRequest.LineInput> lines = new LinkedHashMap<>();
+        List<String> unmapped = new ArrayList<>();
+        String periodLabel = req != null && req.periodLabel() != null && !req.periodLabel().isBlank()
+                ? req.periodLabel() : null;
+        for (var e : exFields.entrySet()) {
+            // reporting_period seeds the DRAFT period label (it is not a figure line).
+            if (periodLabel == null && "reporting_period".equalsIgnoreCase(e.getKey())) {
+                Object pv = unwrap(e.getValue());
+                if (pv != null && !String.valueOf(pv).isBlank()) {
+                    periodLabel = String.valueOf(pv);
+                }
+                continue;
+            }
+            String canonical = EXTRACTION_TO_TAXONOMY.get(e.getKey().toLowerCase(Locale.ROOT));
+            Double value = extractNumber(e.getValue());
+            if (canonical == null || value == null) {
+                if (value != null || isFigureLike(e.getKey())) {
+                    unmapped.add(e.getKey());   // a figure we can't safely place (e.g. derived EBITDA)
+                }
+                continue;
+            }
+            Double conf = extractConfidence(e.getValue());
+            lines.put(canonical, new SpreadRequest.LineInput(
+                    value, "extraction#" + ext.getId(), extractPage(e.getValue()), "ai-extraction",
+                    conf == null ? ext.getOverallConfidence() : conf));
+        }
+        if (lines.isEmpty()) {
+            throw ApiException.badRequest(
+                    "The confirmed extraction has no figure fields that map to the spread taxonomy "
+                            + "(populate from a financial-statement extraction)");
+        }
+
+        String label = periodLabel != null ? periodLabel : "AI-DRAFT";
+        String gaap = req != null && req.gaap() != null && !req.gaap().isBlank() ? req.gaap() : "IND_AS";
+        String ccy = req != null && req.currency() != null && !req.currency().isBlank()
+                ? req.currency()
+                : (app.getCurrency() == null || app.getCurrency().isBlank() ? "INR" : app.getCurrency());
+        String note = req != null && req.note() != null ? req.note()
+                : "Draft pre-filled from confirmed extraction #" + ext.getId();
+
+        SpreadRequest.PeriodInput period = new SpreadRequest.PeriodInput(label, gaap, ccy, null, null, lines);
+        SpreadRequest spreadReq = new SpreadRequest(List.of(period), null, "DOC_INTEL", note);
+
+        // Reuse the authoritative spread builder: it persists the cells, records the version
+        // (source DOC_INTEL) and — critically — leaves the deal UNCONFIRMED (spreadConfirmed=false).
+        SpreadAnalysis result = spread(reference, spreadReq, actor);
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("extractionId", ext.getId());
+        detail.put("mappedLines", lines.size());
+        detail.put("unmappedFields", unmapped);
+        detail.put("advisory", true);
+        detail.put("spreadConfirmed", result.spreadConfirmed());   // false — human confirm still required
+        audit.ai("financial-spreading", "SPREAD_DRAFTED_FROM_EXTRACTION", "Application", reference,
+                "Pre-filled a DRAFT spread from confirmed extraction #%d (%d line(s) mapped) — analyst confirm still required"
+                        .formatted(ext.getId(), lines.size()), detail);
+        return result;
+    }
+
+    /** Recognised extraction field names -> canonical INPUT taxonomy keys. Derived lines
+     *  (EBITDA, TOTAL_DEBT, …) are intentionally absent — the engine computes them, we never seed them. */
+    private static final Map<String, String> EXTRACTION_TO_TAXONOMY = extractionMap();
+
+    private static Map<String, String> extractionMap() {
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("revenue", "REVENUE"); m.put("sales", "REVENUE"); m.put("turnover", "REVENUE");
+        m.put("total_revenue", "REVENUE"); m.put("annual_turnover", "REVENUE");
+        m.put("cogs", "COGS"); m.put("cost_of_goods_sold", "COGS"); m.put("cost_of_sales", "COGS");
+        m.put("operating_expenses", "OPERATING_EXPENSES"); m.put("opex", "OPERATING_EXPENSES");
+        m.put("depreciation", "DEPRECIATION"); m.put("depreciation_amortisation", "DEPRECIATION");
+        m.put("interest_expense", "INTEREST_EXPENSE"); m.put("finance_cost", "INTEREST_EXPENSE");
+        m.put("interest", "INTEREST_EXPENSE");
+        m.put("tax", "TAX"); m.put("tax_expense", "TAX");
+        m.put("total_assets", "TOTAL_ASSETS");
+        m.put("current_assets", "CURRENT_ASSETS");
+        m.put("cash", "CASH"); m.put("cash_equivalents", "CASH");
+        m.put("current_liabilities", "CURRENT_LIABILITIES");
+        m.put("short_term_debt", "SHORT_TERM_DEBT"); m.put("st_debt", "SHORT_TERM_DEBT");
+        m.put("long_term_debt", "LONG_TERM_DEBT"); m.put("lt_debt", "LONG_TERM_DEBT");
+        m.put("term_debt", "LONG_TERM_DEBT");
+        // total_debt is a DERIVED line; seed it as long-term debt so the DRAFT is useful and the
+        // analyst splits short/long in the grid before confirming.
+        m.put("total_debt", "LONG_TERM_DEBT");
+        m.put("current_portion_ltd", "CURRENT_PORTION_LTD");
+        m.put("net_worth", "NET_WORTH"); m.put("networth", "NET_WORTH"); m.put("equity", "NET_WORTH");
+        m.put("shareholders_equity", "NET_WORTH");
+        m.put("cfo", "CFO"); m.put("cash_flow_operations", "CFO"); m.put("operating_cash_flow", "CFO");
+        return m;
+    }
+
+    private static boolean isFigureLike(String key) {
+        String k = key.toLowerCase(Locale.ROOT);
+        return k.contains("revenue") || k.contains("ebitda") || k.contains("debt") || k.contains("asset")
+                || k.contains("turnover") || k.contains("profit") || k.contains("income")
+                || k.contains("liabilit") || k.contains("cash") || k.contains("worth");
+    }
+
+    /** Unwraps the {@code {value,confidence,sourcePage}} extraction cell (or a bare value). */
+    private static Object unwrap(Object cell) {
+        if (cell instanceof Map<?, ?> m && m.containsKey("value")) {
+            return m.get("value");
+        }
+        return cell;
+    }
+
+    private static Double extractNumber(Object cell) {
+        Object v = unwrap(cell);
+        if (v instanceof Number n) {
+            return n.doubleValue();
+        }
+        if (v instanceof String s) {
+            String cleaned = s.replaceAll("[^0-9.\\-]", "");
+            if (cleaned.isBlank() || "-".equals(cleaned) || ".".equals(cleaned)) {
+                return null;
+            }
+            try {
+                return Double.parseDouble(cleaned);
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static Double extractConfidence(Object cell) {
+        if (cell instanceof Map<?, ?> m && m.get("confidence") instanceof Number n) {
+            return n.doubleValue();
+        }
+        return null;
+    }
+
+    private static String extractPage(Object cell) {
+        if (cell instanceof Map<?, ?> m && m.get("sourcePage") != null) {
+            return String.valueOf(m.get("sourcePage"));
+        }
+        return null;
     }
 
     // ------------------------------------------------- spread version timeline

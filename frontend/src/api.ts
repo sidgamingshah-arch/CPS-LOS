@@ -156,6 +156,10 @@ export const origination = {
     call<any>(`/origination/api/applications/spread/cells/${cellId}/override`, "PATCH", body, actor),
   confirmSpread: (ref: string, actor: string) =>
     call<any>(`/origination/api/applications/${ref}/spread/confirm`, "POST", undefined, actor),
+  // AI-EXTRACT -> GRID -> HUMAN-CONFIRM: pre-fill a DRAFT spread from a CONFIRMED doc extraction
+  // (body optional: {extractionId?, periodLabel?, gaap?, currency?, note?}). Never auto-confirms.
+  spreadFromExtraction: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/${ref}/spread/from-extraction`, "POST", body, actor),
   analysis: (ref: string) => call<any>(`/origination/api/applications/${ref}/analysis`, "GET"),
   envelope: (ref: string) => call<any>(`/origination/api/applications/${ref}/envelope`, "GET"),
   facilities: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/facilities`, "GET"),
