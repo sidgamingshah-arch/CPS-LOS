@@ -51,6 +51,7 @@ import IntegrationHub from "./pages/IntegrationHub";
 import Groups from "./pages/Groups";
 import Cpt from "./pages/Cpt";
 import WorkflowTracker from "./pages/WorkflowTracker";
+import Casework from "./pages/Casework";
 import TatReports from "./pages/TatReports";
 import ReportBuilder from "./pages/ReportBuilder";
 import ModelBuilder from "./pages/ModelBuilder";
@@ -137,6 +138,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "mis", label: "MIS · Reports" },
       { key: "reportbuilder", label: "Ad-hoc Reports" },
       { key: "workflowtracker", label: "Workflow Tracker" },
+      { key: "casework", label: "Delegation · Casework" },
       { key: "tatreports", label: "TAT · MIS Reports" },
       { key: "exports", label: "Downstream Exports" },
     ],
@@ -203,6 +205,7 @@ const CRUMB: Record<string, string> = {
   mis: "Composition · RAROC variance · ECL · ageing · watchlist",
   reportbuilder: "Self-service · whitelisted datasets · maker-checker on saved defs · deterministic figures",
   workflowtracker: "Lifecycle from WORKFLOW_DEFINITION pack · humanGate / autonomy guard · SLA",
+  casework: "Delegation & casework · inbox + team roll-up · queues + claim · reassign / send-back / complete / withdraw · round-robin & OOO delegation · per-task TAT timeline · server-enforced SoD",
   tatreports: "TAT / MIS over the case & query layer · cycle time · SLA breach · rework · throughput · deterministic",
   exports: "Canonical outbound feeds · ERM · Finance/GL · CPR · idempotent batches",
   copilot: "Scoped, grounded, non-binding assistant",
@@ -520,6 +523,7 @@ export default function App() {
             {view === "mis" && <Mis />}
             {view === "reportbuilder" && <ReportBuilder />}
             {view === "workflowtracker" && <WorkflowTracker />}
+            {view === "casework" && <Casework />}
             {view === "tatreports" && <TatReports />}
             {view === "exports" && <Exports />}
             {view === "integrationhub" && <IntegrationHub />}
