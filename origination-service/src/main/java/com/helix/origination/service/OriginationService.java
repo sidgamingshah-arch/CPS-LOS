@@ -1,6 +1,8 @@
 package com.helix.origination.service;
 
 import com.helix.common.audit.AuditService;
+import com.helix.common.dms.DocumentStoreService;
+import com.helix.common.dms.StoredDocument;
 import com.helix.common.fieldpolicy.FieldPolicyService;
 import com.helix.common.llm.LlmClient;
 import com.helix.common.llm.LlmRequest;
@@ -92,6 +94,10 @@ public class OriginationService {
     private final SpreadVersionRepository spreadVersions;
     private final DocExtractionRepository extractions;
     private final DocumentClassifier classifier;
+    /** Governed DMS lane (helix-common) — stores the raw uploaded bytes + sha256/metadata. */
+    private final DocumentStoreService documentStore;
+    /** Real text extraction (PDFBox / UTF-8 / config-gated OCR) from the uploaded bytes. */
+    private final TextExtractionService textExtraction;
     private final AuditService audit;
     /** The app's Jackson mapper — serialises the append-only spread version snapshots. */
     private final ObjectMapper json;
@@ -115,7 +121,9 @@ public class OriginationService {
                               ProposedFacilityRepository facilities, CollateralRepository collaterals,
                               SublimitRepository sublimits, SpreadVersionRepository spreadVersions,
                               DocExtractionRepository extractions,
-                              DocumentClassifier classifier, AuditService audit, ObjectMapper json,
+                              DocumentClassifier classifier,
+                              DocumentStoreService documentStore, TextExtractionService textExtraction,
+                              AuditService audit, ObjectMapper json,
                               com.helix.origination.client.FxRatesClient fx,
                               com.helix.origination.client.FinancialTemplateClient financialTemplates,
                               com.helix.origination.client.CounterpartyClient counterparties,
@@ -135,6 +143,8 @@ public class OriginationService {
         this.spreadVersions = spreadVersions;
         this.extractions = extractions;
         this.classifier = classifier;
+        this.documentStore = documentStore;
+        this.textExtraction = textExtraction;
         this.financialTemplates = financialTemplates;
         this.audit = audit;
         this.json = json;
@@ -311,6 +321,111 @@ public class OriginationService {
         }
         audit.ai("document-intelligence", "DOCUMENT_CLASSIFIED", "Application", reference,
                 "Classified %s as %s (%.2f)%s".formatted(req.fileName(), classifiedType, c.confidence(),
+                        saved.isNeedsReview() ? " — routed to review" : " — auto-routed"),
+                detail);
+        return saved;
+    }
+
+    /**
+     * REAL file upload for document capture. Unlike {@link #uploadDocument} (a filename-only
+     * record kept for the seed + e2e_smoke), this accepts the actual file bytes:
+     * <ol>
+     *   <li>stores the bytes in the governed DMS ({@link DocumentStoreService#store}) — captures
+     *       the DMS id + content sha256 (the DMS itself stamps {@code DOCUMENT_STORED});</li>
+     *   <li>extracts the document's real text via {@link TextExtractionService} (PDFBox / UTF-8 /
+     *       config-gated OCR) — fail-soft, never throws;</li>
+     *   <li>classifies from BOTH the filename AND the extracted text (content wins when the name
+     *       is unhelpful);</li>
+     *   <li>persists the {@link Document} row (classification exactly as the legacy path, plus the
+     *       real-capture columns) and stamps a HUMAN {@code DOCUMENT_UPLOADED} audit event.</li>
+     * </ol>
+     * The extracted text is later used by doc-intelligence to derive fields FROM the document; the
+     * governance invariant is untouched — extraction stays a SUGGESTED, human-confirmed advisory
+     * that never writes an authoritative figure.
+     */
+    @Transactional
+    public Document uploadDocumentFile(String reference, org.springframework.web.multipart.MultipartFile file,
+                                       String declaredType, String actor) {
+        LoanApplication app = get(reference);
+        if (file == null || file.isEmpty()) {
+            throw ApiException.badRequest("file part is required");
+        }
+        byte[] bytes;
+        try {
+            bytes = file.getBytes();
+        } catch (java.io.IOException e) {
+            throw ApiException.badRequest("could not read uploaded file: " + e.getMessage());
+        }
+        String fileName = file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()
+                ? "upload.bin" : file.getOriginalFilename();
+        String contentType = file.getContentType();
+
+        // 1) Store the raw bytes in the governed DMS (sha256 + backend + opaque key). This is
+        //    deterministic byte storage; it stamps its own DOCUMENT_STORED HUMAN audit event.
+        StoredDocument stored = documentStore.store("Application", reference, fileName, contentType, bytes, actor);
+
+        // 2) Extract the document's REAL text (fail-soft: any error -> empty text + a note).
+        TextExtractionService.ExtractedText extracted =
+                textExtraction.extract(fileName, contentType, bytes);
+
+        // 3) Classify from BOTH the filename AND the extracted content.
+        DocumentClassifier.Classification c = classifier.classify(fileName, declaredType, extracted.text());
+        String classifiedType = c.type().name();
+        boolean llmDrafted = false;
+        String llmModel = null;
+        if (c.confidence() < DocumentClassifier.AUTO_ROUTE_THRESHOLD) {
+            LlmResult r = llmClassify(fileName, declaredType, c.type());
+            if (r.usable()) {
+                DocumentType picked = parseDocumentType(r.text());
+                if (picked != null) {
+                    classifiedType = picked.name();
+                    llmDrafted = true;
+                    llmModel = r.model();
+                }
+            }
+        }
+
+        // 4) Persist the Document row (classification as the legacy path + the real-capture columns).
+        Document doc = new Document();
+        doc.setApplicationId(app.getId());
+        doc.setFileName(fileName);
+        doc.setDeclaredType(declaredType);
+        doc.setClassifiedType(classifiedType);
+        doc.setClassificationConfidence(c.confidence());
+        doc.setNeedsReview(c.confidence() < DocumentClassifier.AUTO_ROUTE_THRESHOLD);
+        doc.setStoredDocId(stored.getId());
+        doc.setExtractedText(extracted.text() == null || extracted.text().isBlank() ? null : extracted.text());
+        doc.setExtractionMethod(extracted.method());
+        doc.setOcrUsed(extracted.ocrUsed());
+        doc.setPageCount(extracted.pageCount());
+        doc.setSha256(stored.getSha256());
+        doc.setSizeBytes((long) bytes.length);
+        doc.setContentType(stored.getContentType());
+        Document saved = documents.save(doc);
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("storedDocId", stored.getId());
+        detail.put("sha256", stored.getSha256());
+        detail.put("sizeBytes", bytes.length);
+        detail.put("extractionMethod", extracted.method());
+        detail.put("pageCount", extracted.pageCount());
+        detail.put("ocrUsed", extracted.ocrUsed());
+        detail.put("classifiedType", classifiedType);
+        detail.put("confidence", c.confidence());
+        detail.put("needsReview", saved.isNeedsReview());
+        if (extracted.note() != null) {
+            detail.put("extractionNote", extracted.note());
+        }
+        if (llmDrafted) {
+            detail.put("llmDrafted", true);
+            detail.put("llmModel", llmModel);
+        }
+        // HUMAN accountability for the upload action (the DMS store already stamped DOCUMENT_STORED).
+        audit.human(actor, "DOCUMENT_UPLOADED", "Application", reference,
+                "Uploaded '%s' (%d bytes, %s%s) classified %s (%.2f)%s".formatted(
+                        fileName, bytes.length, extracted.method(),
+                        extracted.pageCount() > 0 ? ", " + extracted.pageCount() + "p" : "",
+                        classifiedType, c.confidence(),
                         saved.isNeedsReview() ? " — routed to review" : " — auto-routed"),
                 detail);
         return saved;
