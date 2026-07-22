@@ -6,7 +6,8 @@
 import { useState } from "react";
 import { origination, risk, models, fmt } from "../api";
 import { useApp } from "../app-context";
-import { AiBadge, Badge, Button, Card, type Col, DataTable, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
+import { ExplainCard, type XaiFactor } from "../xai";
 import { useCodes } from "../code-values";
 
 type SectorOutlook = string;
@@ -205,37 +206,31 @@ export default function RiskLab() {
   const latestRag = (ragAsync.data ?? [])[0] ?? null;
   const latestMacro = (macroAsync.data ?? [])[0] ?? null;
 
-  // Advisory RAG overlay — factor breakdown table.
-  const ragBreakdownCols: Col<any>[] = [
-    { key: "key", header: "Factor", render: (r) => <span className="mono">{r.key}</span>, value: (r) => r.key ?? "" },
-    { key: "value", header: "Value", align: "right", render: (r) => fmt.num(r.value, 2), value: (r) => r.value ?? 0 },
-    { key: "subScore", header: "Sub-score", align: "right", render: (r) => fmt.num(r.subScore, 1), value: (r) => r.subScore ?? 0 },
-    { key: "weight", header: "Weight", align: "right", render: (r) => fmt.num(r.weight, 2), value: (r) => r.weight ?? 0 },
-    { key: "contribution", header: "Contribution", align: "right", render: (r) => fmt.num(r.contribution, 2), value: (r) => r.contribution ?? 0 },
-    { key: "imputed", header: "", sortable: false, filterable: false, csv: false, render: (r) => (r.imputed ? <Badge kind="info">imputed</Badge> : null) },
-  ];
+  // Advisory RAG overlay — factor breakdown, mapped onto the unified XAI factor model.
+  const ragFactors: XaiFactor[] = (latestRag?.factors?.breakdown ?? []).map((r: any) => ({
+    label: <span className="mono">{r.key}</span>,
+    value: fmt.num(r.value, 2),
+    subScore: fmt.num(r.subScore, 1),
+    weight: fmt.num(r.weight, 2),
+    contribution: fmt.num(r.contribution, 2),
+    tag: r.imputed ? { label: "imputed", kind: "info" } : undefined,
+  }));
 
-  // Advisory macro overlay — per-driver PD-multiplier contributions.
-  const macroContribCols: Col<any>[] = [
-    { key: "key", header: "Driver", value: (r) => r.key ?? "", render: (r) => <span className="mono">{r.isNet ? <b>{r.key}</b> : r.key}</span> },
-    {
-      key: "delta", header: "PD multiplier Δ", align: "right",
-      value: (r) => { const base = r.isNet ? r.raw : r.deltaVal; return typeof base === "number" ? base : 0; },
-      render: (r) => r.isNet
-        ? <b>×{typeof r.raw === "number" ? r.raw.toFixed(2) : String(r.raw)}</b>
-        : (typeof r.deltaVal === "number" ? (r.deltaVal >= 0 ? "+" : "") + (r.deltaVal * 100).toFixed(1) + "%" : String(r.deltaVal)),
-    },
-    { key: "note", header: "Basis", render: (r) => <small className="prov">{r.note}</small>, value: (r) => r.note ?? "" },
-  ];
-  const macroContribRows: any[] = latestMacro?.contributions
+  // Advisory macro overlay — per-driver PD-multiplier contributions, unified XAI model.
+  const macroFactors: XaiFactor[] = latestMacro?.contributions
     ? Object.entries(latestMacro.contributions).map(([k, v]: [string, any]) => {
         const isObj = v && typeof v === "object";
         const isNet = k === "net_multiplier";
+        const deltaVal = isNet ? v : (isObj ? v.pdMultiplierDelta : v);
+        const note = isNet ? "applied to baseline PD" : (isObj ? v.note : "");
         return {
-          key: k, isNet, raw: v,
-          deltaVal: isNet ? v : (isObj ? v.pdMultiplierDelta : v),
-          note: isNet ? "applied to baseline PD" : (isObj ? v.note : ""),
-        };
+          label: isNet ? <b>{k}</b> : <span className="mono">{k}</span>,
+          contribution: isNet
+            ? <b>×{typeof v === "number" ? v.toFixed(2) : String(v)}</b>
+            : (typeof deltaVal === "number" ? (deltaVal >= 0 ? "+" : "") + (deltaVal * 100).toFixed(1) + "%" : String(deltaVal)),
+          note: note ? <small className="prov">{note}</small> : undefined,
+          emphasise: isNet,
+        } as XaiFactor;
       })
     : [];
 
@@ -372,21 +367,20 @@ export default function RiskLab() {
               <div className="prov" style={{ marginTop: 10 }}>{latestRag.advisory}</div>
             )}
 
-            {latestRag.factors?.breakdown?.length > 0 && (
+            {latestRag && (
               <div style={{ marginTop: 14 }}>
-                <h4>Factor breakdown</h4>
-                <DataTable
-                  id="risklab-rag-breakdown"
-                  columns={ragBreakdownCols}
-                  rows={latestRag.factors.breakdown}
-                  rowKey={(r) => String(r.key)}
+                <ExplainCard
+                  title="Why this RAG band"
+                  subtitle="Statistical roll-up of deal-level risk indicators into the advisory band."
+                  compact
+                  explanation={{
+                    factors: ragFactors,
+                    factorHeaders: { factor: "Factor", value: "Value", subScore: "Sub-score", weight: "Weight", contribution: "Contribution" },
+                    method: `Assessed ${new Date(latestRag.createdAt).toLocaleString()} · method: ${latestRag.method}`,
+                  }}
                 />
               </div>
             )}
-
-            <small className="prov" style={{ display: "block", marginTop: 8 }}>
-              Assessed {new Date(latestRag.createdAt).toLocaleString()} · method: {latestRag.method}
-            </small>
           </>
         )}
 
@@ -520,21 +514,21 @@ export default function RiskLab() {
               <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>{latestMacro.advisory}</div>
             )}
 
-            {latestMacro.contributions && Object.keys(latestMacro.contributions).length > 0 && (
+            {latestMacro && (
               <div style={{ marginTop: 14 }}>
-                <h4>Contributions</h4>
-                <DataTable
-                  id="risklab-macro-contributions"
-                  columns={macroContribCols}
-                  rows={macroContribRows}
-                  rowKey={(r) => String(r.key)}
+                <ExplainCard
+                  title="Why this macro impact"
+                  subtitle="Each driver's directional PD-multiplier contribution, and the net multiplier applied to the baseline PD."
+                  compact
+                  explanation={{
+                    factors: macroFactors,
+                    factorHeaders: { factor: "Driver", contribution: "PD multiplier Δ", note: "Basis" },
+                    whatIf: `Under "${latestMacro.scenarioName}", modelled PD moves ${fmt.pct(latestMacro.baselinePd, 2)} → ${fmt.pct(latestMacro.stressedPd, 2)} (${latestMacro.pdDeltaBps >= 0 ? "+" : ""}${latestMacro.pdDeltaBps} bps). Directional overlay only — the authoritative rating is unchanged.`,
+                    method: `Scenario: ${latestMacro.scenarioName} · assessed ${new Date(latestMacro.createdAt).toLocaleString()}`,
+                  }}
                 />
               </div>
             )}
-
-            <small className="prov" style={{ display: "block", marginTop: 8 }}>
-              Scenario: <b>{latestMacro.scenarioName}</b> · assessed {new Date(latestMacro.createdAt).toLocaleString()}
-            </small>
           </>
         )}
 
@@ -732,6 +726,16 @@ function ModelCard({ refValue, grade, model }: {
     );
   }
 
+  // Section-level weights → the unified XAI factor model. The composite is a
+  // deterministic weighted roll-up of these sections; shown here as explainability.
+  const modelFactors: XaiFactor[] = (v.sections || []).map((s: any) => ({
+    label: s.label,
+    subScore: s.sectionScore != null ? fmt.num(s.sectionScore, 1) : undefined,
+    weight: `${(s.weight * 100).toFixed(0)}%`,
+    contribution: s.sectionScore != null ? fmt.num(s.sectionScore * s.weight, 1) : undefined,
+    tag: s.sectionBand ? { label: s.sectionBand, kind: bandKindOf(s.sectionBand) } : undefined,
+  }));
+
   return (
     <Card title={`Scoring model · ${v.displayName}`}
       sub={`Model ${v.modelKey} v${v.modelVersion} · weighted composite of qualitative + quantitative sections. Advisory & human-confirmed — the authoritative grade is never changed.`}
@@ -755,6 +759,19 @@ function ModelCard({ refValue, grade, model }: {
         <div className="alert err" style={{ marginBottom: 10 }}>
           Unmet constraints: {v.errors.join(" · ")}
         </div>
+      )}
+
+      {modelFactors.length > 0 && (
+        <ExplainCard
+          title="Why this composite score"
+          subtitle="Deterministic weighted roll-up of the model's sections — advisory context for the credit decision, never a driver of the authoritative grade."
+          compact
+          explanation={{
+            factors: modelFactors,
+            factorHeaders: { factor: "Section", subScore: "Score / 100", weight: "Weight", contribution: "Weighted" },
+            method: `Model ${v.modelKey} v${v.modelVersion} · composite ${(v.compositeScore ?? 0).toFixed(1)}/100 (${v.compositeBand})`,
+          }}
+        />
       )}
 
       {(v.sections || []).map((s: any) => (
