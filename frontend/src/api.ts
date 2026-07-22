@@ -1229,4 +1229,52 @@ export const printing = {
       notify?.(e?.message ?? "Print render failed", true);
     }
   },
+
+  // ---- Word / Excel / CSV office output (same print endpoints, ?format=) ----
+  // The office formats are served as an attachment (Content-Disposition), so we fetch the
+  // body as a Blob and trigger a browser download using the server-supplied filename. The
+  // request forwards the auth token + X-Actor (persisted as a DOCUMENT_RENDERED audit event);
+  // the source artifact is never mutated by a render.
+  downloadFile: async (
+    path: string,
+    actor: string,
+    notify?: (m: string, err?: boolean) => void,
+  ): Promise<void> => {
+    try {
+      const headers: Record<string, string> = { "X-Actor": actor };
+      if (authToken) headers["Authorization"] = "Bearer " + authToken;
+      const res = await fetch(GATEWAY + path, { method: "GET", headers });
+      if (!res.ok) throw new Error((await res.text()) || res.statusText || "Download failed");
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename="?([^"]+)"?/.exec(cd);
+      const filename = m ? m[1] : "helix-download";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: any) {
+      notify?.(e?.message ?? "Download failed", true);
+    }
+  },
+  // Download a generated document as Word (.rtf) / Excel (.xls SpreadsheetML) / CSV.
+  downloadDocument: (
+    id: number,
+    format: "rtf" | "xlsx" | "csv",
+    actor: string,
+    notify?: (m: string, err?: boolean) => void,
+  ) => printing.downloadFile(`/decision/api/docs/${id}/print?format=${format}`, actor, notify),
+  // Download the latest credit proposal as Word (.rtf) / Excel (.xls SpreadsheetML) / CSV.
+  downloadProposal: (
+    ref: string,
+    format: "rtf" | "xlsx" | "csv",
+    actor: string,
+    notify?: (m: string, err?: boolean) => void,
+  ) => printing.downloadFile(
+    `/decision/api/decisions/${encodeURIComponent(ref)}/credit-proposal/print?format=${format}`,
+    actor, notify),
 };
