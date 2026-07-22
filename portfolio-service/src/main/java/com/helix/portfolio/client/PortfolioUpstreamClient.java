@@ -23,17 +23,53 @@ public class PortfolioUpstreamClient {
     private final RestClient origination;
     private final RestClient risk;
     private final RestClient decision;
+    private final RestClient limit;
 
     public PortfolioUpstreamClient(@Value("${helix.config-service.base-url}") String configUrl,
                                    @Value("${helix.counterparty-service.base-url}") String counterpartyUrl,
                                    @Value("${helix.origination-service.base-url}") String originationUrl,
                                    @Value("${helix.risk-service.base-url}") String riskUrl,
-                                   @Value("${helix.decision-service.base-url}") String decisionUrl) {
+                                   @Value("${helix.decision-service.base-url}") String decisionUrl,
+                                   @Value("${helix.limit-service.base-url}") String limitUrl) {
         this.config = RestClient.builder().baseUrl(configUrl).build();
         this.counterparty = RestClient.builder().baseUrl(counterpartyUrl).build();
         this.origination = RestClient.builder().baseUrl(originationUrl).build();
         this.risk = RestClient.builder().baseUrl(riskUrl).build();
         this.decision = RestClient.builder().baseUrl(decisionUrl).build();
+        this.limit = RestClient.builder().baseUrl(limitUrl).build();
+    }
+
+    private RestClient client(String svc) {
+        return switch (svc) {
+            case "origination" -> origination;
+            case "risk" -> risk;
+            case "decision" -> decision;
+            case "config" -> config;
+            case "counterparty" -> counterparty;
+            case "limit" -> limit;
+            default -> null;
+        };
+    }
+
+    /**
+     * Strict list GET used by the exception rollup: on success returns the rows, on any
+     * failure it PROPAGATES the exception so the caller can degrade that one source to a
+     * warning (rather than the fail-soft {@link #getList} which silently returns empty and
+     * cannot be distinguished from a genuinely empty source). The warning is still logged.
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> getListOrThrow(String svc, String uri, Object... vars) {
+        RestClient c = client(svc);
+        if (c == null) {
+            throw new IllegalArgumentException("unknown service: " + svc);
+        }
+        try {
+            List<?> raw = c.get().uri(uri, vars).retrieve().body(List.class);
+            return raw == null ? List.of() : (List<Map<String, Object>>) raw;
+        } catch (Exception e) {
+            log.warn("upstream {} {} unavailable ({})", svc, uri, e.getMessage());
+            throw new IllegalStateException(svc + " unavailable: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -200,13 +236,7 @@ public class PortfolioUpstreamClient {
     /** Generic GET wrapper so portfolio aggregations can pull from any upstream by URL. */
     @SuppressWarnings("unchecked")
     public Map<String, Object> getMap(String svc, String uri, Object... vars) {
-        RestClient c = switch (svc) {
-            case "origination" -> origination;
-            case "risk" -> risk;
-            case "decision" -> decision;
-            case "config" -> config;
-            default -> null;
-        };
+        RestClient c = client(svc);
         if (c == null) return Map.of();
         try {
             return c.get().uri(uri, vars).retrieve().body(Map.class);
@@ -251,13 +281,7 @@ public class PortfolioUpstreamClient {
 
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> getList(String svc, String uri, Object... vars) {
-        RestClient c = switch (svc) {
-            case "origination" -> origination;
-            case "risk" -> risk;
-            case "decision" -> decision;
-            case "config" -> config;
-            default -> null;
-        };
+        RestClient c = client(svc);
         if (c == null) return List.of();
         try {
             List<?> raw = c.get().uri(uri, vars).retrieve().body(List.class);
