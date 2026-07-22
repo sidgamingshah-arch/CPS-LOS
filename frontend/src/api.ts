@@ -1012,6 +1012,18 @@ export const ipNotes = {
     call<any>(`/origination/api/ip-notes/${ref}/convert`, "POST", undefined, actor),
 };
 
+// ---- Banking ASR (account statement review) — deterministic conduct metrics + advisory summary ----
+export const bankingAsr = {
+  list: (applicationRef?: string) =>
+    call<any[]>(`/origination/api/banking-asr${applicationRef ? `?applicationRef=${encodeURIComponent(applicationRef)}` : ""}`, "GET"),
+  get: (asrRef: string) => call<any>(`/origination/api/banking-asr/${asrRef}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/origination/api/banking-asr", "POST", body, actor),
+  summary: (asrRef: string, actor: string) =>
+    call<any>(`/origination/api/banking-asr/${asrRef}/summary`, "POST", undefined, actor),
+  confirm: (asrRef: string, note: string | undefined, actor: string) =>
+    call<any>(`/origination/api/banking-asr/${asrRef}/confirm`, "POST", { note }, actor),
+};
+
 // ---- TAT / MIS reporting over the case & query operational data (deterministic, read-only) ----
 export const tatMis = {
   // Cycle-time / SLA / rework / throughput aggregations over WorkItem + WorkItemEvent.

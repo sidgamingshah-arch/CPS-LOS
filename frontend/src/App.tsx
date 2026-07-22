@@ -54,6 +54,7 @@ import DrawingPower from "./pages/DrawingPower";
 import Notifications from "./pages/Notifications";
 import Notings from "./pages/Notings";
 import IpNotes from "./pages/IpNotes";
+import BankingAsr from "./pages/BankingAsr";
 import PostureChip from "./pages/PostureChip";
 import NotificationBell from "./notification-center";
 import { prefetchAllCodes } from "./code-values";
@@ -87,6 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "scf", label: "Supply-Chain Finance" },
       { key: "syndication", label: "Syndication" },
       { key: "spreading", label: "Financial Spreading" },
+      { key: "bankingasr", label: "Banking ASR" },
       { key: "docintel", label: "Doc Intelligence" },
     ],
   },
@@ -151,6 +153,7 @@ const CRUMB: Record<string, string> = {
   dashboard: "Portfolio & book-level intelligence",
   deals: "Origination pipeline",
   spreading: "SpreadJS-style grid · multi-period · cell provenance · override-with-reason gate · ratios",
+  bankingasr: "Account statement review · deterministic conduct metrics · advisory narrative (human-confirmed) · never touches a figure",
   structuring: "Specialised CP variants · group · joint/dual-obligor · syndication · FI ICR · renewal copy",
   scf: "Supply-chain finance · anchor programme · deterministic spoke eligibility · PRODUCT_PAPER noting · limit via limit-service",
   syndication: "Syndicate book · fee waterfall · agency reconciliation · participant feed",
@@ -455,6 +458,7 @@ export default function App() {
             {view === "dashboard" && <Dashboard />}
             {view === "deals" && <Deals />}
             {view === "ipnotes" && <IpNotes />}
+            {view === "bankingasr" && <BankingAsr />}
             {view === "spreading" && <Spreading />}
             {view === "structuring" && <Structuring />}
             {view === "scf" && <Scf />}
