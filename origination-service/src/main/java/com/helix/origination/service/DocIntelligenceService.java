@@ -70,7 +70,7 @@ public class DocIntelligenceService {
         String lang = detectLanguage(doc.getFileName());
 
         Map<String, Object> fields = new LinkedHashMap<>();
-        double conf = templateFields(type, fields);
+        double conf = templateFields(type, fields, app);
         String model = "doc-intel-v1";
 
         // Optional LLM extraction: when a bank has configured an external model, it drafts the
@@ -402,40 +402,61 @@ public class DocIntelligenceService {
 
     // --------------------------------------------------- heuristics (stand-ins for the LLM)
 
-    private double templateFields(String type, Map<String, Object> fields) {
+    /**
+     * Deterministic stand-in for the extraction model when no external LLM is configured.
+     * <p>The sample field <b>values</b> are derived per deal from a stable hash of the
+     * borrower/segment/requested-amount so a demo across several applications shows
+     * <em>different, plausible</em> figures instead of one canned constant ("why are the
+     * numbers the same?"). The field <b>keys</b>, the per-field confidences and the returned
+     * overall confidence are unchanged per document type, so the extraction contract and every
+     * existing assertion hold. This is still a governed ADVISORY suggestion: the caller persists
+     * it as a SUGGESTED {@link DocExtraction} behind a human confirm and never writes it into any
+     * authoritative figure.
+     */
+    private double templateFields(String type, Map<String, Object> fields, LoanApplication app) {
+        long seed = seedOf(app);
+        String name = app == null || app.getCounterpartyName() == null || app.getCounterpartyName().isBlank()
+                ? "ACME Industries Ltd" : app.getCounterpartyName();
+        double base = app == null || app.getRequestedAmount() <= 0 ? 500_000_000.0 : app.getRequestedAmount();
         switch (type) {
             case "FINANCIAL_STATEMENT" -> {
-                field(fields, "reporting_period", "FY2025", 0.94, 1);
-                field(fields, "revenue", 1_250_000_000L, 0.91, 3);
-                field(fields, "ebitda", 312_000_000L, 0.88, 4);
-                field(fields, "total_debt", 540_000_000L, 0.86, 7);
-                field(fields, "auditor", "BigFour LLP", 0.93, 1);
+                double revMult = 1.6 + (seed % 22) / 10.0;              // 1.6 .. 3.7x the requested amount
+                double margin = 0.12 + ((seed / 7) % 17) / 100.0;       // 12% .. 28% EBITDA margin
+                double debtMult = 0.7 + ((seed / 13) % 13) / 10.0;      // 0.7 .. 1.9x
+                long revenue = roundMillion(base * revMult);
+                field(fields, "reporting_period", "FY" + (2024 + (int) (seed % 2)), 0.94, 1);
+                field(fields, "revenue", revenue, 0.91, 3);
+                field(fields, "ebitda", roundMillion(revenue * margin), 0.88, 4);
+                field(fields, "total_debt", roundMillion(base * debtMult), 0.86, 7);
+                field(fields, "auditor", AUDITORS[(int) (seed % AUDITORS.length)], 0.93, 1);
                 return 0.90;
             }
             case "KYC_ID" -> {
-                field(fields, "legal_name", "ACME Industries Ltd", 0.97, 1);
-                field(fields, "registration_number", "U12345MH2010PLC000111", 0.95, 1);
-                field(fields, "incorporation_date", "2010-04-12", 0.92, 1);
-                field(fields, "registered_address", "Plot 42, MIDC, Mumbai", 0.89, 2);
+                String cin = "U%05dMH%04dPLC%06d".formatted(seed % 100000L, 2005 + (seed % 18L), seed % 1000000L);
+                int y = 2004 + (int) (seed % 20), mo = 1 + (int) ((seed / 3) % 12), day = 1 + (int) ((seed / 11) % 28);
+                field(fields, "legal_name", name, 0.97, 1);
+                field(fields, "registration_number", cin, 0.95, 1);
+                field(fields, "incorporation_date", "%04d-%02d-%02d".formatted(y, mo, day), 0.92, 1);
+                field(fields, "registered_address", ADDRESSES[(int) (seed % ADDRESSES.length)], 0.89, 2);
                 return 0.93;
             }
             case "FACILITY_DOC", "SECURITY_DOC" -> {
-                field(fields, "borrower", "ACME Industries Ltd", 0.95, 1);
-                field(fields, "facility_amount", 500_000_000L, 0.9, 2);
-                field(fields, "tenor_months", 60, 0.9, 2);
-                field(fields, "governing_law", "Laws of India", 0.92, 14);
+                field(fields, "borrower", name, 0.95, 1);
+                field(fields, "facility_amount", roundMillion(base), 0.9, 2);
+                field(fields, "tenor_months", app == null || app.getTenorMonths() <= 0 ? 60 : app.getTenorMonths(), 0.9, 2);
+                field(fields, "governing_law", governingLaw(app), 0.92, 14);
                 field(fields, "security", "First pari-passu charge on fixed assets", 0.84, 6);
                 return 0.90;
             }
             case "BANK_STATEMENT" -> {
-                field(fields, "account_number", "•••• 4521", 0.96, 1);
-                field(fields, "average_balance", 18_400_000L, 0.85, 1);
-                field(fields, "inward_returns", 0, 0.9, 2);
+                field(fields, "account_number", "•••• %04d".formatted(seed % 10000L), 0.96, 1);
+                field(fields, "average_balance", roundMillion(base * (0.02 + (seed % 8) / 100.0)), 0.85, 1);
+                field(fields, "inward_returns", (int) (seed % 3), 0.9, 2);
                 return 0.90;
             }
             case "TAX_GST" -> {
-                field(fields, "gstin", "27ABCDE1234F1Z5", 0.96, 1);
-                field(fields, "annual_turnover", 1_300_000_000L, 0.87, 1);
+                field(fields, "gstin", "%02dABCDE%04dF1Z%d".formatted(1 + (seed % 37L), seed % 10000L, seed % 10L), 0.96, 1);
+                field(fields, "annual_turnover", roundMillion(base * (1.6 + (seed % 20) / 10.0)), 0.87, 1);
                 return 0.91;
             }
             default -> {
@@ -443,6 +464,37 @@ public class DocIntelligenceService {
                 return 0.70;
             }
         }
+    }
+
+    /** Sample auditor names for the deterministic FS extraction (generic, not real firms). */
+    private static final String[] AUDITORS = {
+            "BigFour LLP", "Sterling Audit LLP", "Meridian Assurance", "Anchor Chartered Accountants",
+            "Crestview Auditors LLP", "Pinnacle & Partners"};
+    /** Sample registered addresses for the deterministic KYC extraction. */
+    private static final String[] ADDRESSES = {
+            "Plot 42, MIDC, Mumbai", "Sector 18, Gurugram", "Whitefield, Bengaluru",
+            "GIFT City, Gandhinagar", "Guindy, Chennai", "Salt Lake, Kolkata"};
+
+    /** Stable, sign-safe per-deal hash so sample values vary by borrower/segment but stay deterministic. */
+    private static long seedOf(LoanApplication app) {
+        String basis = app == null ? ""
+                : (nz(app.getCounterpartyRef()) + "|" + nz(app.getReference()) + "|" + nz(app.getSegment()));
+        if (basis.isBlank()) basis = "ACME";
+        long h = 1125899906842597L;
+        for (int i = 0; i < basis.length(); i++) {
+            h = 31 * h + basis.charAt(i);
+        }
+        return h & Long.MAX_VALUE;
+    }
+
+    /** Rounds to the nearest million so the sample figures read like reported financials. */
+    private static long roundMillion(double v) {
+        return Math.round(v / 1_000_000.0) * 1_000_000L;
+    }
+
+    private static String governingLaw(LoanApplication app) {
+        String j = app == null || app.getJurisdiction() == null ? "" : app.getJurisdiction().toUpperCase();
+        return j.contains("CBUAE") || j.contains("AE") ? "Laws of the UAE (DIFC)" : "Laws of India";
     }
 
     private void field(Map<String, Object> fields, String key, Object value, double confidence, int page) {

@@ -72,6 +72,16 @@ public final class Dtos {
     public record OverrideRequest(@NotNull Double value, String reason) {
     }
 
+    /**
+     * Request to pre-fill a DRAFT spread from a CONFIRMED {@link com.helix.origination.entity.DocExtraction}.
+     * All fields optional: {@code extractionId} null → the latest CONFIRMED extraction for the deal;
+     * label / gaap / currency default from the extraction's reporting period, IND_AS and the deal currency.
+     * The produced spread is advisory (DRAFT / unconfirmed) and still passes the analyst confirm-gate.
+     */
+    public record SpreadFromExtractionRequest(Long extractionId, String periodLabel, String gaap,
+                                              String currency, String note) {
+    }
+
     public record AddFacilityRequest(
             @NotBlank String facilityType,
             @Positive double amount,

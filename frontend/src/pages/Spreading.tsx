@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { fmt, origination } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, EmptyState, Field, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, GovFlow, useAsync } from "../ui";
 
 /**
  * SpreadJS-style financial spreading grid (PRD spreading UI). Rows are taxonomy line
@@ -103,9 +103,16 @@ export default function Spreading() {
             </select>
           </Field>
           <div className="btnrow">
+            {ref && (
+              <Button kind="ghost"
+                onClick={() => run(() => origination.spreadFromExtraction(ref, {}, actor),
+                  "Grid pre-filled from confirmed extraction — review & confirm the spread")}>
+                Populate grid from confirmed extraction
+              </Button>
+            )}
             {ref && periods.length === 0 && !analysis.loading && (
-              <Button kind="ghost" onClick={() => run(() => origination.spread(ref, SAMPLE_PERIODS, actor), "Spread generated")}>
-                Auto-spread sample financials
+              <Button kind="ghost" onClick={() => run(() => origination.spread(ref, SAMPLE_PERIODS, actor), "Sample financials loaded")}>
+                Load sample financials (demo)
               </Button>
             )}
             {ref && periods.length > 0 && (
@@ -117,9 +124,16 @@ export default function Spreading() {
           </div>
         </div>
         {ref && (
+          <div style={{ marginTop: 10 }}>
+            <GovFlow ai="AI EXTRACTS" human="ANALYST CONFIRMS"
+              note="A confirmed doc-intel extraction pre-fills a DRAFT spread; the analyst still confirms it before it feeds rating." />
+          </div>
+        )}
+        {ref && (
           <div className="gate" style={{ marginTop: 8 }}>
             Provenance dot colour = extraction confidence (green ≥ 0.85, amber ≥ 0.6, red below). Hover a cell for source
             document · page. Overridden cells carry a badge; material overrides flip the deal back to DRAFT and re-gate confirmation.
+            &nbsp;<strong>Populate grid from confirmed extraction</strong> maps a confirmed extraction's figures into a DRAFT — never auto-confirmed.
           </div>
         )}
       </Card>
@@ -257,7 +271,7 @@ export default function Spreading() {
           <EmptyState
             glyph="▦"
             title="No spread on this deal yet"
-            sub="Auto-spread the sample financials above to populate the grid. You can also upload statements on Doc Intelligence first."
+            sub="Populate the grid from a confirmed doc-intel extraction, or load the sample financials (demo) above. Either way the spread lands as a DRAFT for you to confirm."
           />
         </Card>
       )}

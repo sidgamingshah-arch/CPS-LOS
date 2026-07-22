@@ -10,6 +10,7 @@ import com.helix.origination.dto.Dtos.DealEnvelope;
 import com.helix.origination.dto.Dtos.FacilityView;
 import com.helix.origination.dto.Dtos.OverrideRequest;
 import com.helix.origination.dto.Dtos.SpreadAnalysis;
+import com.helix.origination.dto.Dtos.SpreadFromExtractionRequest;
 import com.helix.origination.dto.Dtos.SpreadRequest;
 import com.helix.origination.dto.Dtos.SpreadVersionDetail;
 import com.helix.origination.dto.Dtos.SpreadVersionView;
@@ -109,6 +110,18 @@ public class OriginationController {
     public LoanApplication confirmSpread(@PathVariable String reference,
                                          @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
         return origination.confirmSpread(reference, actor);
+    }
+
+    /**
+     * AI-EXTRACT → GRID → HUMAN-CONFIRM: pre-fill a DRAFT spread from a CONFIRMED document
+     * extraction. The result is advisory (unconfirmed); the authoritative figure is only set
+     * when the analyst separately confirms the spread. Never auto-confirms.
+     */
+    @PostMapping("/{reference}/spread/from-extraction")
+    public SpreadAnalysis spreadFromExtraction(@PathVariable String reference,
+                                               @RequestBody(required = false) SpreadFromExtractionRequest req,
+                                               @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
+        return origination.spreadFromExtraction(reference, req, actor);
     }
 
     @GetMapping("/{reference}/analysis")
