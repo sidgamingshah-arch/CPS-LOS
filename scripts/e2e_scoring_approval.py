@@ -274,5 +274,54 @@ check("large-exposure: model grade unchanged by routing", after["modelGrade"] ==
       f"{before['modelGrade']} vs {after.get('modelGrade')}")
 
 
+print("== 7. Simulate endpoint mirrors the real routing (read-only, non-persisting) ==")
+# The Approval-Rules matrix "simulate routing" panel POSTs hypothetical params to a read-only
+# endpoint that evaluates the ACTIVE policy through the SAME engine the rating path uses. Assert
+# the simulated routing matches the authority a real scored rating with those params received.
+
+
+def simulate(**params):
+    st, r = call("POST", "/risk/api/risk/scoring-approval/simulate", params)
+    return must(st, r, "simulate")
+
+
+# default tier: an ordinary small-exposure investment-grade rating -> CREDIT_OFFICER (matches d1).
+sim_default = simulate(exposure=800_000_000, grade="BBB", overrideNotches=0, overridden=False,
+                       scoreBand="STRONG", segment="MID_CORPORATE", jurisdiction="IN-RBI")
+check("simulate default -> CREDIT_OFFICER (same as the real ordinary-deal routing)",
+      sim_default["requiredAuthority"] == "CREDIT_OFFICER" == sa1["requiredAuthority"], str(sim_default))
+check("simulate default -> matched the catch-all 'default' rule, requireApproval=true",
+      sim_default["matchedRuleId"] == "default" and sim_default["requireApproval"] is True, str(sim_default))
+
+# large-exposure tier: EAD >= 10bn -> CREDIT_COMMITTEE (matches d2).
+sim_big = simulate(exposure=15_000_000_000, grade="BBB", overrideNotches=0, overridden=False)
+check("simulate large-exposure -> CREDIT_COMMITTEE (same as the real large-exposure routing)",
+      sim_big["requiredAuthority"] == "CREDIT_COMMITTEE" == sa2["requiredAuthority"], str(sim_big))
+check("simulate large-exposure -> matched the 'large-exposure' rule",
+      sim_big["matchedRuleId"] == "large-exposure", str(sim_big))
+
+# deep-override tier: |notches| >= 2 -> CRO (matches d3). deep-override precedes sub-investment.
+sim_ovr = simulate(exposure=800_000_000, grade="BB", overrideNotches=2, overridden=True)
+check("simulate deep-override -> CRO (same as the real 2-notch-override routing)",
+      sim_ovr["requiredAuthority"] == "CRO" == sa3["requiredAuthority"], str(sim_ovr))
+check("simulate deep-override -> matched the 'deep-override' rule",
+      sim_ovr["matchedRuleId"] == "deep-override", str(sim_ovr))
+
+# Non-persisting: the simulate calls above must not have created or mutated any rating. d1's rating
+# (grade / PD / approval status) is byte-identical before vs after the batch of simulations.
+st, d1_before = call("GET", f"/risk/api/risk/{d1}/rating")
+d1_before = must(st, d1_before, "d1 rating before simulate batch")
+for _ in range(3):
+    simulate(exposure=999_000_000, grade="A", overrideNotches=1, overridden=True)
+st, d1_after = call("GET", f"/risk/api/risk/{d1}/rating")
+d1_after = must(st, d1_after, "d1 rating after simulate batch")
+check("simulate persists nothing: d1 finalGrade/PD unchanged after a batch of simulations",
+      d1_after["finalGrade"] == d1_before["finalGrade"] and d1_after["pd"] == d1_before["pd"],
+      f"{d1_before.get('finalGrade')}/{d1_before.get('pd')} vs {d1_after.get('finalGrade')}/{d1_after.get('pd')}")
+sa1_after = scoring_approval(d1)
+check("simulate persists nothing: d1 approval status/authority unchanged",
+      sa1_after["requiredAuthority"] == "CREDIT_OFFICER" and sa1_after["approvalStatus"] == "APPROVED", str(sa1_after))
+
+
 print(f"\n== e2e scoring approval: {PASS} passed, {FAIL} failed ==")
 sys.exit(1 if FAIL else 0)

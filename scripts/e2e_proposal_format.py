@@ -261,5 +261,49 @@ if is_html:
     check("print reproduces the (formatted) proposal body verbatim",
           prop_pf2["html"] in page, "formatted proposal body not embedded verbatim")
 
+# ------------------------------------------------------------------ 7. non-persisting preview (compare surface)
+print("== proposal-format 7. Preview renders a format WITHOUT persisting a version ==")
+# The Credit-Proposal screen's side-by-side compare renders formats via a read-only preview so
+# comparing never spams proposal versions. Assert the preview returns the format's sections/body
+# but creates NO new version, while generate still persists.
+st, versions_before = call("GET", f"/decision/api/decisions/{ref_a}/credit-proposal/versions")
+n_before = len(versions_before or [])
+check("version listing readable before preview", st == 200 and isinstance(versions_before, list), f"{st}")
+
+st, prev_pf = call("GET", f"/decision/api/decisions/{ref_a}/credit-proposal/preview?format=PROJECT_FINANCE")
+die_if_none("preview PROJECT_FINANCE", prev_pf)
+check("preview returns 200", st == 200, f"{st}")
+check("preview reflects the requested format", prev_pf.get("format") == "PROJECT_FINANCE", str(prev_pf.get("format")))
+check("preview returns the PROJECT_FINANCE format's sections (same as the format def)",
+      prev_pf.get("sections") == pf_titles, f"{prev_pf.get('sections')} != {pf_titles}")
+check("preview body carries the segment-specific DSCR-waterfall section",
+      "DSCR & cashflow waterfall (advisory)" in prev_pf.get("markdown", ""), "waterfall heading missing")
+check("preview renders HTML + markdown bodies", bool(prev_pf.get("html")) and bool(prev_pf.get("markdown")), "empty render")
+check("preview carries source citations (grounding)", isinstance(prev_pf.get("citations"), dict) and len(prev_pf["citations"]) > 0, str(prev_pf.get("citations")))
+if dscr_a is not None:
+    check("preview quotes the authoritative DSCR verbatim (figure is a rendering)",
+          f"{dscr_a:.2f}" in prev_pf.get("markdown", ""), "DSCR not quoted in preview")
+
+# A no-format preview resolves the STANDARD layout (behaviour-preserving), still non-persisting.
+st, prev_std = call("GET", f"/decision/api/decisions/{ref_a}/credit-proposal/preview")
+die_if_none("preview default", prev_std)
+check("no-format preview resolves STANDARD", prev_std.get("format") == "STANDARD", str(prev_std.get("format")))
+check("no-format preview sections == the universal layout", prev_std.get("sections") == STANDARD_SECTIONS, str(prev_std.get("sections")))
+
+# CRITICAL: none of the previews above created a proposal version.
+st, versions_mid = call("GET", f"/decision/api/decisions/{ref_a}/credit-proposal/versions")
+n_mid = len(versions_mid or [])
+check("preview created NO new proposal version (version count unchanged)",
+      n_mid == n_before, f"before={n_before} after-preview={n_mid}")
+
+# ...while generate DOES persist a new version (the real action still works).
+st, gen = call("POST", f"/decision/api/decisions/{ref_a}/credit-proposal/generate",
+               {"format": "PROJECT_FINANCE"}, actor="analyst.user")
+die_if_none("generate after preview", gen)
+st, versions_after = call("GET", f"/decision/api/decisions/{ref_a}/credit-proposal/versions")
+n_after = len(versions_after or [])
+check("generate DOES persist a new version (count increments by 1)",
+      n_after == n_mid + 1, f"after-preview={n_mid} after-generate={n_after}")
+
 print(f"\n{PASS} passed, {FAIL} failed")
 sys.exit(1 if FAIL else 0)

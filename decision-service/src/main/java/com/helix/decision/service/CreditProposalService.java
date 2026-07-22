@@ -154,6 +154,67 @@ public class CreditProposalService {
         return saved;
     }
 
+    /** A rendered-only proposal — the same body {@link #generate} produces, but NOT persisted. */
+    public record ProposalPreview(String applicationReference, String format, String label,
+                                  List<String> sections, String markdown, String html,
+                                  Map<String, Object> citations, boolean llmDrafted) {
+    }
+
+    /**
+     * Render the credit proposal under a chosen CAM {@code format} WITHOUT persisting a
+     * {@link CreditProposal} version — no DB write, no {@code CREDIT_PROPOSAL_GENERATED} audit.
+     * It reuses the exact format-aware assembly of {@link #generate(String, String, String)} (the
+     * same {@link #resolveFormat}, keyed section builders, inline-sublimits rule, grounding LLM
+     * narrative and citations), so the rendered body matches what a real generate would produce —
+     * only the persistence + version bump + audit stamp are skipped. Powers the Credit-Proposal
+     * screen's side-by-side format compare so comparing formats never spams proposal versions.
+     */
+    @Transactional(readOnly = true)
+    public ProposalPreview preview(String reference, String format) {
+        DealEnvelopeDto env = upstream.envelope(reference);
+        RiskSummaryDto rs = upstream.riskSummary(reference);
+        if (rs == null || rs.rating() == null) {
+            throw ApiException.conflict("Cannot preview proposal — the deal must be rated first");
+        }
+        List<Covenant> covs = covenants.findByApplicationReference(reference);
+        CreditDecision dec = decisions.findFirstByApplicationReferenceOrderByCreatedAtDesc(reference).orElse(null);
+
+        ResolvedFormat fmt = resolveFormat(format, env.segment());
+
+        LlmResult proposalDraft = llmNarrative(env, rs, covs, dec);
+        boolean llmDrafted = proposalDraft.usable();
+
+        Md md = new Md();
+        md.h1("Credit proposal · " + env.applicationReference());
+        md.muted("Prepared by Helix · grounded in platform data · awaiting named human review and sign-off");
+        md.spacer();
+        if (llmDrafted) {
+            md.h2("Executive narrative (AI-drafted, advisory)");
+            md.line(proposalDraft.text().strip());
+        }
+
+        Ctx ctx = new Ctx(env, rs, covs, dec);
+        Set<String> keys = new LinkedHashSet<>();
+        for (Section s : fmt.sections()) keys.add(s.key());
+        boolean inlineSublimits = !keys.contains("sublimits");
+        for (Section s : fmt.sections()) {
+            renderSection(s.key(), md, ctx, inlineSublimits);
+        }
+
+        Map<String, Object> citations = new LinkedHashMap<>();
+        citations.put("envelope", "origination-service GET /api/applications/" + reference + "/envelope");
+        citations.put("rating",   "risk-service GET /api/risk/" + reference + "/rating");
+        citations.put("capital",  "risk-service GET /api/risk/" + reference + "/capital");
+        citations.put("pricing",  "risk-service GET /api/risk/" + reference);
+        citations.put("covenants","decision-service GET /api/decisions/" + reference + "/covenants");
+        citations.put("decision", "decision-service GET /api/decisions/" + reference);
+
+        // NO proposals.save(...), NO audit.ai(CREDIT_PROPOSAL_GENERATED) — render-only.
+        return new ProposalPreview(reference, fmt.code(), fmt.label(),
+                fmt.sections().stream().map(Section::title).toList(),
+                md.markdown(), md.html(), citations, llmDrafted);
+    }
+
     @Transactional(readOnly = true)
     public CreditProposal latest(String reference) {
         return proposals.findFirstByApplicationReferenceOrderByVersionDesc(reference)

@@ -31,4 +31,15 @@ public final class RiskDtos {
     public record RiskSummary(String applicationReference, Rating rating, CapitalResult capital,
                               PricingResult pricing) {
     }
+
+    /**
+     * Hypothetical scored-rating parameters for the read-only SCORING_APPROVAL_POLICY simulate
+     * endpoint (powers the Approval-Rules matrix "simulate routing" panel). All fields optional —
+     * absent numerics default to 0 and {@code overridden} to false when the routing is evaluated.
+     * Nothing here is persisted; no rating is read or mutated.
+     */
+    public record ScoringApprovalSimulateRequest(
+            Double exposure, String grade, Integer overrideNotches, Boolean overridden,
+            String segment, String jurisdiction, String scoreBand) {
+    }
 }

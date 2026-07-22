@@ -1176,3 +1176,59 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
   .rolehome-hero { padding: 14px 14px; }
 }
 
+/* ============================================================================
+   Approval Rules matrix (Screen A) + Credit Proposal compare (Screen B).
+   Appended — purpose classes for the two authoring surfaces. Reuse the shared
+   card / badge / grid primitives; only the matrix-specific chrome lives here.
+   ============================================================================ */
+
+/* generic centered table cell (plain <table>, not the DataTable) */
+.dt-center { text-align: center; }
+
+/* ordered, first-match-wins rule cards */
+.rule-card {
+  border: 1px solid var(--hairline); border-radius: var(--r-lg);
+  padding: 12px 14px; margin-bottom: 10px; background: var(--canvas);
+}
+.rule-card.is-default { background: var(--surface-soft); border-style: dashed; }
+.rule-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rule-seq { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--ocean-8); min-width: 34px; }
+.rule-id-input { max-width: 200px; font-family: var(--font-mono); font-size: 12.5px; }
+.matrix-order-btn {
+  width: 28px; height: 28px; border: 1px solid var(--hairline); background: var(--canvas);
+  border-radius: var(--r-sm); cursor: pointer; font-size: 13px; color: var(--ink); line-height: 1;
+}
+.matrix-order-btn:hover:not(:disabled) { background: var(--surface-strong); }
+.matrix-order-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.rule-when { margin: 10px 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-soft); }
+.cond-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 5px 0; }
+.cond-key { font-size: 12.5px; font-weight: 600; color: var(--ink); min-width: 150px; }
+.cond-del {
+  width: 22px; height: 22px; border: 1px solid var(--hairline); background: var(--canvas);
+  border-radius: 999px; cursor: pointer; color: var(--bad); font-weight: 700; line-height: 1;
+}
+.cond-hint { font-size: 11px; color: var(--muted); }
+
+.rule-outcome { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; margin-top: 8px; }
+.rule-outcome .field { margin-bottom: 0; max-width: 240px; }
+
+/* multi-value chip toggles (grade / score-band selectors) */
+.chip-row { display: flex; gap: 5px; flex-wrap: wrap; }
+.chip-toggle {
+  padding: 3px 9px; border-radius: var(--r-pill); border: 1px solid var(--hairline);
+  background: var(--canvas); color: var(--muted); font-size: 11.5px; font-weight: 600; cursor: pointer;
+}
+.chip-toggle.on { background: var(--ocean-8); border-color: var(--ocean-8); color: #fff; }
+
+/* simulate-routing result strip */
+.sim-result {
+  display: flex; gap: 28px; flex-wrap: wrap; margin-top: 12px; padding: 12px 14px;
+  border-radius: var(--r-md); border: 1px dashed var(--hairline); background: var(--surface-soft);
+}
+
+/* format-compare table cells */
+.cmp-differs > td { background: rgba(0,109,137,.06); }
+.cmp-yes { color: #136b24; font-weight: 700; }
+.cmp-no { color: var(--muted-soft); }
+
