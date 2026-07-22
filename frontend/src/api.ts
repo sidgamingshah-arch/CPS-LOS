@@ -216,6 +216,32 @@ export const risk = {
     "/risk/api/risk/scoring-approval/simulate", "POST", body),
 };
 
+// ---- independent risk note (risk-function opinion record; advisory, own lifecycle) ----
+export const riskNotes = {
+  list: (subjectRef?: string) =>
+    call<any[]>(`/risk/api/risk-notes${subjectRef ? `?subjectRef=${encodeURIComponent(subjectRef)}` : ""}`, "GET"),
+  get: (ref: string) => call<any>(`/risk/api/risk-notes/${ref}`, "GET"),
+  create: (body: { subjectRef: string; sections?: Record<string, string>; recommendedAction?: string }, actor: string) =>
+    call<any>("/risk/api/risk-notes", "POST", body, actor),
+  updateSections: (
+    ref: string,
+    body: { sections?: Record<string, string>; aiDraft?: boolean; recommendedAction?: string },
+    actor: string,
+  ) => call<any>(`/risk/api/risk-notes/${ref}/sections`, "PUT", body, actor),
+  submit: (ref: string, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/submit`, "POST", undefined, actor),
+  review: (ref: string, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/review`, "POST", undefined, actor),
+  approve: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/approve`, "POST", { note }, actor),
+  reject: (ref: string, reason: string, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/reject`, "POST", { reason }, actor),
+  reassign: (ref: string, toActor: string, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/reassign`, "POST", { toActor }, actor),
+  reverse: (ref: string, reason: string, actor: string) =>
+    call<any>(`/risk/api/risk-notes/${ref}/reverse`, "POST", { reason }, actor),
+};
+
 // ---- configurable scoring-model engine (sections of typed questions; advisory composite) ----
 export const models = {
   render: (ref: string) => call<any>(`/risk/api/risk/${ref}/model`, "GET"),
