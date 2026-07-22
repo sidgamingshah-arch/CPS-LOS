@@ -96,6 +96,10 @@ export default function CreditProposal() {
   };
 
   const downloadPdf = () => printing.print(printing.proposalHtml(selectedRef, actor), notify);
+  // Word (.rtf) / Excel (SpreadsheetML) office output — every figure quoted verbatim from the
+  // authoritative proposal body; served as an attachment, the proposal stays byte-identical.
+  const downloadRtf = () => printing.downloadProposal(selectedRef, "rtf", actor, notify);
+  const downloadExcel = () => printing.downloadProposal(selectedRef, "xlsx", actor, notify);
 
   // Compare side
   const [fmtA, setFmtA] = useState<string>("");
@@ -217,6 +221,8 @@ export default function CreditProposal() {
                   {latest.data.format && <Badge kind="info">CAM · {latest.data.format}</Badge>}
                   <small className="prov">Generated {fmt.dateTime(latest.data.generatedAt)} by {latest.data.generatedBy}</small>
                   <Button kind="ghost" onClick={downloadPdf}>Download PDF</Button>
+                  <Button kind="ghost" onClick={downloadRtf}>Word (.rtf)</Button>
+                  <Button kind="ghost" onClick={downloadExcel}>Excel</Button>
                 </div>
                 <ProposalPane html={latest.data.html} />
                 <Citations citations={latest.data.citations || {}} />

@@ -160,6 +160,16 @@ export default function DocGen() {
     if (!selectedDoc) return;
     printing.print(printing.documentHtml(selectedDoc.id, actor), notify);
   };
+  // Word (.rtf) / Excel (SpreadsheetML) office output — the same authoritative body, no figure
+  // recomputed. Served as an attachment; the source document stays byte-identical.
+  const handleDownloadRtf = () => {
+    if (!selectedDoc) return;
+    printing.downloadDocument(selectedDoc.id, "rtf", actor, notify);
+  };
+  const handleDownloadExcel = () => {
+    if (!selectedDoc) return;
+    printing.downloadDocument(selectedDoc.id, "xlsx", actor, notify);
+  };
 
   /* ── Withdraw ──────────────────────────────────────────────── */
   const handleWithdraw = async () => {
@@ -288,6 +298,8 @@ export default function DocGen() {
               >
                 <div className="btnrow print-actions" style={{ marginTop: 8 }}>
                   <Button kind="ghost" onClick={handleDownloadPdf}>Download PDF</Button>
+                  <Button kind="ghost" onClick={handleDownloadRtf}>Word (.rtf)</Button>
+                  <Button kind="ghost" onClick={handleDownloadExcel}>Excel</Button>
                   {isDraft && <Button onClick={handleConfirm}>Confirm</Button>}
                   {isDraft && <Button kind="danger" onClick={handleWithdraw}>Withdraw</Button>}
                 </div>
