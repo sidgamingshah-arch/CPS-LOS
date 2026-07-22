@@ -1232,3 +1232,21 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .cmp-yes { color: #136b24; font-weight: 700; }
 .cmp-no { color: var(--muted-soft); }
 
+
+/* ---- Banking ASR (account statement review) ---- */
+.asr-note { font-size: 12.5px; color: var(--ocean-7); margin-bottom: 12px; line-height: 1.5; }
+.asr-summary { line-height: 1.55; }
+.asr-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 10px; }
+.asr-lines-head { display: flex; justify-content: space-between; align-items: center; margin: 14px 0 8px; }
+.asr-lines { display: grid; gap: 12px; margin-bottom: 14px; }
+.asr-line { border: 1px solid var(--hairline); border-radius: var(--r-sm); padding: 10px 12px; background: var(--canvas); }
+.asr-line-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.asr-month { font-weight: 600; max-width: 140px; }
+.asr-line-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; }
+.asr-line-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--ocean-7); text-transform: uppercase; letter-spacing: .04em; }
+.asr-line-grid input { font-size: 13px; }
+button.btn.small { padding: 3px 10px; font-size: 12px; }
+.asr-month-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.asr-month-table th, .asr-month-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--hairline); }
+.asr-month-table th { color: var(--ocean-7); font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+.asr-confirmed { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ocean-7); }
