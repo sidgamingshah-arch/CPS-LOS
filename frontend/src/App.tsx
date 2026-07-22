@@ -17,6 +17,7 @@ import Disbursement from "./pages/Disbursement";
 import Counterparties from "./pages/Counterparties";
 import Deals from "./pages/Deals";
 import DealWorkspace from "./pages/DealWorkspace";
+import DecisionCockpit from "./pages/DecisionCockpit";
 import AuditLog from "./pages/AuditLog";
 import Copilot from "./pages/Copilot";
 import Mis from "./pages/Mis";
@@ -102,6 +103,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Assess & Decide",
     items: [
+      { key: "cockpit", label: "Decision Cockpit" },
       { key: "risklab", label: "Risk Lab" },
       { key: "risknotes", label: "Risk Notes" },
       { key: "projections", label: "Projections" },
@@ -194,6 +196,7 @@ const CRUMB: Record<string, string> = {
   globalcashflow: "Global / combined cash-flow · relationship consolidated debt-service across obligor + guarantors + group members · deterministic combined DSCR + per-member contribution · member spreads untouched",
   exceptions: "Unified exception cockpit · read-only rollup of open covenant/MER/CAD/limit/EWS items (best-effort, never mutates a source) · manual ticklers with maker-checker resolve (resolver ≠ owner)",
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
+  cockpit: "Approver decision cockpit · one read-first screen · rating · pricing · covenants · exposure · AI summary · sticky decision bar",
   risklab: "Advisory overlays · statistical RAG scoring · macro directional impact (non-binding)",
   risknotes: "Independent risk note · risk-function opinion record · draft → submit → review → approve · reassign / reject / reverse · rating of record never moves",
   projections: "Multi-year proforma · driver assumptions · projected DSCR · sensitivity (advisory)",
@@ -527,6 +530,7 @@ export default function App() {
             {view === "modelbuilder" && <ModelBuilder />}
             {view === "approvalrules" && <ApprovalRules />}
             {view === "audit" && <AuditLog />}
+            {view === "cockpit" && <DecisionCockpit />}
             {view === "workspace" && ref && <DealWorkspace reference={ref} />}
           </div>
         </main>
