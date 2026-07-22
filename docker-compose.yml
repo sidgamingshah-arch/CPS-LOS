@@ -59,6 +59,7 @@ services:
       ORIGINATION_SERVICE_URL: http://origination-service:8083
       RISK_SERVICE_URL: http://risk-service:8084
       DECISION_SERVICE_URL: http://decision-service:8085
+      LIMIT_SERVICE_URL: http://limit-service:8088
     ports: ["8086:8086"]
     volumes: ["portfolio-data:/data"]
     depends_on: [config-service, origination-service, risk-service, decision-service]

@@ -562,6 +562,24 @@ export const cap = {
   sweep: (actor: string) => call<any>("/portfolio/api/cap/sweep", "POST", undefined, actor),
 };
 
+// ---- unified exception / tickler register (U7) ----
+export const exceptions = {
+  rollup: (subjectRef?: string) =>
+    call<any>("/portfolio/api/exceptions/rollup" + (subjectRef ? `?subjectRef=${encodeURIComponent(subjectRef)}` : ""), "GET"),
+  ticklers: (q?: { status?: string; subjectRef?: string }) => {
+    const p = new URLSearchParams();
+    if (q?.status) p.set("status", q.status);
+    if (q?.subjectRef) p.set("subjectRef", q.subjectRef);
+    const qs = p.toString();
+    return call<any[]>("/portfolio/api/exceptions/ticklers" + (qs ? `?${qs}` : ""), "GET");
+  },
+  create: (body: any, actor: string) => call<any>("/portfolio/api/exceptions/ticklers", "POST", body, actor),
+  assign: (ref: string, toActor: string, actor: string) =>
+    call<any>(`/portfolio/api/exceptions/ticklers/${ref}/assign`, "POST", { toActor }, actor),
+  resolve: (ref: string, note: string, actor: string) =>
+    call<any>(`/portfolio/api/exceptions/ticklers/${ref}/resolve`, "POST", { note }, actor),
+};
+
 // ---- monitoring artifacts (post-disbursement; ONE lifecycle, master-driven) ----
 export const monitoringArtifacts = {
   list: (q?: { subjectRef?: string; status?: string; type?: string }) => {
