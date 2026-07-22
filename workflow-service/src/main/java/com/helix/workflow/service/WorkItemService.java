@@ -376,6 +376,56 @@ public class WorkItemService {
                 .orElseThrow(() -> ApiException.notFound("No task: " + taskRef));
     }
 
+    /**
+     * Inbox read with an optional {@code scope}. {@code null} / blank / {@code self} is
+     * byte-identical to {@link #inbox(String, String)} (the pre-U9 behaviour). {@code team}
+     * additionally folds in the open work-items of the CALLER's subordinates resolved from the
+     * {@code USER_HIERARCHY} master — best-effort and DEFAULT-PERMISSIVE: an unmapped supervisor
+     * or a masters outage degrades to self-only. An unrecognised scope is treated as self.
+     */
+    @Transactional(readOnly = true)
+    public List<WorkItem> inbox(String assignee, String actor, String scope) {
+        if (!blank(scope) && "team".equalsIgnoreCase(scope.trim())) {
+            return teamInbox(assignee, actor);
+        }
+        return inbox(assignee, actor);   // self / default — unchanged
+    }
+
+    /**
+     * The caller's own inbox plus the open work-items of every actor who reports to the caller
+     * (USER_HIERARCHY.supervisor == caller). The base list reuses {@link #inbox(String, String)}
+     * so its authorization (named actor + own-or-supervisor) is unchanged; the team expansion is
+     * rooted at the CALLER, so a supervisor only ever sees their own reports' tasks. Fail-open:
+     * an empty / unavailable hierarchy leaves the result equal to the caller's own inbox.
+     */
+    private List<WorkItem> teamInbox(String assignee, String actor) {
+        List<WorkItem> base = inbox(assignee, actor);
+        List<String> subs;
+        try {
+            subs = masters.subordinatesOf(actor);
+        } catch (Exception e) {
+            log.warn("USER_HIERARCHY lookup failed for {} ({}) — team scope degrades to self-only",
+                    actor, e.getMessage());
+            return base;
+        }
+        if (subs == null || subs.isEmpty()) {
+            return base;   // unmapped supervisor -> self-only (no regression)
+        }
+        LinkedHashMap<String, WorkItem> merged = new LinkedHashMap<>();
+        for (WorkItem wi : base) {
+            merged.put(wi.getTaskRef(), wi);
+        }
+        for (String sub : subs) {
+            if (blank(sub) || sub.equalsIgnoreCase(assignee) || sub.equalsIgnoreCase(actor)) {
+                continue;
+            }
+            for (WorkItem wi : items.findByAssigneeIgnoreCaseAndStatusInOrderByPriorityAscIdAsc(sub, OPEN_STATES)) {
+                merged.putIfAbsent(wi.getTaskRef(), wi);
+            }
+        }
+        return new ArrayList<>(merged.values());
+    }
+
     @Transactional(readOnly = true)
     public List<WorkItem> inbox(String assignee, String actor) {
         if (blank(assignee)) throw ApiException.badRequest("assignee is required");

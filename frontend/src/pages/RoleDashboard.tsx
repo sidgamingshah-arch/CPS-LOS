@@ -41,6 +41,17 @@ export default function RoleDashboard() {
   const myTasks = useAsync(() => soft(tasks.inbox(actor)), [actor]);
   const myQueries = useAsync(() => soft(queries.list({ addressee: actor }, "decision", actor)), [actor]);
 
+  // ---- "view my team" toggle (U9): fold in the tasks of my subordinates (USER_HIERARCHY). ----
+  // DEFAULT is self-only (byte-identical). When toggled, we ask the server for scope=team, passing
+  // the acting identity as X-Actor so the supervisor's own reports resolve; a flat / unmapped
+  // hierarchy fails open to self-only. Fetched only when the toggle is on.
+  const [teamMode, setTeamMode] = React.useState(false);
+  const teamTasks = useAsync(
+    () => (teamMode ? soft(tasks.inbox(actor, "team", actor)) : none),
+    [actor, teamMode],
+  );
+  const taskLane = teamMode ? teamTasks : myTasks;
+
   // ---- persona-scoped surfaces (fetched only for the active persona) ----
   const cps = useAsync(() => (isRel ? soft(counterparty.list()) : none), [actor, persona]);
   const relDeals = useAsync(() => (isRel || isRisk ? soft(origination.list()) : none), [actor, persona]);
@@ -84,7 +95,8 @@ export default function RoleDashboard() {
 
       {/* ---- at-a-glance work counts ---- */}
       <div className="grid cols-4">
-        <Stat label="My open tasks" value={myTasks.loading ? "…" : n(myTasks.data)} />
+        <Stat label={teamMode ? "Team open tasks" : "My open tasks"}
+          value={taskLane.loading ? "…" : n(taskLane.data)} />
         <Stat label="My open queries / RFIs" value={myQueries.loading ? "…" : n(myQueries.data)} />
         <PersonaStat persona={persona}
           credit={n(pendNotings.data) + n(pendPricing.data)}
@@ -94,11 +106,34 @@ export default function RoleDashboard() {
         <Stat label="Persona" value={<Badge kind="info">{persona}</Badge>} />
       </div>
 
+      {/* ---- "view my team" scope toggle (U9) + field-level access note ---- */}
+      <div className="team-scope-bar">
+        <div className="btnrow" style={{ alignItems: "center", flexWrap: "wrap" }}>
+          <span className="rh-eyebrow" style={{ marginRight: 4 }}>TASK SCOPE</span>
+          <Button kind={teamMode ? "subtle" : "primary"} onClick={() => setTeamMode(false)}>My tasks</Button>
+          <Button kind={teamMode ? "primary" : "subtle"} onClick={() => setTeamMode(true)}>My team</Button>
+          <span className="muted team-scope-note">
+            {teamMode
+              ? "Showing my team's open cases — my direct reports (USER_HIERARCHY)."
+              : "Showing only my own open cases."}
+          </span>
+        </div>
+        <div className="muted team-scope-note">
+          Field-level visibility is governed by the FIELD_ACCESS master (READ / WRITE / HIDDEN per
+          role); the server enforces it — default-permissive when a form or role is unmapped.
+        </div>
+      </div>
+
       {/* ---- my work: tasks + queries (Wave-1/2 case lanes) ---- */}
       <div className="grid cols-2">
-        <ListCard title="My tasks" sub="Case-management work-items assigned to me (workflow-service)."
-          loading={myTasks.loading} rows={myTasks.data} empty={empty}
+        <ListCard
+          title={teamMode ? "My team's tasks" : "My tasks"}
+          sub={teamMode
+            ? "Open work-items across me and my direct reports (workflow-service · USER_HIERARCHY)."
+            : "Case-management work-items assigned to me (workflow-service)."}
+          loading={taskLane.loading} rows={taskLane.data} empty={empty}
           cols={[
+            { head: "Assignee", cell: (t) => <span className="mono">{t.assignee || "—"}</span> },
             { head: "Task", cell: (t) => <span className="mono">{t.taskRef}</span> },
             { head: "Type", cell: (t) => <Badge>{t.taskType}</Badge> },
             { head: "Subject", cell: (t) => <span className="mono">{t.subjectRef}</span> },

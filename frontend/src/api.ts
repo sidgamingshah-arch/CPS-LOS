@@ -187,6 +187,18 @@ export const fieldPolicy = {
     call<{ formKey: string; fields: any[] }>(`/origination/api/field-policy/${formKey}`, "GET"),
 };
 
+// ---- field-level access control (FIELD_ACCESS, helix-common auto-exposed; U9) ----
+// Field -> READ|WRITE|HIDDEN for a form + role. DEFAULT-PERMISSIVE: an unmapped form/role
+// returns an empty map = full access. Read via workflow-service (has config-service.base-url,
+// so the FieldAccessService bean is live there); server-side enforce() is the real gate.
+export const fieldAccess = {
+  get: (formKey: string, role?: string) =>
+    call<{ formKey: string; role: string | null; fields: Record<string, string> }>(
+      `/workflow/api/field-access/${encodeURIComponent(formKey)}${role ? `?role=${encodeURIComponent(role)}` : ""}`,
+      "GET",
+    ),
+};
+
 // ---- risk ----
 export const risk = {
   summary: (ref: string) => call<any>(`/risk/api/risk/${ref}`, "GET"),
@@ -1171,8 +1183,12 @@ export const tatMis = {
 // ---- case-management tasks (WorkItem inbox; workflow-service /api/tasks) ----
 // Read-only surfaces used by the role-scoped landing dashboards ("my tasks").
 export const tasks = {
-  inbox: (assignee: string) =>
-    call<any[]>(`/workflow/api/tasks/inbox?assignee=${encodeURIComponent(assignee)}`, "GET"),
+  // scope: undefined/"self" -> own inbox (byte-identical to pre-U9). "team" folds in the
+  // caller's subordinates (USER_HIERARCHY); pass `actor` so the X-Actor is the supervisor.
+  inbox: (assignee: string, scope?: "self" | "team", actor?: string) =>
+    call<any[]>(
+      `/workflow/api/tasks/inbox?assignee=${encodeURIComponent(assignee)}${scope ? `&scope=${scope}` : ""}`,
+      "GET", undefined, actor),
   queue: (key: string) =>
     call<any[]>(`/workflow/api/tasks/queue/${encodeURIComponent(key)}`, "GET"),
   subject: (ref: string, type?: string) =>

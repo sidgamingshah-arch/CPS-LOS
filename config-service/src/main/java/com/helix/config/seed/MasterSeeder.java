@@ -67,6 +67,29 @@ public class MasterSeeder implements CommandLineRunner {
                                 "visibleWhen", map("field", "collateralType", "op", "PRESENT"),
                                 "requiredWhen", map("field", "collateralType", "op", "PRESENT"),
                                 "requiredSeverity", "ERROR"))));
+        // USER_HIERARCHY — organisational supervisor tree (U9 / CLoM F13,F47,F77). recordKey =
+        // actorId; payload {supervisor, department, role}. Read best-effort by workflow-service to
+        // resolve a supervisor's subordinates for the "view my team" inbox scope. ADDITIVE and
+        // DEFAULT-PERMISSIVE: an unmapped actor -> no team (self-only inbox), so no scope param
+        // leaves every existing flow byte-identical.
+        masters.seedActive("USER_HIERARCHY", "rm.user", null, map(
+                "supervisor", "credit.head", "department", "WHOLESALE_CREDIT", "role", "RM"));
+        masters.seedActive("USER_HIERARCHY", "analyst.user", null, map(
+                "supervisor", "credit.head", "department", "WHOLESALE_CREDIT", "role", "ANALYST"));
+        masters.seedActive("USER_HIERARCHY", "credit.head", null, map(
+                "supervisor", "cro", "department", "WHOLESALE_CREDIT", "role", "CREDIT_HEAD"));
+        // FIELD_ACCESS — field-level access control per form + role (U9 / CLoM F13,F47,F77).
+        // recordKey = a business-form key; payload.roles {role -> {field -> READ|WRITE|HIDDEN}}.
+        // Enforced by helix-common FieldAccessService (TTL-cached, DEFAULT-PERMISSIVE: an unmapped
+        // form/role/field -> full access). Demo row for the origination application-capture form:
+        // an RM may edit the requested amount but never sees the internal risk grade; an analyst
+        // sees both read-only; the credit head may edit both. This is inert w.r.t. existing flows
+        // (no engine reads it) — it is exercised only via the auto-exposed /api/field-access surface.
+        masters.seedActive("FIELD_ACCESS", "ORIGINATION_APPLICATION", null, map(
+                "roles", map(
+                        "RM", map("requestedAmount", "WRITE", "internalRiskGrade", "HIDDEN"),
+                        "ANALYST", map("requestedAmount", "READ", "internalRiskGrade", "READ"),
+                        "CREDIT_HEAD", map("requestedAmount", "WRITE", "internalRiskGrade", "WRITE"))));
         masters.seedActive("NEGATIVE_LIST", "country:CU", null, map("type", "COUNTRY", "value", "CU", "reason", "sanctions"));
         masters.seedActive("NEGATIVE_LIST", "country:KP", null, map("type", "COUNTRY", "value", "KP", "reason", "sanctions"));
         masters.seedActive("NEGATIVE_LIST", "country:IR", null, map("type", "COUNTRY", "value", "IR", "reason", "sanctions"));
