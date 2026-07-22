@@ -1232,3 +1232,22 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .cmp-yes { color: #136b24; font-weight: 700; }
 .cmp-no { color: var(--muted-soft); }
 
+/* ── Document Execution workflow + signatory matrix (CLoM R1-14 / F73-F74) ── */
+.exec-gate {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 10px; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--human-soft, var(--surface-soft)); font-size: 12.5px; color: var(--muted);
+}
+.exec-stepper { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.exec-step {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600;
+  color: var(--muted-soft); letter-spacing: .02em;
+}
+.exec-step.done { color: var(--ink); }
+.exec-step.current {
+  padding: 2px 9px; border-radius: var(--r-pill); background: var(--ocean-8); color: #fff;
+}
+.exec-step-sep { color: var(--muted-soft); margin-right: 4px; font-weight: 400; }
+.exec-matrix-title { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.exec-add-sig { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+

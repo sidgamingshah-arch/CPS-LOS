@@ -37,6 +37,7 @@ import RiskLab from "./pages/RiskLab";
 import CreditProposal from "./pages/CreditProposal";
 import ApprovalRules from "./pages/ApprovalRules";
 import DocGen from "./pages/DocGen";
+import Execution from "./pages/Execution";
 import Commentary from "./pages/Commentary";
 import PricingLab from "./pages/PricingLab";
 import Spreading from "./pages/Spreading";
@@ -99,6 +100,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "cad", label: "CAD · Documentation" },
       { key: "perfection", label: "MOE Perfection" },
       { key: "docgen", label: "Doc Generation" },
+      { key: "execution", label: "Document Execution" },
       { key: "commentary", label: "AI Commentary" },
       { key: "creditproposal", label: "Credit Proposal" },
       { key: "committee", label: "Committee Room" },
@@ -163,6 +165,7 @@ const CRUMB: Record<string, string> = {
   cad: "Credit Administration · checklist · waivers/deviations · limit release",
   perfection: "Mortgage / MOE security perfection · ordered role-gated steps · MOE-vetting SoD · vendor RFQ · optional limit-release gate",
   docgen: "Template-driven document generation · clause add/remove/edit · human-confirm gate",
+  execution: "Document execution workflow · signatory matrix (INTERNAL/CUSTOMER) · e-sign facade · status stepper · deferral/waiver tags · source document unchanged",
   commentary: "AI narrative commentary · grounded · advisory · human-confirm gate",
   creditproposal: "CAM authoring · format picker · generate (versioned) · side-by-side format compare (non-persisting preview) · figures identical across formats",
   approvalrules: "Scoring-approval policy · visual matrix · first-match-wins routing · simulate · maker-checker save · never touches a figure",
@@ -468,6 +471,7 @@ export default function App() {
             {view === "cad" && <Cad />}
             {view === "perfection" && <Perfection />}
             {view === "docgen" && <DocGen />}
+            {view === "execution" && <Execution />}
             {view === "commentary" && <Commentary />}
             {view === "creditproposal" && <CreditProposal />}
             {view === "committee" && <Committee />}

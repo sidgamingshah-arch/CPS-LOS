@@ -562,6 +562,24 @@ export const perfection = {
     call<any>(`/decision/api/perfection/cases/${perfRef}/steps/${stepKey}/vendor-rfq`, "POST", body, actor),
 };
 
+// ---- document execution workflow + signatory matrix (CLoM R1-14 / F73-F74) ----
+export const execution = {
+  list: (subjectRef?: string) =>
+    call<any[]>("/decision/api/execution/packages" + (subjectRef ? `?subjectRef=${encodeURIComponent(subjectRef)}` : ""), "GET"),
+  view: (execRef: string) => call<any>(`/decision/api/execution/packages/${execRef}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/decision/api/execution/packages", "POST", body, actor),
+  addSignatory: (execRef: string, docId: number, body: any, actor: string) =>
+    call<any>(`/decision/api/execution/packages/${execRef}/documents/${docId}/signatories`, "POST", body, actor),
+  sign: (execRef: string, docId: number, sigId: number, actor: string) =>
+    call<any>(`/decision/api/execution/packages/${execRef}/documents/${docId}/signatories/${sigId}/sign`, "POST", undefined, actor),
+  setStatus: (execRef: string, docId: number, body: any, actor: string) =>
+    call<any>(`/decision/api/execution/packages/${execRef}/documents/${docId}/status`, "POST", body, actor),
+  defer: (execRef: string, docId: number, body: any, actor: string) =>
+    call<any>(`/decision/api/execution/packages/${execRef}/documents/${docId}/defer`, "POST", body, actor),
+  waive: (execRef: string, docId: number, body: any, actor: string) =>
+    call<any>(`/decision/api/execution/packages/${execRef}/documents/${docId}/waive`, "POST", body, actor),
+};
+
 // ---- MER (monitoring of exceptions & renewals) ----
 export const mer = {
   generateFromCad: (caseId: number, owner: string, actor: string) =>
