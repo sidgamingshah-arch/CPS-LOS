@@ -1,7 +1,10 @@
 import { useState } from "react";
-import { config, counterparty, fmt } from "../api";
+import { config, counterparty, fmt, initiation, sourceIngest } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, type Col, DataTable, EmptyState, Field, statusTone, useAsync } from "../ui";
+import {
+  AiBadge, Badge, Button, Card, type Col, DataTable, EmptyState, Field, GovFlow,
+  statusTone, Unchanged, useAsync,
+} from "../ui";
 import { useCodes } from "../code-values";
 
 const SAMPLE_UBO = JSON.stringify({
@@ -19,6 +22,11 @@ const SAMPLE_UBO = JSON.stringify({
   ],
 }, null, 2);
 
+/** A counterparty is prospect-stage until a named human promotes it to an obligor. */
+function isProspect(c: any): boolean {
+  return c?.recordType === "PROSPECT" || c?.lifecycleStatus === "DRAFT";
+}
+
 export default function Counterparties() {
   const { actor, notify } = useApp();
   const list = useAsync(() => counterparty.list(), []);
@@ -27,11 +35,18 @@ export default function Counterparties() {
   const jurisdictions = (jurisdictionsAsync.data || []) as any[];
   const [selId, setSelId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [pulling, setPulling] = useState(false);
 
   const cols: Col<any>[] = [
     {
       key: "legalName", header: "Name",
-      render: (c) => <>{c.legalName}<br /><small className="prov">{c.reference}</small></>,
+      render: (c) => (
+        <>
+          {c.legalName}
+          {isProspect(c) && <> <Badge kind="warn">PROSPECT</Badge></>}
+          <br /><small className="prov">{c.reference}</small>
+        </>
+      ),
       value: (c) => `${c.legalName ?? ""} ${c.reference ?? ""}`,
     },
     { key: "segment", header: "Segment" },
@@ -63,12 +78,14 @@ export default function Counterparties() {
                   try { const r = await counterparty.reKycSweep(undefined, actor); notify(`Re-KYC sweep: ${r.flagged} of ${r.scanned} flagged`); list.reload(); }
                   catch (e: any) { notify(e.message, true); }
                 }}>Run re-KYC sweep</Button>
+                <Button kind="subtle" onClick={() => setPulling((p) => !p)}>{pulling ? "Close CRM pull" : "Pull borrower from CRM"}</Button>
                 <Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New"}</Button>
               </div>
             }
             empty={list.loading ? <div className="loading">Loading…</div> : <div className="muted">None yet — create one.</div>}
           />
         </Card>
+        {pulling && <PullBorrowerForm onDone={(id) => { list.reload(); if (id) setSelId(id); }} />}
         {creating && <CreateForm onDone={(id) => { setCreating(false); list.reload(); setSelId(id); }} />}
       </div>
 
@@ -130,6 +147,154 @@ export default function Counterparties() {
     );
   }
 
+  // CRM as system-of-record: pull a borrower and create it as a GOVERNED PROSPECT.
+  function PullBorrowerForm({ onDone }: { onDone: (id?: number) => void }) {
+    const [crmId, setCrmId] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [result, setResult] = useState<any>(null);
+    const submit = async () => {
+      setBusy(true);
+      try {
+        const r = await initiation.pullBorrower(crmId.trim() ? { crmId: crmId.trim() } : {}, actor);
+        setResult(r);
+        notify(
+          r.created ? `Governed prospect created: ${r.counterpartyRef}`
+            : r.matchedExisting ? "Idempotent re-pull — counterparty already created from this CRM id"
+            : `Linked to existing counterparty (${r.dedupMatches} dedup match${r.dedupMatches === 1 ? "" : "es"})`,
+        );
+        onDone(r.counterpartyId);
+      } catch (e: any) { notify(e.message, true); }
+      finally { setBusy(false); }
+    };
+    return (
+      <Card title="Pull borrower from CRM"
+        sub="CRM run as the system-of-record for obligor creation. A pull always yields a governed PROSPECT — never an approved obligor.">
+        <GovFlow ai="CRM PULL" human="HUMAN PROMOTES → OBLIGOR"
+          note="dedup · negative-check · idempotency · audit all fire" />
+        <div className="spacer" />
+        <Field label="CRM borrower id" hint="Leave blank to pull the default sample borrower (simulated source).">
+          <input value={crmId} onChange={(e) => setCrmId(e.target.value)} placeholder="e.g. CRM-1001" />
+        </Field>
+        <Button onClick={submit} busy={busy}>Pull from CRM</Button>
+        {result && (
+          <div className="grid" style={{ marginTop: 12, gap: 8 }}>
+            <div className="btnrow" style={{ flexWrap: "wrap" }}>
+              <Badge kind="warn">PROSPECT</Badge>
+              <Badge kind={statusTone(result.lifecycleStatus)}>{result.lifecycleStatus}</Badge>
+              {result.created && <Badge kind="ok">CREATED</Badge>}
+              {result.matchedExisting && <Badge kind="info">IDEMPOTENT RE-PULL</Badge>}
+              {!result.created && !result.matchedExisting && result.dedupMatches > 0 && <Badge kind="info">DEDUP-LINKED</Badge>}
+              {result.negativeHit && <Badge kind="bad">NEGATIVE-LIST HIT</Badge>}
+            </div>
+            <div className="kv">
+              <div className="k">Reference</div><div className="v">{result.counterpartyRef}</div>
+              <div className="k">CRM id</div><div className="v">{result.crmId || "—"}</div>
+              <div className="k">Record type</div><div className="v">{result.recordType}</div>
+              <div className="k">Dedup matches</div><div className="v">{result.dedupMatches}</div>
+            </div>
+            <div className="gate">{result.message}</div>
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  // Auto data fetch — advisory INPUTS pulled from source systems (credit bureau + CRM).
+  // Every pull carries provenance and is non-authoritative; it never moves a figure of record.
+  function AutoFetch({ id }: { id: number }) {
+    const bureau = useAsync<any>(() => sourceIngest.latestBureau(id).catch(() => null), [id]);
+    const crm = useAsync<any>(() => sourceIngest.latestCrm(id).catch(() => null), [id]);
+    const [busyB, setBusyB] = useState(false);
+    const [busyC, setBusyC] = useState(false);
+
+    const pullBureau = async () => {
+      setBusyB(true);
+      try { const r = await sourceIngest.pullBureau(id, actor); notify(r.duplicate ? "Idempotent replay — bureau report already ingested" : "Bureau report pulled (advisory input)"); bureau.reload(); }
+      catch (e: any) { notify(e.message, true); } finally { setBusyB(false); }
+    };
+    const pullCrm = async () => {
+      setBusyC(true);
+      try { const r = await sourceIngest.pullCrm(id, actor); notify(r.duplicate ? "Idempotent replay — CRM profile already ingested" : "CRM profile pulled (advisory input)"); crm.reload(); }
+      catch (e: any) { notify(e.message, true); } finally { setBusyC(false); }
+    };
+
+    const b = bureau.data;
+    const p = crm.data;
+    return (
+      <Card title="Auto data fetch"
+        sub="Pull credit-bureau + CRM data from source systems. Simulated by default — no external system needed."
+        right={<AiBadge label="ADVISORY INPUT" />}>
+        <div className="gate">
+          Fetched data is an advisory INPUT carrying provenance. A pull never moves the authoritative
+          rating, pricing or CDD figure of record. <Unchanged label="FIGURES OF RECORD · UNCHANGED" />
+        </div>
+
+        <div className="grid cols-2" style={{ marginTop: 10 }}>
+          {/* ---- credit bureau ---- */}
+          <div className="card" style={{ margin: 0 }}>
+            <div className="flexbetween">
+              <div><h3 style={{ margin: 0 }}>Credit bureau</h3><div className="sub">Score · tradelines · delinquencies</div></div>
+              <Button kind="subtle" busy={busyB} onClick={pullBureau}>Pull bureau report</Button>
+            </div>
+            {bureau.loading ? <div className="loading" /> : b ? (
+              <>
+                <ProvChips rec={b} />
+                <div className="kv" style={{ marginTop: 8 }}>
+                  <div className="k">Bureau score</div>
+                  <div className="v">{b.creditScore ?? "—"} {b.scoreModel && <small className="prov">{b.scoreModel}</small>}</div>
+                  <div className="k">Inquiries (6m)</div><div className="v">{b.inquiriesLast6m}</div>
+                  <div className="k">Delinquencies (24m)</div><div className="v">{b.delinquenciesLast24m}</div>
+                  <div className="k">Open tradelines</div><div className="v">{b.openTradelines}</div>
+                  <div className="k">Total outstanding</div><div className="v">{fmt.money(b.totalOutstanding)}</div>
+                  {b.oldestAccountMonths != null && (<><div className="k">Oldest account</div><div className="v">{b.oldestAccountMonths} mo</div></>)}
+                </div>
+              </>
+            ) : (
+              <EmptyState glyph="↧" title="No bureau report yet" sub="Pull a report to populate this panel." />
+            )}
+          </div>
+
+          {/* ---- CRM ---- */}
+          <div className="card" style={{ margin: 0 }}>
+            <div className="flexbetween">
+              <div><h3 style={{ margin: 0 }}>CRM profile</h3><div className="sub">Relationship · products · segment</div></div>
+              <Button kind="subtle" busy={busyC} onClick={pullCrm}>Pull CRM profile</Button>
+            </div>
+            {crm.loading ? <div className="loading" /> : p ? (
+              <>
+                <ProvChips rec={p} />
+                <div className="kv" style={{ marginTop: 8 }}>
+                  <div className="k">CRM id</div><div className="v">{p.crmId || "—"}</div>
+                  <div className="k">Account</div><div className="v">{p.accountName || "—"}</div>
+                  <div className="k">Relationship mgr</div><div className="v">{p.relationshipManager || "—"}</div>
+                  <div className="k">Segment</div><div className="v">{p.segment || "—"}</div>
+                  <div className="k">Relationship value</div><div className="v">{fmt.money(p.relationshipValue)}</div>
+                  <div className="k">Lifecycle stage</div><div className="v">{p.lifecycleStage || "—"}</div>
+                  {(p.productsHeld || []).length > 0 && (<><div className="k">Products</div><div className="v">{p.productsHeld.join(", ")}</div></>)}
+                </div>
+              </>
+            ) : (
+              <EmptyState glyph="↧" title="No CRM profile yet" sub="Pull a profile to populate this panel." />
+            )}
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  // Provenance chip row: figure → source → version trace on every ingested record.
+  function ProvChips({ rec }: { rec: any }) {
+    return (
+      <div className="prov-chips">
+        <span className="prov-chip">source · {rec.sourceSystem}</span>
+        {rec.sourceVendor && <span className="prov-chip">vendor · {rec.sourceVendor}</span>}
+        {rec.payloadVersion && <span className="prov-chip">v · {rec.payloadVersion}</span>}
+        {rec.sourceReference && <span className="prov-chip">ref · {rec.sourceReference}</span>}
+        <span className="prov-chip">retrieved · {fmt.dateTime(rec.retrievedAt)}</span>
+      </div>
+    );
+  }
+
   function Detail({ id, onChange }: { id: number; onChange: () => void }) {
     const cp = useAsync(() => counterparty.get(id), [id]);
     const hits = useAsync(() => counterparty.screening(id), [id]);
@@ -183,6 +348,8 @@ export default function Counterparties() {
               }}>{c.lifecycleStatus === "CLOSED" ? "Closed" : "Close relationship"}</Button>
           </div>
         </Card>
+
+        <AutoFetch id={id} />
 
         <Card title="Screening hits" sub="Each hit cites matched fields; disposition is a named human action (no auto-clear ≥ SEVERE)."
           right={<Button kind="subtle" onClick={ingestFeed}>Ingest vendor feed</Button>}>
