@@ -7,9 +7,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClient;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +52,9 @@ public class NotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
     private static final Pattern TOKEN = Pattern.compile("\\{\\{\\s*([a-zA-Z0-9_.]+)\\s*}}");
+    private static final SecureRandom RANDOM = new SecureRandom();
+    /** Default relative base for the approve/reject action links rendered into the body. */
+    private static final String DEFAULT_ACTION_LINK_BASE = "/api/notifications/action/";
 
     private final NotificationRepository repo;
     private final AuditService audit;
@@ -81,6 +90,22 @@ public class NotificationService {
         }
     }
 
+    /**
+     * Opt-in actionable-approval config (email-actionable approve/reject, CLoM F12). When passed to
+     * {@link #enqueue(Enqueue, String, Instant, Integer, Integer, ApprovalAction)} the row is minted
+     * two one-time approve/reject tokens (single-use, hashed at rest exactly like the query
+     * external-response token) and the approve/reject links are injected into the render vars
+     * BEFORE rendering so they land in the outbound body. This is strictly additive: no existing
+     * caller passes it, so every ordinary notification stays byte-identical.
+     *
+     * @param linkBaseUrl    optional base for the rendered human-facing action links
+     *                       (default {@code /api/notifications/action/}); the raw token is appended
+     * @param approveRouteUrl optional absolute callback URL POSTed fail-soft when APPROVE is recorded
+     * @param rejectRouteUrl  optional absolute callback URL POSTed fail-soft when REJECT is recorded
+     */
+    public record ApprovalAction(String linkBaseUrl, String approveRouteUrl, String rejectRouteUrl) {
+    }
+
     @Transactional
     public Notification enqueue(Enqueue cmd, String actor) {
         return enqueue(cmd, actor, null);
@@ -103,17 +128,46 @@ public class NotificationService {
     @Transactional
     public Notification enqueue(Enqueue cmd, String actor, Instant scheduleAt,
                                 Integer reminderEveryHours, Integer maxReminders) {
-        return enqueueInternal(cmd, actor, scheduleAt, reminderEveryHours, maxReminders, true);
+        return enqueueInternal(cmd, actor, scheduleAt, reminderEveryHours, maxReminders, true, null);
+    }
+
+    /**
+     * Actionable-approval overload (CLoM F12): a non-null {@code approval} mints one-time
+     * approve/reject tokens, injects the links into the render vars, and persists their hashes on
+     * the row so the addressed recipient can approve/reject straight from the notification. A null
+     * {@code approval} is exactly {@link #enqueue(Enqueue, String, Instant, Integer, Integer)} —
+     * every existing caller is unaffected.
+     */
+    @Transactional
+    public Notification enqueue(Enqueue cmd, String actor, Instant scheduleAt,
+                                Integer reminderEveryHours, Integer maxReminders,
+                                ApprovalAction approval) {
+        return enqueueInternal(cmd, actor, scheduleAt, reminderEveryHours, maxReminders, true, approval);
     }
 
     private Notification enqueueInternal(Enqueue cmd, String actor, Instant scheduleAt,
                                          Integer reminderEveryHours, Integer maxReminders,
-                                         boolean applyRouteReminderPolicy) {
+                                         boolean applyRouteReminderPolicy, ApprovalAction approval) {
         String idem = cmd.eventType() + "|" + safe(cmd.subjectRef()) + "|" + safe(cmd.dedupeKey());
         Notification existing = repo.findByIdempotencyKey(idem).orElse(null);
         if (existing != null) return existing;   // idempotent — never duplicate
 
-        Map<String, Object> vars = cmd.vars() == null ? Map.of() : cmd.vars();
+        // Actionable approve/reject (CLoM F12): mint the one-time tokens BEFORE rendering so the
+        // links land in the body (mirrors the query external-response token). Plain notifications
+        // pass approval == null and this block is skipped — the vars/body are byte-identical.
+        Map<String, Object> vars = new LinkedHashMap<>(cmd.vars() == null ? Map.of() : cmd.vars());
+        String rawApprove = null;
+        String rawReject = null;
+        if (approval != null) {
+            rawApprove = newActionToken();
+            rawReject = newActionToken();
+            String base = (approval.linkBaseUrl() != null && !approval.linkBaseUrl().isBlank())
+                    ? approval.linkBaseUrl() : DEFAULT_ACTION_LINK_BASE;
+            vars.put("approveToken", rawApprove);
+            vars.put("rejectToken", rawReject);
+            vars.put("approveLink", base + rawApprove);
+            vars.put("rejectLink", base + rawReject);
+        }
         NotificationTemplateResolver r = resolver.getIfAvailable();
         String subject, body;
         boolean templateFound = false;
@@ -157,6 +211,16 @@ public class NotificationService {
         n.setStatus("PENDING");
         n.setCreatedBy(actor == null ? "system" : actor);
         applyReminderConfig(n, cmd, r, reminderEveryHours, maxReminders, applyRouteReminderPolicy);
+
+        if (approval != null) {
+            // Persist only the token HASHES (the raw tokens live once in the body / vars). Mark the
+            // row PENDING an action; the optional route URLs are stored for fail-soft callback on decide.
+            n.setApproveTokenHash(hashToken(rawApprove));
+            n.setRejectTokenHash(hashToken(rawReject));
+            n.setActionState("PENDING");
+            n.setActionApproveUrl(approval.approveRouteUrl());
+            n.setActionRejectUrl(approval.rejectRouteUrl());
+        }
 
         if (scheduleAt != null && scheduleAt.isAfter(Instant.now())) {
             n.setStatus("SCHEDULED");
@@ -287,7 +351,7 @@ public class NotificationService {
             Enqueue reminder = new Enqueue(parent.getEventType(), parent.getTemplateKey(),
                     parent.getSubjectType(), parent.getSubjectRef(),
                     safe(parent.getDedupeKey()) + "#r" + seq, null, vars, parent.getRecipientRoles());
-            enqueueInternal(reminder, "system", null, null, null, false);
+            enqueueInternal(reminder, "system", null, null, null, false, null);
             parent.setRemindersSent(seq);
             parent.setLastReminderAt(now);
             if (seq >= max) parent.setReminderEveryHours(null);   // reached cap — retire from future scans
@@ -391,6 +455,89 @@ public class NotificationService {
         return count;
     }
 
+    // =============================================================== email-actionable approve/reject (F12)
+
+    /**
+     * Record the addressed recipient's approve/reject decision straight from the one-time link in an
+     * actionable-approval notification (CLoM F12). The path {@code token} is the sole credential —
+     * possession of it IS proof the caller is the addressed recipient the link was mailed to (SoD),
+     * mirroring the query external-response callback.
+     *
+     * <p><b>Token governance.</b> The token is looked up by its SHA-256 hash against the live
+     * approve/reject hashes. A blank/unknown/expired/replayed token resolves to nothing (the hashes
+     * are cleared on the first decision) and is a {@code 403 forbiddenAutonomy}. A row that is no
+     * longer {@code PENDING} an action is likewise a {@code 403}. On success BOTH hashes are cleared
+     * so a replay of either link — approve OR reject — is rejected (single-use per notification), the
+     * decision + comment are stamped {@code audit.human}, and any configured subject callback URL is
+     * POSTed best-effort ({@link #routeDecision}); routing degrading NEVER unwinds the recorded human
+     * intent.</p>
+     */
+    @Transactional
+    public Notification recordAction(String token, String comment, String actor) {
+        String who = (actor == null || actor.isBlank()) ? "external" : actor;
+        if (token == null || token.isBlank()) {
+            throw ApiException.forbiddenAutonomy("A notification action link requires its one-time token");
+        }
+        String hash = hashToken(token);
+        Notification n = repo.findByApproveTokenHash(hash).orElse(null);
+        String kind = "APPROVE";
+        if (n == null) {
+            n = repo.findByRejectTokenHash(hash).orElse(null);
+            kind = "REJECT";
+        }
+        if (n == null || !"PENDING".equals(n.getActionState())) {
+            // Unknown / expired / already-actioned / replayed — the link is single-use.
+            throw ApiException.forbiddenAutonomy(
+                    "Invalid, expired or already-used notification action link — it is single-use");
+        }
+        boolean approved = "APPROVE".equals(kind);
+        n.setActionState(approved ? "APPROVED" : "REJECTED");
+        n.setActionKind(kind);
+        n.setActionActor(who);
+        n.setActionComment(comment);
+        n.setActionDecidedAt(Instant.now());
+        n.setApproveTokenHash(null);   // single-use — both links die on the first recorded decision
+        n.setRejectTokenHash(null);
+        Notification saved = repo.save(n);
+
+        safeHumanAudit(who, approved ? "NOTIFICATION_ACTION_APPROVE" : "NOTIFICATION_ACTION_REJECT",
+                saved.getSubjectType(), saved.getSubjectRef(),
+                "%s notification %s by %s via one-time action link".formatted(
+                        saved.getEventType(), approved ? "APPROVED" : "REJECTED", who),
+                Map.of("eventType", String.valueOf(saved.getEventType()), "notificationId", saved.getId(),
+                        "decision", approved ? "APPROVE" : "REJECT", "actor", who,
+                        "comment", comment == null ? "" : comment));
+
+        // Best-effort fan-out to the subject's decision endpoint / mirrored work-item. Fail-soft:
+        // the human intent is already durably recorded above — routing is never allowed to unwind it.
+        routeDecision(approved ? saved.getActionApproveUrl() : saved.getActionRejectUrl(),
+                approved ? "APPROVE" : "REJECT", comment, who, saved);
+        return saved;
+    }
+
+    /**
+     * Best-effort POST of a recorded decision to an absolute subject callback URL. Never throws
+     * (a routing outage can never fail the business operation), mirroring {@code TaskClient}.
+     */
+    private void routeDecision(String url, String decision, String comment, String actor, Notification n) {
+        if (url == null || url.isBlank()) return;
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("decision", decision);
+            body.put("comment", comment == null ? "" : comment);
+            body.put("actor", actor);
+            body.put("subjectType", n.getSubjectType());
+            body.put("subjectRef", n.getSubjectRef());
+            body.put("eventType", n.getEventType());
+            RestClient.create().post().uri(url)
+                    .header("X-Actor", actor == null ? "system" : actor)
+                    .body(body)
+                    .retrieve().toBodilessEntity();
+        } catch (Exception e) {
+            log.warn("notification action routing to {} skipped ({})", url, e.getMessage());
+        }
+    }
+
     /** True iff a row is addressed to {@code recipient} or {@code role} (either JSON list may carry it). */
     private static boolean addressedTo(Notification n, String recipient, String role) {
         if (listHas(n.getRecipients(), recipient) || listHas(n.getRecipientRoles(), recipient)) return true;
@@ -445,6 +592,23 @@ public class NotificationService {
             audit.human(actor, eventType, subjectType, subjectRef, summary, detail);
         } catch (Exception e) {
             log.warn("could not stamp {} audit ({})", eventType, e.getMessage());
+        }
+    }
+
+    /** A cryptographically-random, URL-safe one-time action token (256 bits of entropy). */
+    private static String newActionToken() {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    /** SHA-256 (hex) of a raw token — only the hash is ever persisted on the row. */
+    private static String hashToken(String raw) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(md.digest(raw.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);   // never on a standard JRE
         }
     }
 

@@ -1,19 +1,51 @@
 import { useState } from "react";
 import { fmt, notifications } from "../api";
-import { Badge, Card, type Col, DataTable, DeterministicBadge, Field, statusTone, useAsync } from "../ui";
+import { useApp } from "../app-context";
+import { Badge, Card, type Col, DataTable, DeterministicBadge, Field, HumanBadge, statusTone, useAsync } from "../ui";
 
 // The outbound notification outbox (G5-notify) — auto-present on every service.
 const SERVICES = ["decision", "portfolio", "counterparty", "config", "origination", "risk", "limits", "workflow"];
 
+// The raw one-time token lives once in vars.approveToken / vars.rejectToken (the row persists
+// only the hashes). Fall back to parsing it off the rendered link if only the link is present.
+function tokenOf(n: any, kind: "approve" | "reject"): string | null {
+  const v = n?.vars || {};
+  const direct = kind === "approve" ? v.approveToken : v.rejectToken;
+  if (direct) return String(direct);
+  const link = kind === "approve" ? v.approveLink : v.rejectLink;
+  if (link) { const parts = String(link).split("/"); return parts[parts.length - 1] || null; }
+  return null;
+}
+
 export default function Notifications() {
+  const { actor, notify } = useApp();
   const [svc, setSvc] = useState("decision");
   const [status, setStatus] = useState("");
   const [eventType, setEventType] = useState("");
   const [open, setOpen] = useState<any>(null);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const { data, loading, error } = useAsync(
+  const { data, loading, error, reload } = useAsync(
     () => notifications.list(svc, { status: status || undefined, eventType: eventType || undefined }),
     [svc, status, eventType]);
+
+  async function act(row: any, kind: "approve" | "reject") {
+    const token = tokenOf(row, kind);
+    if (!token) { notify("This notification carries no action link", true); return; }
+    setBusy(true);
+    try {
+      const updated = await notifications.action(svc, token, comment, actor);
+      notify(`Notification ${kind === "approve" ? "APPROVED" : "REJECTED"} — recorded as a human decision`);
+      setComment("");
+      setOpen(updated);
+      reload();
+    } catch (e: any) {
+      notify(e.message || "Action failed", true);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const cols: Col<any>[] = [
     {
@@ -37,6 +69,13 @@ export default function Notifications() {
       render: (n) => <Badge kind={statusTone(n.status)}>{n.status}</Badge>, value: (n) => n.status ?? "",
     },
     {
+      key: "action", header: "Approval",
+      render: (n) => n.actionState
+        ? <Badge kind={n.actionState === "APPROVED" ? "ok" : n.actionState === "REJECTED" ? "err" : "warn"}>{n.actionState}</Badge>
+        : <span className="muted">—</span>,
+      value: (n) => n.actionState ?? "",
+    },
+    {
       key: "read", header: "Read",
       render: (n) => n.readAt
         ? <Badge kind="ok" >Read</Badge>
@@ -46,12 +85,15 @@ export default function Notifications() {
     {
       key: "_view", header: "", sortable: false, filterable: false, csv: false,
       render: (n) => (
-        <button className="btn subtle" onClick={() => setOpen(open?.id === n.id ? null : n)}>
+        <button className="btn subtle" onClick={() => { setOpen(open?.id === n.id ? null : n); setComment(""); }}>
           {open?.id === n.id ? "Hide" : "View"}
         </button>
       ),
     },
   ];
+
+  const isApproval = open && open.actionState;
+  const decided = isApproval && open.actionState !== "PENDING";
 
   return (
     <div className="stack">
@@ -83,9 +125,39 @@ export default function Notifications() {
 
       {open && (
         <Card title={open.renderedSubject || open.eventType}
+          right={isApproval ? <HumanBadge label="APPROVE / REJECT · HUMAN-GATED" /> : undefined}
           sub={`${open.channel} · ${open.transport} · ${open.templateKey || "raw"}` +
             (open.readAt ? ` · read by ${open.readBy || "—"} on ${fmt.dateTime(open.readAt)}` : " · unread")}>
           <div style={{ whiteSpace: "pre-wrap" }} dangerouslySetInnerHTML={{ __html: open.renderedBody || "" }} />
+
+          {isApproval && (
+            <div className="notif-action">
+              {decided ? (
+                <div className="alert ok">
+                  <b>{open.actionState}</b> by {open.actionActor || "—"}
+                  {open.actionDecidedAt ? ` on ${fmt.dateTime(open.actionDecidedAt)}` : ""}
+                  {open.actionComment ? ` — "${open.actionComment}"` : ""}
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    Single-use: the approve/reject links are now spent. Recorded as a HUMAN decision in the audit trail.
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Field label="Comment (recorded with the decision)">
+                    <input value={comment} onChange={(e) => setComment(e.target.value)}
+                      placeholder="Optional note attached to the approve/reject" />
+                  </Field>
+                  <div className="btnrow" style={{ marginTop: 8, gap: 8 }}>
+                    <button className="btn" disabled={busy} onClick={() => act(open, "approve")}>Approve</button>
+                    <button className="btn danger" disabled={busy} onClick={() => act(open, "reject")}>Reject</button>
+                  </div>
+                  <div className="muted" style={{ marginTop: 6 }}>
+                    One-time, single-use action links. Acting as <span className="mono">{actor}</span>.
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </Card>
       )}
     </div>

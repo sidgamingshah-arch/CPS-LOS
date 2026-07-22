@@ -6,6 +6,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -69,6 +70,26 @@ public class NotificationController {
     public Map<String, Object> readAll(@RequestParam(required = false) String recipient,
                                        @RequestHeader(value = "X-Actor", defaultValue = "system") String actor) {
         return Map.of("read", notifications.markAllRead(recipient, actor));
+    }
+
+    // -------- email-actionable approve/reject (CLoM F12); additive, plain notifications never hit it
+
+    public record ActionRequest(String comment) {
+    }
+
+    /**
+     * Record the addressed recipient's approve/reject decision from the one-time action link carried
+     * by an actionable-approval notification. The path {@code token} is the sole credential (SoD):
+     * a blank/unknown/expired/replayed token is a {@code 403}. On success the decision + comment are
+     * stamped {@code audit.human}, both links die (single-use), and the subject's decision endpoint is
+     * POSTed best-effort. {@code X-Actor} names the human for the audit trail; it defaults to
+     * {@code external} for an unauthenticated click-through.
+     */
+    @PostMapping("/action/{token}")
+    public Notification action(@PathVariable String token,
+                               @RequestBody(required = false) ActionRequest req,
+                               @RequestHeader(value = "X-Actor", defaultValue = "external") String actor) {
+        return notifications.recordAction(token, req == null ? null : req.comment(), actor);
     }
 
     /**

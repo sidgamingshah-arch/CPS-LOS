@@ -1021,6 +1021,11 @@ export const notifications = {
     call<{ read: number }>(
       `/${svc}/api/notifications/read-all` + (recipient ? `?recipient=${encodeURIComponent(recipient)}` : ""),
       "POST", undefined, actor),
+  // ---- email-actionable approve/reject (CLoM F12) ----
+  // The addressed recipient records a decision from the one-time link carried in the body.
+  // `token` is the sole credential (single-use); a replayed/unknown token is a 403.
+  action: (svc: string, token: string, comment: string, actor: string) =>
+    call<any>(`/${svc}/api/notifications/action/${encodeURIComponent(token)}`, "POST", { comment }, actor),
 };
 
 /** Currency symbol per ISO code; falls back to the code itself for anything unmapped. */
