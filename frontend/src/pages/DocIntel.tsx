@@ -88,6 +88,16 @@ function findingBadge(level: CheckFinding["level"]) {
   return <Badge kind="bad">ERROR</Badge>;
 }
 
+// Human-readable badge for how a document's text was captured from the real bytes.
+function methodBadge(method?: string, ocrUsed?: boolean) {
+  if (!method) return null;
+  if (method === "PDFBOX") return <Badge kind="ok">PDFBox · real text</Badge>;
+  if (method === "TEXT") return <Badge kind="ok">Text · real content</Badge>;
+  if (method.startsWith("OCR_") && method !== "OCR_NONE") return <Badge kind="info">OCR{ocrUsed ? "" : ""}</Badge>;
+  if (method === "OCR_NONE") return <Badge kind="warn">No embedded text</Badge>;
+  return <Badge kind="warn">{method}</Badge>;
+}
+
 export default function DocIntel() {
   const { actor, notify, ref: ctxRef } = useApp();
 
@@ -106,6 +116,9 @@ export default function DocIntel() {
   const translationLanguages = useCodes("TRANSLATION_LANGUAGE");
   const [uploadDeclaredType, setUploadDeclaredType] = useState(FALLBACK_DECLARED_TYPE);
   const [uploading, setUploading] = useState(false);
+  // Real file upload (bytes → DMS + text extraction)
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
 
   // Extractions
   const extractions = useAsync<DocExtraction[]>(
@@ -154,6 +167,23 @@ export default function DocIntel() {
       notify(e.message, true);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleUploadFile = async () => {
+    if (!selectedRef || !uploadFile) return;
+    setUploadingFile(true);
+    try {
+      const doc = await origination.uploadDocumentFile(selectedRef, uploadFile, uploadDeclaredType || undefined, actor);
+      notify(`Uploaded ${doc.fileName} — ${doc.extractionMethod} · classified ${doc.classifiedType}`);
+      setUploadFile(null);
+      docs.reload();
+      // Select the freshly uploaded document so its extracted text + extraction flow show at once.
+      if (doc.id) { setSelectedDocId(doc.id); setChecks(null); }
+    } catch (e: any) {
+      notify(e.message, true);
+    } finally {
+      setUploadingFile(false);
     }
   };
 
@@ -268,26 +298,42 @@ export default function DocIntel() {
       {selectedRef && (
         <Card
           title="Documents"
-          sub="AI classification with confidence score; low-confidence items are routed to human review."
+          sub="Upload the real file — the server stores the bytes, extracts the document's actual text (PDFBox / OCR) and classifies from content. AI classification confidence routes low-confidence items to human review."
           right={
-            <div className="btnrow">
-              <input
-                placeholder="file name"
-                value={uploadFileName}
-                onChange={(e) => setUploadFileName(e.target.value)}
-                style={{ width: 200 }}
-              />
-              <select
-                value={uploadDeclaredType}
-                onChange={(e) => setUploadDeclaredType(e.target.value)}
-              >
-                {docKinds.map((t) => (
-                  <option key={t.code} value={t.code}>{t.label}</option>
-                ))}
-              </select>
-              <Button onClick={handleUpload} busy={uploading} disabled={!uploadFileName.trim()}>
-                Upload document
-              </Button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+              {/* Real file upload (bytes → DMS + text extraction) */}
+              <div className="btnrow">
+                <input
+                  type="file"
+                  onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                  style={{ maxWidth: 220 }}
+                />
+                <select
+                  value={uploadDeclaredType}
+                  onChange={(e) => setUploadDeclaredType(e.target.value)}
+                  title="Optional declared type"
+                >
+                  <option value="">(auto-classify)</option>
+                  {docKinds.map((t) => (
+                    <option key={t.code} value={t.code}>{t.label}</option>
+                  ))}
+                </select>
+                <Button onClick={handleUploadFile} busy={uploadingFile} disabled={!uploadFile}>
+                  Upload &amp; extract
+                </Button>
+              </div>
+              {/* Legacy filename-only quick path (kept for demos / seeded records) */}
+              <div className="btnrow">
+                <input
+                  placeholder="or file name only"
+                  value={uploadFileName}
+                  onChange={(e) => setUploadFileName(e.target.value)}
+                  style={{ width: 200 }}
+                />
+                <Button kind="subtle" onClick={handleUpload} busy={uploading} disabled={!uploadFileName.trim()}>
+                  Quick add (name only)
+                </Button>
+              </div>
             </div>
           }
         >
@@ -331,11 +377,59 @@ export default function DocIntel() {
               </tbody>
             </table>
           )}
-          {selectedDocId && (
-            <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-              Selected document ID: <span className="mono">{selectedDocId}</span>
-            </div>
-          )}
+          {selectedDocId && (() => {
+            const sel = (docs.data || []).find((d: any) => d.id === selectedDocId);
+            const text: string | null = sel?.extractedText ?? null;
+            const lines = text ? text.split(/\r?\n/).filter((l: string) => l.trim().length > 0) : [];
+            const preview = lines.slice(0, 15);
+            return (
+              <div style={{ marginTop: 10 }}>
+                <div className="btnrow" style={{ marginBottom: 6, alignItems: "center" }}>
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    Selected document <span className="mono">#{selectedDocId}</span>
+                  </span>
+                  {sel && methodBadge(sel.extractionMethod, sel.ocrUsed)}
+                  {sel?.pageCount ? <span className="muted" style={{ fontSize: 12 }}>{sel.pageCount}p</span> : null}
+                  {sel?.sha256 ? (
+                    <span className="prov" style={{ fontSize: 11 }} title={sel.sha256}>
+                      sha256 {String(sel.sha256).slice(0, 12)}…
+                    </span>
+                  ) : null}
+                </div>
+                {text ? (
+                  <>
+                    <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                      Extracted text (first {preview.length} line{preview.length === 1 ? "" : "s"}):
+                    </div>
+                    <pre
+                      style={{
+                        background: "#0f1021",
+                        color: "#d5d7f0",
+                        borderRadius: 8,
+                        padding: 10,
+                        fontSize: 12,
+                        maxHeight: 220,
+                        overflow: "auto",
+                        whiteSpace: "pre-wrap",
+                        margin: 0,
+                      }}
+                    >
+                      {preview.join("\n")}
+                    </pre>
+                  </>
+                ) : (
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    No embedded text captured for this document
+                    {sel?.extractionMethod === "OCR_NONE"
+                      ? " (scanned/image — configure an OCR provider at deploy)."
+                      : sel?.storedDocId
+                        ? "."
+                        : " — this is a filename-only record (use Upload & extract for real capture)."}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </Card>
       )}
 

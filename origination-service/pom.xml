@@ -39,6 +39,14 @@
             <groupId>org.hibernate.orm</groupId>
             <artifactId>hibernate-community-dialects</artifactId>
         </dependency>
+        <!-- Real text extraction from PDF documents (pure Java, runs in-container; no native deps).
+             Used by TextExtractionService to parse the actual uploaded bytes so doc-intel extraction
+             is grounded in the document's real text rather than a content-agnostic template. -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+        </dependency>
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
