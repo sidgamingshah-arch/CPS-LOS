@@ -17,6 +17,7 @@ import Disbursement from "./pages/Disbursement";
 import Counterparties from "./pages/Counterparties";
 import Deals from "./pages/Deals";
 import DealWorkspace from "./pages/DealWorkspace";
+import DecisionCockpit from "./pages/DecisionCockpit";
 import AuditLog from "./pages/AuditLog";
 import Copilot from "./pages/Copilot";
 import Mis from "./pages/Mis";
@@ -46,9 +47,11 @@ import Commentary from "./pages/Commentary";
 import PricingLab from "./pages/PricingLab";
 import Spreading from "./pages/Spreading";
 import Exports from "./pages/Exports";
+import IntegrationHub from "./pages/IntegrationHub";
 import Groups from "./pages/Groups";
 import Cpt from "./pages/Cpt";
 import WorkflowTracker from "./pages/WorkflowTracker";
+import Casework from "./pages/Casework";
 import TatReports from "./pages/TatReports";
 import ReportBuilder from "./pages/ReportBuilder";
 import ModelBuilder from "./pages/ModelBuilder";
@@ -101,6 +104,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Assess & Decide",
     items: [
+      { key: "cockpit", label: "Decision Cockpit" },
       { key: "risklab", label: "Risk Lab" },
       { key: "risknotes", label: "Risk Notes" },
       { key: "projections", label: "Projections" },
@@ -134,6 +138,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "mis", label: "MIS · Reports" },
       { key: "reportbuilder", label: "Ad-hoc Reports" },
       { key: "workflowtracker", label: "Workflow Tracker" },
+      { key: "casework", label: "Delegation · Casework" },
       { key: "tatreports", label: "TAT · MIS Reports" },
       { key: "exports", label: "Downstream Exports" },
     ],
@@ -145,6 +150,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "masters", label: "Master Data" },
       { key: "modelbuilder", label: "Model Builder" },
       { key: "approvalrules", label: "Approval Rules" },
+      { key: "integrationhub", label: "Integration Hub" },
       { key: "governance", label: "AI Governance" },
       { key: "notifications", label: "Notifications" },
       { key: "audit", label: "Audit Trail" },
@@ -192,18 +198,21 @@ const CRUMB: Record<string, string> = {
   globalcashflow: "Global / combined cash-flow · relationship consolidated debt-service across obligor + guarantors + group members · deterministic combined DSCR + per-member contribution · member spreads untouched",
   exceptions: "Unified exception cockpit · read-only rollup of open covenant/MER/CAD/limit/EWS items (best-effort, never mutates a source) · manual ticklers with maker-checker resolve (resolver ≠ owner)",
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
+  cockpit: "Approver decision cockpit · one read-first screen · rating · pricing · covenants · exposure · AI summary · sticky decision bar",
   risklab: "Advisory overlays · statistical RAG scoring · macro directional impact (non-binding)",
   risknotes: "Independent risk note · risk-function opinion record · draft → submit → review → approve · reassign / reject / reverse · rating of record never moves",
   projections: "Multi-year proforma · driver assumptions · projected DSCR · sensitivity (advisory)",
   mis: "Composition · RAROC variance · ECL · ageing · watchlist",
   reportbuilder: "Self-service · whitelisted datasets · maker-checker on saved defs · deterministic figures",
   workflowtracker: "Lifecycle from WORKFLOW_DEFINITION pack · humanGate / autonomy guard · SLA",
+  casework: "Delegation & casework · inbox + team roll-up · queues + claim · reassign / send-back / complete / withdraw · round-robin & OOO delegation · per-task TAT timeline · server-enforced SoD",
   tatreports: "TAT / MIS over the case & query layer · cycle time · SLA breach · rework · throughput · deterministic",
   exports: "Canonical outbound feeds · ERM · Finance/GL · CPR · idempotent batches",
   copilot: "Scoped, grounded, non-binding assistant",
   rulepacks: "Regulatory abstraction layer",
   masters: "Generic Master-Data engine · maker-checker SoD · 22 master types",
   modelbuilder: "Configure scoring models · sections · typed questions · visibility rules · master-driven options · maker-checker",
+  integrationhub: "Integration Hub · inbound connectors (canonical ingestion) · outbound feeds (symmetric export) · append-only audit event stream · read-only",
   governance: "AI off-switch · capability-level · per-jurisdiction override · 403 enforced",
   committee: "Committee/quorum voting · SoD (router can't vote · no double-vote) · sanction letter (AI draft → human confirm)",
   coi: "Conflict-of-interest attestations · named-human self-declaration · gates the decision/vote only where the DOA pack requires it (default-off)",
@@ -514,8 +523,10 @@ export default function App() {
             {view === "mis" && <Mis />}
             {view === "reportbuilder" && <ReportBuilder />}
             {view === "workflowtracker" && <WorkflowTracker />}
+            {view === "casework" && <Casework />}
             {view === "tatreports" && <TatReports />}
             {view === "exports" && <Exports />}
+            {view === "integrationhub" && <IntegrationHub />}
             {view === "copilot" && <Copilot />}
             {view === "rulepacks" && <RulePacks />}
             {view === "governance" && <Governance />}
@@ -523,6 +534,7 @@ export default function App() {
             {view === "modelbuilder" && <ModelBuilder />}
             {view === "approvalrules" && <ApprovalRules />}
             {view === "audit" && <AuditLog />}
+            {view === "cockpit" && <DecisionCockpit />}
             {view === "workspace" && ref && <DealWorkspace reference={ref} />}
           </div>
         </main>

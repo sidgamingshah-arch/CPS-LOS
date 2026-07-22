@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface DocExtractionRepository extends JpaRepository<DocExtraction, Long> {
     List<DocExtraction> findByDocumentIdOrderByIdDesc(Long documentId);
+
+    List<DocExtraction> findByApplicationReferenceAndStatusOrderByIdDesc(String applicationReference, String status);
 }

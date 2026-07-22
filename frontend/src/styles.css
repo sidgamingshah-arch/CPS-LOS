@@ -1395,4 +1395,245 @@ button.btn.small { padding: 3px 10px; font-size: 12px; }
   border-radius: 8px; background: var(--panel, #fff);
 }
 .team-scope-note { font-size: 12px; }
+/* ---- Integration Hub console (U-C) ---- */
+.ih-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.ih-note { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.ih-connectors { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+.ih-conn {
+  border: 1px solid var(--hairline); border-radius: var(--r-md); padding: 14px 16px;
+  background: var(--canvas); display: flex; flex-direction: column; gap: 10px;
+}
+.ih-conn-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.ih-conn-kind { font-weight: 600; color: var(--ink); font-size: 14px; }
+.ih-conn-svc { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.ih-conn-blurb { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.ih-conn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; margin-top: 2px; }
+.ih-conn-fig { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ih-conn-fig .k {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted-soft); font-weight: 600;
+}
+.ih-conn-fig .v { font-size: 13px; color: var(--ink); font-weight: 600; }
+.ih-health {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700;
+  padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+}
+.ih-health .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.ih-health.green { background: var(--human-soft); color: var(--human); }
+.ih-health.green .dot { background: var(--human); }
+.ih-health.amber { background: rgba(157, 87, 0, .10); color: var(--warn); }
+.ih-health.amber .dot { background: var(--warn); }
+.ih-mode {
+  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--hairline); color: var(--muted);
+}
+.ih-mode.live { color: var(--human); border-color: var(--human); }
+
+/* ============================================================================
+   Unified Explainable-AI (XAI) presentation layer (U-F).
+   ONE recognisable "Explainable AI" panel — a factors/weights/contribution table,
+   a confidence meter, a source-citation list and an optional what-if note — reused
+   across Risk Lab (RAG · macro · scoring-model), the Deal Workspace ("Why this
+   rating") and AI Commentary (sources). Always advisory; never a figure-of-record
+   surface. Tokens: --ai / --ai-soft carry the AI-advisory identity.
+   ============================================================================ */
+.xai-card {
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--ai);
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, var(--ai-soft), var(--canvas) 62%);
+  padding: 14px 16px;
+  margin: 10px 0;
+}
+.xai-card.xai-compact { padding: 12px 14px; }
+.xai-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.xai-title-wrap { min-width: 0; }
+.xai-title { margin: 0; font-size: 14px; color: var(--ink); font-weight: 650; }
+.xai-compact .xai-title { font-size: 13px; }
+.xai-sub { margin-top: 3px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.xai-head-right { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+.xai-body { display: flex; flex-direction: column; gap: 12px; }
+.xai-summary { font-size: 13px; line-height: 1.6; color: var(--body); }
+
+/* confidence meter (element b) */
+.xai-conf { display: flex; flex-direction: column; gap: 5px; }
+.xai-conf-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.xai-conf-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+.xai-conf-val { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.xai-conf-val.ok { color: var(--ok); }
+.xai-conf-val.warn { color: var(--warn); }
+.xai-conf-val.bad { color: var(--bad); }
+.xai-conf-track { height: 7px; border-radius: var(--r-pill); background: var(--surface-strong); overflow: hidden; }
+.xai-conf.compact .xai-conf-track { height: 6px; }
+.xai-conf-fill { height: 100%; border-radius: var(--r-pill); transition: width .3s ease; }
+.xai-conf-fill.ok { background: var(--ok); }
+.xai-conf-fill.warn { background: var(--warn); }
+.xai-conf-fill.bad { background: var(--bad); }
+.xai-conf-note { font-size: 11.5px; color: var(--muted); }
+
+/* factor / weight / contribution table (element a) */
+.xai-table-wrap { overflow-x: auto; border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--canvas); }
+.xai-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.xai-table th, .xai-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--hairline); }
+.xai-table thead th {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); font-weight: 600; background: var(--surface-soft); white-space: nowrap;
+}
+.xai-table tbody tr:last-child td { border-bottom: none; }
+.xai-table td.num, .xai-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.xai-table .xai-factor-label { color: var(--ink); }
+.xai-table tr.xai-row-net td { background: var(--ai-soft); font-weight: 600; }
+.xai-tag-cell { text-align: right; white-space: nowrap; }
+
+/* source citations (element c) */
+.xai-section-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.xai-cite-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.xai-cite { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12.5px; line-height: 1.5; }
+.xai-cite-doc { color: var(--ai); font-size: 10px; }
+.xai-cite-src { color: var(--ink); font-weight: 600; }
+.xai-cite-loc {
+  font-size: 11px; color: var(--ocean-7); background: var(--det-soft);
+  padding: 1px 7px; border-radius: var(--r-pill); font-weight: 600; white-space: nowrap;
+}
+.xai-cite-detail { color: var(--muted); }
+.xai-cite-empty { font-size: 12.5px; }
+
+/* what-if note (element d) */
+.xai-whatif {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--body); line-height: 1.55;
+  background: var(--surface-soft); border: 1px dashed var(--hairline);
+  border-radius: var(--r-sm); padding: 8px 10px;
+}
+.xai-whatif-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; color: var(--ai); flex-shrink: 0; }
+
+/* method footnote + advisory framing line */
+.xai-method { font-size: 11px; color: var(--muted); }
+.xai-advisory-note {
+  margin-top: 10px; font-size: 11px; color: var(--muted);
+  border-top: 1px dashed var(--hairline); padding-top: 8px;
+}
+
+/* ============================================================================
+   U-E: Approver Decision Cockpit — a read-first, single-screen decision surface.
+   ============================================================================ */
+.dc-page { padding-bottom: 8px; }
+
+/* deal summary hero */
+.dc-hero {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 20px;
+  flex-wrap: wrap;
+  padding: 20px 22px; border-radius: var(--r-lg);
+  background: linear-gradient(135deg, var(--surface-dark), var(--surface-dark-2));
+  color: var(--on-dark); box-shadow: var(--shadow);
+}
+.dc-hero-eyebrow {
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600;
+  color: var(--on-dark-soft);
+}
+.dc-hero-title { margin: 4px 0 8px; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; color: #fff; }
+.dc-hero-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--on-dark-soft); }
+.dc-hero-meta .mono { color: #d7e4e7; }
+.dc-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--ocean-5); display: inline-block; }
+.dc-hero-figures { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.dc-hero-amount { text-align: right; }
+.dc-hero-amount-lbl {
+  font-size: 11px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600;
+  color: var(--on-dark-soft); display: flex; align-items: center; gap: 8px; justify-content: flex-end;
+}
+.dc-hero-amount-val { font-size: 26px; font-weight: 600; color: #fff; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.dc-hero-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 760px) {
+  .dc-hero-figures { align-items: flex-start; }
+  .dc-hero-amount, .dc-hero-amount-lbl, .dc-hero-badges { text-align: left; justify-content: flex-start; }
+}
+
+.dc-subhead {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+  color: var(--muted); margin-bottom: 6px;
+}
+.dc-mini-table { width: 100%; }
+.dc-mini-table th, .dc-mini-table td { padding: 4px 6px; font-size: 12.5px; }
+.dc-note { font-size: 12px; color: var(--muted); }
+
+/* AI credit summary rendered content */
+.dc-proposal {
+  background: var(--canvas); border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: 16px; max-height: 420px; overflow: auto; font-size: 13px; line-height: 1.55;
+}
+.dc-comments { display: flex; flex-direction: column; gap: 12px; }
+.dc-comment {
+  border: 1px solid var(--line); border-left: 3px solid var(--ai); border-radius: var(--r-md);
+  padding: 10px 12px; background: var(--ai-soft); font-size: 13px;
+}
+
+/* sticky decision action bar */
+.dc-actionbar {
+  position: sticky; bottom: 0; z-index: 6;
+  margin-top: 4px;
+}
+.dc-actionbar-inner {
+  border: 1px solid var(--human); border-radius: var(--r-lg);
+  background: var(--canvas);
+  box-shadow: 0 -4px 20px rgba(4, 46, 57, 0.12);
+  padding: 14px 18px;
+}
+.dc-actionbar-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.dc-actionbar-authority { font-size: 13px; color: var(--muted); }
+.dc-actionbar-authority b { color: var(--ink); }
+.dc-actionbar-decided { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.dc-decided-panel { font-size: 13px; color: var(--muted); }
+.dc-committee-note {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 12px; margin-bottom: 10px; font-size: 12.5px;
+  border: 1px solid var(--det-soft); border-radius: var(--r-md); background: var(--det-soft);
+}
+.dc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.dc-action {
+  flex: 1 1 auto; min-width: 130px;
+  border: 1.5px solid var(--hairline); background: var(--canvas); color: var(--ink);
+  border-radius: var(--r-md); padding: 12px 14px; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all .12s ease; text-align: center;
+}
+.dc-action:hover { border-color: var(--muted); }
+.dc-action.active { color: #fff; }
+.dc-action.ok.active { background: var(--ok); border-color: var(--ok); }
+.dc-action.warn.active { background: var(--warn); border-color: var(--warn); }
+.dc-action.info.active { background: var(--ocean-8); border-color: var(--ocean-8); }
+.dc-action.bad.active { background: var(--bad); border-color: var(--bad); }
+.dc-decide-fields { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.dc-decide-submit { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dc-decide-submit .muted { font-size: 12px; }
+
+/* U-B: auto data fetch — provenance chip row on every ingested (advisory INPUT) record */
+.prov-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.prov-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px dashed var(--hairline-soft, #d6dce2);
+  background: var(--det-soft); color: var(--ocean-7, var(--muted));
+  font-size: 11px; font-weight: 500; letter-spacing: 0.01em; white-space: nowrap;
+}
+
+/* U-D: Delegation / Casework — WorkItem case layer (inbox · queue · claim · reassign · send-back · timeline) */
+.cw-seg { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.cw-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.cw-note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+/* Selected row in the shared DataTable list + highlighted self in the fan-out sibling table. */
+tr.dt-row-selected td {
+  background: var(--light-blue-soft);
+  box-shadow: inset 3px 0 0 var(--ocean-8);
+}
+/* Compact timeline / sibling table. */
+.cw-tl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.cw-tl th {
+  text-align: left; color: var(--muted); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: .03em;
+  padding: 6px 8px; border-bottom: 1px solid var(--hairline);
+}
+.cw-tl td { padding: 6px 8px; border-bottom: 1px solid var(--hairline-soft); vertical-align: top; }
+.cw-tl tr:last-child td { border-bottom: none; }
 

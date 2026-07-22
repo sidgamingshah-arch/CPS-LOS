@@ -126,6 +126,20 @@ export const counterparty = {
     call<any>(`/counterparty/api/counterparties/rekyc/sweep` + (asOf ? `?asOf=${asOf}` : ""), "POST", undefined, actor),
 };
 
+// ---- inbound source-system auto data fetch (credit bureau + CRM) ----
+// Simulated PULLs by default (no external system needed). Every pulled record carries
+// provenance (source / vendor / retrieved-at) and is flagged advisory — an INPUT that
+// NEVER moves an authoritative figure. `latestBureau` / `latestCrm` return 404 when
+// nothing has been pulled yet, so callers should `.catch(() => null)` for empty state.
+export const sourceIngest = {
+  pullBureau: (id: number, actor: string) =>
+    call<any>(`/counterparty/api/counterparties/${id}/ingest/bureau/pull`, "POST", undefined, actor),
+  pullCrm: (id: number, actor: string) =>
+    call<any>(`/counterparty/api/counterparties/${id}/ingest/crm/pull`, "POST", undefined, actor),
+  latestBureau: (id: number) => call<any>(`/counterparty/api/counterparties/${id}/bureau`, "GET"),
+  latestCrm: (id: number) => call<any>(`/counterparty/api/counterparties/${id}/crm`, "GET"),
+};
+
 // ---- origination ----
 export const origination = {
   list: () => call<any[]>("/origination/api/applications", "GET"),
@@ -142,6 +156,10 @@ export const origination = {
     call<any>(`/origination/api/applications/spread/cells/${cellId}/override`, "PATCH", body, actor),
   confirmSpread: (ref: string, actor: string) =>
     call<any>(`/origination/api/applications/${ref}/spread/confirm`, "POST", undefined, actor),
+  // AI-EXTRACT -> GRID -> HUMAN-CONFIRM: pre-fill a DRAFT spread from a CONFIRMED doc extraction
+  // (body optional: {extractionId?, periodLabel?, gaap?, currency?, note?}). Never auto-confirms.
+  spreadFromExtraction: (ref: string, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/${ref}/spread/from-extraction`, "POST", body, actor),
   analysis: (ref: string) => call<any>(`/origination/api/applications/${ref}/analysis`, "GET"),
   envelope: (ref: string) => call<any>(`/origination/api/applications/${ref}/envelope`, "GET"),
   facilities: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/facilities`, "GET"),
@@ -781,8 +799,18 @@ export const initiation = {
   decide: (id: number, body: any, actor: string) => call<any>(`/counterparty/api/initiation/prospects/${id}/decision`, "POST", body, actor),
   approve: (id: number, actor: string) => call<any>(`/counterparty/api/initiation/prospects/${id}/approve`, "POST", undefined, actor),
   fetchCheck: (id: number, body: any, actor: string) => call<any>(`/counterparty/api/initiation/prospects/${id}/checks/fetch`, "POST", body, actor),
+  // Convenience over fetchCheck: fetch one source-system check (defaults to CREDIT_BUREAU;
+  // server derives entityName/entityType from the counterparty when omitted).
+  fetchChecks: (prospectId: number, actor: string, body: any = { checkType: "CREDIT_BUREAU" }) =>
+    call<any>(`/counterparty/api/initiation/prospects/${prospectId}/checks/fetch`, "POST", body, actor),
   refreshCheck: (checkId: number, actor: string) => call<any>(`/counterparty/api/initiation/checks/${checkId}/refresh`, "POST", undefined, actor),
   checks: (id: number) => call<any[]>(`/counterparty/api/initiation/prospects/${id}/checks`, "GET"),
+  // CRM as system-of-record: a pull creates a GOVERNED PROSPECT (never an approved obligor);
+  // dedup + idempotency guarantee no duplicate; a negative-list hit is flagged, never auto-approved.
+  pullBorrower: (body: any, actor: string) =>
+    call<any>("/counterparty/api/initiation/ingest/crm/pull-borrower", "POST", body ?? {}, actor),
+  pullBatch: (body: any, actor: string) =>
+    call<any>("/counterparty/api/initiation/ingest/crm/pull-batch", "POST", body ?? {}, actor),
   suggestGroup: (id: number, actor: string) =>
     call<any>(`/counterparty/api/initiation/counterparties/${id}/group/suggest`, "POST", undefined, actor),
   createGroup: (body: any, actor: string) =>
@@ -1180,8 +1208,12 @@ export const tatMis = {
   querySla: (svc: string) => call<any>(`/${svc}/api/queries/sla-rollup`, "GET"),
 };
 
-// ---- case-management tasks (WorkItem inbox; workflow-service /api/tasks) ----
-// Read-only surfaces used by the role-scoped landing dashboards ("my tasks").
+// ---- case-management tasks (WorkItem inbox + queue + delegation/casework) ----
+// The WorkItem case layer: round-robin / least-loaded pools, OOO delegation, claim
+// (pull-from-queue), reassign, send-back (rework), complete, withdraw, and the
+// append-only per-task event timeline (the TAT record). Every write forwards `actor`
+// as the X-Actor hint (a login token still wins server-side); the server enforces the
+// pool membership / supervisor SoD gates and surfaces a 403 the caller can toast.
 export const tasks = {
   // scope: undefined/"self" -> own inbox (byte-identical to pre-U9). "team" folds in the
   // caller's subordinates (USER_HIERARCHY); pass `actor` so the X-Actor is the supervisor.
@@ -1189,15 +1221,33 @@ export const tasks = {
     call<any[]>(
       `/workflow/api/tasks/inbox?assignee=${encodeURIComponent(assignee)}${scope ? `&scope=${scope}` : ""}`,
       "GET", undefined, actor),
-  queue: (key: string) =>
-    call<any[]>(`/workflow/api/tasks/queue/${encodeURIComponent(key)}`, "GET"),
+  // Open (unclaimed) tasks sitting in a queue. Reading requires pool membership or
+  // supervision (403 otherwise), so pass the acting identity.
+  queue: (key: string, actor?: string) =>
+    call<any[]>(`/workflow/api/tasks/queue/${encodeURIComponent(key)}`, "GET", undefined, actor),
   subject: (ref: string, type?: string) =>
     call<any[]>(`/workflow/api/tasks/subject?ref=${encodeURIComponent(ref)}${type ? `&type=${encodeURIComponent(type)}` : ""}`, "GET"),
   get: (ref: string) => call<any>(`/workflow/api/tasks/${ref}`, "GET"),
+  // Append-only event timeline for a task — the TAT / history record (round-robin
+  // auto-assign, OOO-delegate routing, claim, reassign, send-back, complete all show here).
+  timeline: (ref: string) => call<any[]>(`/workflow/api/tasks/${ref}/timeline`, "GET"),
+  // Per-subject TAT rollup across every task on a subject.
+  tat: (subjectRef: string) =>
+    call<any>(`/workflow/api/tasks/tat?subjectRef=${encodeURIComponent(subjectRef)}`, "GET"),
+  // Pull an OPEN task from the queue onto yourself.
   claim: (ref: string, actor: string) =>
     call<any>(`/workflow/api/tasks/${ref}/claim`, "POST", undefined, actor),
+  // Supervisor reassign — a reason is mandatory server-side. A blank assignee returns
+  // the task to the queue (OPEN).
+  assign: (ref: string, assignee: string, reason: string, actor: string) =>
+    call<any>(`/workflow/api/tasks/${ref}/assign`, "POST", { assignee, reason }, actor),
   complete: (ref: string, note: string | undefined, actor: string) =>
     call<any>(`/workflow/api/tasks/${ref}/complete`, "POST", { note }, actor),
+  // Send back for rework — opens a fresh rework task (reworkCycle+1) to the originator.
+  sendBack: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/workflow/api/tasks/${ref}/send-back`, "POST", { note }, actor),
+  withdraw: (ref: string, note: string | undefined, actor: string) =>
+    call<any>(`/workflow/api/tasks/${ref}/withdraw`, "POST", { note }, actor),
 };
 
 // ---- query / RFI collaboration (helix-common surface on every service) ----

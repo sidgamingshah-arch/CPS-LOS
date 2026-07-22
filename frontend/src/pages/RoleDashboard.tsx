@@ -57,6 +57,9 @@ export default function RoleDashboard() {
   const relDeals = useAsync(() => (isRel || isRisk ? soft(origination.list()) : none), [actor, persona]);
   const notes = useAsync(() => (isRel ? soft(ipNotes.list()) : none), [actor, persona]);
 
+  // Deals routed for a credit decision but not yet decided (ApplicationStatus.PENDING_APPROVAL).
+  // Each row deep-links into the read-first Decision Cockpit carrying the deal ref.
+  const decisionQueue = useAsync(() => (isCredit ? soft(origination.list()) : none), [actor, persona]);
   const pendNotings = useAsync(() => (isCredit ? soft(notings.list({ status: "SUBMITTED" })) : none), [actor, persona]);
   const pendPricing = useAsync(() => (isCredit ? soft(optimiser.pendingExceptions()) : none), [actor, persona]);
   const cadCredit = useAsync(() => (isCredit ? soft(cad.inbox()) : none), [actor, persona]);
@@ -184,6 +187,17 @@ export default function RoleDashboard() {
       {/* ---- CREDIT ---- */}
       {isCredit && (
         <div className="grid cols-2">
+          <ListCard title="Awaiting my decision" sub="Deals routed for a credit decision, not yet decided — open the Decision Cockpit to review & decide on one screen."
+            loading={decisionQueue.loading}
+            rows={(decisionQueue.data || []).filter((d: any) => d.status === "PENDING_APPROVAL")}
+            empty={empty}
+            cols={[
+              { head: "Reference", cell: (d) => <span className="mono">{dealRef(d)}</span> },
+              { head: "Borrower", cell: (d) => d.counterpartyName || d.borrower || "—" },
+              { head: "Status", cell: (d) => <Badge kind="warn">{d.status}</Badge> },
+              { head: "", cell: (d) => <Button kind="subtle" onClick={() => dealRef(d) && nav("cockpit", dealRef(d))}>Open decision cockpit →</Button> },
+            ]}
+            onRowClick={(d) => dealRef(d) && nav("cockpit", dealRef(d))} />
           <ListCard title="Notings awaiting approval" sub="Governed decision records submitted for sign-off."
             loading={pendNotings.loading} rows={pendNotings.data} empty={empty}
             cols={[
@@ -210,7 +224,7 @@ export default function RoleDashboard() {
             ]}
             onRowClick={() => nav("cad")} />
           <QuickLinks nav={nav} links={[
-            ["committee", "Committee Room"], ["risklab", "Risk Lab"],
+            ["cockpit", "Decision Cockpit"], ["committee", "Committee Room"], ["risklab", "Risk Lab"],
             ["commentary", "AI Commentary"], ["docgen", "Doc Generation"],
           ]} />
         </div>
