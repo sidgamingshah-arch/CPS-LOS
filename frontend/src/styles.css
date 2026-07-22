@@ -1250,3 +1250,13 @@ button.btn.small { padding: 3px 10px; font-size: 12px; }
 .asr-month-table th, .asr-month-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--hairline); }
 .asr-month-table th { color: var(--ocean-7); font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
 .asr-confirmed { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ocean-7); }
+/* ---- CAM annexures (U2) ---- */
+.anx-section { display: flex; flex-direction: column; gap: 4px; }
+.anx-section .lbl { font-size: 12px; font-weight: 600; color: var(--muted); }
+.anx-sec-label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.anx-ai-row {
+  display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border);
+}
+.anx-ai-row .sub { font-size: 12px; color: var(--muted-soft); }
+

@@ -399,6 +399,30 @@ export const coi = {
   ) => call<any>("/decision/api/coi", "POST", body, actor),
 };
 
+// ---- CAM annexures (master-driven authoring artifacts attached to a deal/proposal) ----
+export const annexures = {
+  list: (q?: { subjectRef?: string; status?: string; type?: string }) => {
+    const p = new URLSearchParams();
+    if (q?.subjectRef) p.set("subjectRef", q.subjectRef);
+    if (q?.status) p.set("status", q.status);
+    if (q?.type) p.set("type", q.type);
+    const qs = p.toString();
+    return call<any[]>("/decision/api/annexures" + (qs ? `?${qs}` : ""), "GET");
+  },
+  get: (ref: string) => call<any>(`/decision/api/annexures/${ref}`, "GET"),
+  create: (body: any, actor: string) => call<any>("/decision/api/annexures", "POST", body, actor),
+  updateSections: (ref: string, body: { sections?: any; aiDraft?: boolean; hint?: string }, actor: string) =>
+    call<any>(`/decision/api/annexures/${ref}/sections`, "PUT", body, actor),
+  submit: (ref: string, actor: string) =>
+    call<any>(`/decision/api/annexures/${ref}/submit`, "POST", undefined, actor),
+  review: (ref: string, notes: string, actor: string) =>
+    call<any>(`/decision/api/annexures/${ref}/review`, "POST", { notes }, actor),
+  approve: (ref: string, notes: string, actor: string) =>
+    call<any>(`/decision/api/annexures/${ref}/approve`, "POST", { notes }, actor),
+  reject: (ref: string, reason: string, actor: string) =>
+    call<any>(`/decision/api/annexures/${ref}/reject`, "POST", { reason }, actor),
+};
+
 // ---- notings (governed decision records: TOD, CAM note, product paper, deferrals, …) ----
 export const notings = {
   list: (params?: { subjectRef?: string; status?: string; type?: string }) => {
