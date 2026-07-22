@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.Instant;
@@ -30,7 +31,10 @@ import java.util.Map;
         @Index(name = "uq_notify_idem", columnList = "idempotencyKey", unique = true),
         @Index(name = "idx_notify_subject", columnList = "subjectType,subjectRef"),
         @Index(name = "idx_notify_event", columnList = "eventType"),
-        @Index(name = "idx_notify_status", columnList = "status")
+        @Index(name = "idx_notify_status", columnList = "status"),
+        // back the single-use action-token lookups (unbounded outbox — never full-scan on decide)
+        @Index(name = "idx_notify_approve_token", columnList = "approve_token_hash"),
+        @Index(name = "idx_notify_reject_token", columnList = "reject_token_hash")
 })
 public class Notification {
 
@@ -132,8 +136,9 @@ public class Notification {
      * and nullable: a plain, non-approval notification leaves every one of them null and enqueues
      * byte-identically. When a notification is enqueued for an approvable work-item it is minted
      * two one-time, single-use tokens (approve / reject) whose SHA-256 hashes are the ONLY
-     * persisted form (the raw tokens live once in the rendered body / {@code vars.approveLink} /
-     * {@code vars.rejectLink}, exactly like the query external-response callback). Both hashes are
+     * persisted form. The raw tokens/links live ONLY on the transient carriers of the freshly
+     * enqueued in-memory object (stripped from {@code vars} and redacted from the rendered body
+     * before persistence), exactly like the query external-response callback. Both hashes are
      * {@code @JsonIgnore} so a GET never leaks a usable token. Recording a decision clears BOTH
      * hashes, so a replay of either link is rejected (single-use).
      */
@@ -170,6 +175,20 @@ public class Notification {
     /** Optional absolute callback URL POSTed (fail-soft) when REJECT is recorded. */
     @Column(name = "action_reject_url", length = 400)
     private String actionRejectUrl;
+
+    // Raw one-time approve/reject token + link carriers. TRANSIENT — never persisted. Set ONLY on the
+    // freshly enqueued in-memory object so the enqueuer (and a real outbound transport) can deliver
+    // them out-of-band; a GET reloads from the DB where these are null, so the queryable outbox can
+    // never leak a usable token to a non-recipient (mirrors QueryThread.responseToken). Only the
+    // SHA-256 hashes are persisted, and they are @JsonIgnore.
+    @Transient
+    private String approveToken;
+    @Transient
+    private String rejectToken;
+    @Transient
+    private String approveLink;
+    @Transient
+    private String rejectLink;
 
     public Long getId() { return id; }
 
@@ -273,9 +292,26 @@ public class Notification {
     public Instant getActionDecidedAt() { return actionDecidedAt; }
     public void setActionDecidedAt(Instant actionDecidedAt) { this.actionDecidedAt = actionDecidedAt; }
 
+    // Internal fail-soft callback targets — never surfaced to a client (could carry an internal URL).
+    @JsonIgnore
     public String getActionApproveUrl() { return actionApproveUrl; }
     public void setActionApproveUrl(String actionApproveUrl) { this.actionApproveUrl = actionApproveUrl; }
 
+    @JsonIgnore
     public String getActionRejectUrl() { return actionRejectUrl; }
     public void setActionRejectUrl(String actionRejectUrl) { this.actionRejectUrl = actionRejectUrl; }
+
+    // Transient token/link carriers (see field comment): serialised on the enqueue RESPONSE only;
+    // null after any DB reload, so a GET of the outbox never returns a usable token.
+    public String getApproveToken() { return approveToken; }
+    public void setApproveToken(String approveToken) { this.approveToken = approveToken; }
+
+    public String getRejectToken() { return rejectToken; }
+    public void setRejectToken(String rejectToken) { this.rejectToken = rejectToken; }
+
+    public String getApproveLink() { return approveLink; }
+    public void setApproveLink(String approveLink) { this.approveLink = approveLink; }
+
+    public String getRejectLink() { return rejectLink; }
+    public void setRejectLink(String rejectLink) { this.rejectLink = rejectLink; }
 }

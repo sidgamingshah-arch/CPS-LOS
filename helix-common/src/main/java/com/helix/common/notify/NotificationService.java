@@ -204,22 +204,41 @@ public class NotificationService {
         n.setTemplateKey(cmd.templateKey());
         n.setRecipientRoles(roles);
         n.setRecipients(cmd.recipients());   // explicit addressees (null for role-only callers — unchanged)
+        // Governance: the raw one-time token must never be persisted or serialised (only its hash is,
+        // mirroring QueryThread.responseToken). Redact it from the stored rendered copy and strip the
+        // token/link entries from the persisted vars; the raw token/link ride out only on the transient
+        // carriers set on the returned object below (delivered out-of-band by the transport).
+        String rawApproveLink = (String) vars.get("approveLink");
+        String rawRejectLink = (String) vars.get("rejectLink");
+        if (rawApprove != null && subject != null) subject = subject.replace(rawApprove, "***");
+        if (rawApprove != null && body != null) body = body.replace(rawApprove, "***");
+        if (rawReject != null && subject != null) subject = subject.replace(rawReject, "***");
+        if (rawReject != null && body != null) body = body.replace(rawReject, "***");
+        Map<String, Object> storedVars = new LinkedHashMap<>(vars);
+        storedVars.keySet().removeAll(List.of("approveToken", "rejectToken", "approveLink", "rejectLink"));
         n.setRenderedSubject(subject);
         n.setRenderedBody(body);
-        n.setVars(new LinkedHashMap<>(vars));
+        n.setVars(storedVars);
         n.setTransport(transport.name());
         n.setStatus("PENDING");
         n.setCreatedBy(actor == null ? "system" : actor);
         applyReminderConfig(n, cmd, r, reminderEveryHours, maxReminders, applyRouteReminderPolicy);
 
         if (approval != null) {
-            // Persist only the token HASHES (the raw tokens live once in the body / vars). Mark the
-            // row PENDING an action; the optional route URLs are stored for fail-soft callback on decide.
+            // Persist only the token HASHES. The raw tokens/links are set on the TRANSIENT carriers of
+            // this in-memory object so the enqueuer / a real outbound transport can deliver them
+            // out-of-band; they are never persisted, so a later GET of the outbox cannot return a
+            // usable token. Mark the row PENDING; the route URLs are stored (JsonIgnore) for the
+            // fail-soft callback on decide.
             n.setApproveTokenHash(hashToken(rawApprove));
             n.setRejectTokenHash(hashToken(rawReject));
             n.setActionState("PENDING");
             n.setActionApproveUrl(approval.approveRouteUrl());
             n.setActionRejectUrl(approval.rejectRouteUrl());
+            n.setApproveToken(rawApprove);
+            n.setRejectToken(rawReject);
+            n.setApproveLink(rawApproveLink);
+            n.setRejectLink(rawRejectLink);
         }
 
         if (scheduleAt != null && scheduleAt.isAfter(Instant.now())) {

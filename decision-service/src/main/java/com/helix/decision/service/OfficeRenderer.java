@@ -271,6 +271,10 @@ final class OfficeRenderer {
     private static String rtfBody(String html) {
         if (html == null) return "";
         String s = html;
+        // Scrub any pre-existing control characters from the source so free text can never be
+        // misread as one of our private structural sentinels (-) below. Keep the
+        // ordinary whitespace controls (\t \n \r); drop the rest of the C0 range.
+        s = s.replaceAll("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]", "");
         s = s.replaceAll("(?i)<h1[^>]*>", BR + "" + H1);
         s = s.replaceAll("(?i)</h1>", String.valueOf(BR));
         s = s.replaceAll("(?i)<h2[^>]*>", BR + "" + H2);

@@ -94,23 +94,46 @@ def enqueue_plain(subject_ref, dedupe):
 print("== 1. an APPROVAL notification is minted one-time approve/reject tokens + links")
 app_ref = f"EA-APP-{NONCE}"
 n = enqueue_approval(app_ref, "app")
-vars0 = n.get("vars") or {}
-approve_token = vars0.get("approveToken")
-reject_token = vars0.get("rejectToken")
-check("approval notification carries an approveToken", bool(approve_token) and len(approve_token) >= 20, approve_token)
-check("approval notification carries a rejectToken", bool(reject_token) and len(reject_token) >= 20, reject_token)
+# The raw token/link ride ONLY on the transient carriers of the enqueue RESPONSE (top-level), never
+# on the persisted row — so the enqueuer sees them once but a later GET of the shared outbox cannot.
+approve_token = n.get("approveToken")
+reject_token = n.get("rejectToken")
+approve_link = n.get("approveLink")
+reject_link = n.get("rejectLink")
+check("enqueue response carries an approveToken (transient, once)", bool(approve_token) and len(approve_token) >= 20, approve_token)
+check("enqueue response carries a rejectToken (transient, once)", bool(reject_token) and len(reject_token) >= 20, reject_token)
 check("approve/reject tokens differ", approve_token != reject_token)
 check("approveLink is the tokenised action callback",
-      "/action/" in str(vars0.get("approveLink", "")) and str(vars0.get("approveLink", "")).endswith(approve_token or "x"),
-      vars0.get("approveLink"))
+      "/action/" in str(approve_link or "") and str(approve_link or "").endswith(approve_token or "x"), approve_link)
 check("rejectLink is the tokenised action callback",
-      "/action/" in str(vars0.get("rejectLink", "")) and str(vars0.get("rejectLink", "")).endswith(reject_token or "x"),
-      vars0.get("rejectLink"))
+      "/action/" in str(reject_link or "") and str(reject_link or "").endswith(reject_token or "x"), reject_link)
 check("action-state starts PENDING", n.get("actionState") == "PENDING", n.get("actionState"))
 check("no decision recorded yet (kind/actor/comment null)",
       n.get("actionKind") is None and n.get("actionActor") is None and n.get("actionComment") is None, str(n))
 check("token hashes are NEVER serialised (approve)", "approveTokenHash" not in n, list(n.keys()))
 check("token hashes are NEVER serialised (reject)", "rejectTokenHash" not in n, list(n.keys()))
+# SoD: a later GET of the outbox must NOT leak a usable token to any reader (the vulnerability the
+# transient-carrier design closes). Re-fetch the persisted row and prove no token survives anywhere.
+st, viaget = call("GET", f"{SVC}/api/notifications/{n['id']}")
+viaget = must(st, viaget, "GET the persisted approval notification")
+gv = viaget.get("vars") or {}
+check("GET never leaks the token via vars",
+      not any(k in gv for k in ("approveToken", "rejectToken", "approveLink", "rejectLink")), str(list(gv.keys())))
+check("GET never leaks the token via top-level transient (null after DB reload)",
+      not viaget.get("approveToken") and not viaget.get("rejectToken")
+      and not viaget.get("approveLink") and not viaget.get("rejectLink"),
+      str({k: viaget.get(k) for k in ("approveToken", "rejectToken", "approveLink", "rejectLink")}))
+check("GET never leaks the raw token via the rendered body/subject",
+      approve_token not in str(viaget.get("renderedBody") or "") and reject_token not in str(viaget.get("renderedBody") or "")
+      and approve_token not in str(viaget.get("renderedSubject") or ""), "raw token found in rendered copy")
+# and the token must not appear in the full list surface either (examiner list is intentionally global)
+st, lst = call("GET", f"{SVC}/api/notifications?eventType={n.get('eventType')}")
+lst = lst if isinstance(lst, list) else []
+row = next((x for x in lst if x.get("id") == n["id"]), {})
+lv = row.get("vars") or {}
+check("GET list never leaks the token either",
+      not any(k in lv for k in ("approveToken", "rejectToken", "approveLink", "rejectLink"))
+      and not row.get("approveToken") and not row.get("approveLink"), str(list(lv.keys())))
 check("approval notification still dispatches normally (SENT)", n.get("status") == "SENT", n.get("status"))
 check("approval notification starts unread (read-state untouched)", n.get("readAt") is None, n.get("readAt"))
 
@@ -153,7 +176,7 @@ check("the recorded decision is unchanged by the replays (still APPROVED by the 
 print("== 5. the REJECT link on a fresh approval notification records a REJECTED decision")
 rej_ref = f"EA-REJ-{NONCE}"
 n2 = enqueue_approval(rej_ref, "rej")
-rt = (n2.get("vars") or {}).get("rejectToken")
+rt = n2.get("rejectToken")
 st, done2 = call("POST", f"{SVC}/api/notifications/action/{rt}",
                  {"comment": "Outside risk appetite"}, actor=APPROVER)
 done2 = must(st, done2, "reject via action link")

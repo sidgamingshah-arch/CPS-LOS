@@ -6,13 +6,15 @@ import { Badge, Card, type Col, DataTable, DeterministicBadge, Field, HumanBadge
 // The outbound notification outbox (G5-notify) — auto-present on every service.
 const SERVICES = ["decision", "portfolio", "counterparty", "config", "origination", "risk", "limits", "workflow"];
 
-// The raw one-time token lives once in vars.approveToken / vars.rejectToken (the row persists
-// only the hashes). Fall back to parsing it off the rendered link if only the link is present.
+// The raw one-time token/link ride ONLY on the transient carriers of the enqueue response (the
+// persisted row keeps only the hashes), so they are present the moment a notification is minted but
+// never returned by a later GET of the shared outbox — that is the SoD guarantee. This helper reads
+// them if present (top-level transient, or legacy vars) and returns null otherwise.
 function tokenOf(n: any, kind: "approve" | "reject"): string | null {
   const v = n?.vars || {};
-  const direct = kind === "approve" ? v.approveToken : v.rejectToken;
+  const direct = kind === "approve" ? (n?.approveToken ?? v.approveToken) : (n?.rejectToken ?? v.rejectToken);
   if (direct) return String(direct);
-  const link = kind === "approve" ? v.approveLink : v.rejectLink;
+  const link = kind === "approve" ? (n?.approveLink ?? v.approveLink) : (n?.rejectLink ?? v.rejectLink);
   if (link) { const parts = String(link).split("/"); return parts[parts.length - 1] || null; }
   return null;
 }
@@ -141,7 +143,7 @@ export default function Notifications() {
                     Single-use: the approve/reject links are now spent. Recorded as a HUMAN decision in the audit trail.
                   </div>
                 </div>
-              ) : (
+              ) : (tokenOf(open, "approve") || tokenOf(open, "reject")) ? (
                 <>
                   <Field label="Comment (recorded with the decision)">
                     <input value={comment} onChange={(e) => setComment(e.target.value)}
@@ -155,6 +157,12 @@ export default function Notifications() {
                     One-time, single-use action links. Acting as <span className="mono">{actor}</span>.
                   </div>
                 </>
+              ) : (
+                <div className="muted">
+                  Approve / reject links are delivered out-of-band to the addressed recipient (e.g. by email)
+                  and are never exposed in the shared outbox — possession of the one-time link is the SoD
+                  credential. The decision is recorded via that emailed link and appears here once made.
+                </div>
               )}
             </div>
           )}

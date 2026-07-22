@@ -149,8 +149,8 @@ export default function Exceptions() {
         <DataTable
           id="exceptions-rollup"
           columns={cols}
-          rows={items}
-          rowKey={(r: any) => `${r.source}:${r.type}:${r.subjectRef}:${r.dueAt}:${r.description}`}
+          rows={(items || []).map((r: any, i: number) => ({ ...r, _k: i }))}
+          rowKey={(r: any) => String(r._k)}
           empty={<EmptyState glyph="◔" title="No open exceptions" sub="Nothing to action for this scope." />}
         />
       </Card>
