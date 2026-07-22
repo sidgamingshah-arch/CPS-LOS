@@ -1396,3 +1396,91 @@ button.btn.small { padding: 3px 10px; font-size: 12px; }
 }
 .team-scope-note { font-size: 12px; }
 
+/* ============================================================================
+   Unified Explainable-AI (XAI) presentation layer (U-F).
+   ONE recognisable "Explainable AI" panel — a factors/weights/contribution table,
+   a confidence meter, a source-citation list and an optional what-if note — reused
+   across Risk Lab (RAG · macro · scoring-model), the Deal Workspace ("Why this
+   rating") and AI Commentary (sources). Always advisory; never a figure-of-record
+   surface. Tokens: --ai / --ai-soft carry the AI-advisory identity.
+   ============================================================================ */
+.xai-card {
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--ai);
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, var(--ai-soft), var(--canvas) 62%);
+  padding: 14px 16px;
+  margin: 10px 0;
+}
+.xai-card.xai-compact { padding: 12px 14px; }
+.xai-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.xai-title-wrap { min-width: 0; }
+.xai-title { margin: 0; font-size: 14px; color: var(--ink); font-weight: 650; }
+.xai-compact .xai-title { font-size: 13px; }
+.xai-sub { margin-top: 3px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.xai-head-right { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+.xai-body { display: flex; flex-direction: column; gap: 12px; }
+.xai-summary { font-size: 13px; line-height: 1.6; color: var(--body); }
+
+/* confidence meter (element b) */
+.xai-conf { display: flex; flex-direction: column; gap: 5px; }
+.xai-conf-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.xai-conf-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+.xai-conf-val { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.xai-conf-val.ok { color: var(--ok); }
+.xai-conf-val.warn { color: var(--warn); }
+.xai-conf-val.bad { color: var(--bad); }
+.xai-conf-track { height: 7px; border-radius: var(--r-pill); background: var(--surface-strong); overflow: hidden; }
+.xai-conf.compact .xai-conf-track { height: 6px; }
+.xai-conf-fill { height: 100%; border-radius: var(--r-pill); transition: width .3s ease; }
+.xai-conf-fill.ok { background: var(--ok); }
+.xai-conf-fill.warn { background: var(--warn); }
+.xai-conf-fill.bad { background: var(--bad); }
+.xai-conf-note { font-size: 11.5px; color: var(--muted); }
+
+/* factor / weight / contribution table (element a) */
+.xai-table-wrap { overflow-x: auto; border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--canvas); }
+.xai-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.xai-table th, .xai-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--hairline); }
+.xai-table thead th {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); font-weight: 600; background: var(--surface-soft); white-space: nowrap;
+}
+.xai-table tbody tr:last-child td { border-bottom: none; }
+.xai-table td.num, .xai-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.xai-table .xai-factor-label { color: var(--ink); }
+.xai-table tr.xai-row-net td { background: var(--ai-soft); font-weight: 600; }
+.xai-tag-cell { text-align: right; white-space: nowrap; }
+
+/* source citations (element c) */
+.xai-section-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.xai-cite-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.xai-cite { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12.5px; line-height: 1.5; }
+.xai-cite-doc { color: var(--ai); font-size: 10px; }
+.xai-cite-src { color: var(--ink); font-weight: 600; }
+.xai-cite-loc {
+  font-size: 11px; color: var(--ocean-7); background: var(--det-soft);
+  padding: 1px 7px; border-radius: var(--r-pill); font-weight: 600; white-space: nowrap;
+}
+.xai-cite-detail { color: var(--muted); }
+.xai-cite-empty { font-size: 12.5px; }
+
+/* what-if note (element d) */
+.xai-whatif {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--body); line-height: 1.55;
+  background: var(--surface-soft); border: 1px dashed var(--hairline);
+  border-radius: var(--r-sm); padding: 8px 10px;
+}
+.xai-whatif-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; color: var(--ai); flex-shrink: 0; }
+
+/* method footnote + advisory framing line */
+.xai-method { font-size: 11px; color: var(--muted); }
+.xai-advisory-note {
+  margin-top: 10px; font-size: 11px; color: var(--muted);
+  border-top: 1px dashed var(--hairline); padding-top: 8px;
+}
+

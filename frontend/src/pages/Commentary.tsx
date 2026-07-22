@@ -9,6 +9,7 @@ import { useState } from "react";
 import { origination, commentary, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, EmptyState, Field, GovFlow, Stat, useAsync } from "../ui";
+import { CitationList, normalizeCitations } from "../xai";
 
 // ── types ──────────────────────────────────────────────────────────────────
 
@@ -124,27 +125,17 @@ function CommentaryCard({
         </ul>
       )}
 
-      {/* Sources expandable */}
-      <details style={{ marginBottom: 8 }}>
+      {/* Sources — grounded citations, rendered by the shared XAI citation list. */}
+      <details style={{ marginBottom: 8 }} open>
         <summary className="muted" style={{ cursor: "pointer", fontSize: 12 }}>
           Sources
         </summary>
-        <pre
-          className="mono"
-          style={{
-            fontSize: 11,
-            background: "#f4f4f8",
-            border: "1px solid var(--line)",
-            borderRadius: 6,
-            padding: 8,
-            marginTop: 4,
-            overflowX: "auto",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}
-        >
-          {JSON.stringify(entry.sources, null, 2)}
-        </pre>
+        <div style={{ marginTop: 6 }}>
+          <CitationList
+            citations={normalizeCitations(entry.sources)}
+            empty="No sources cited for this draft."
+          />
+        </div>
       </details>
 
       {/* Advisory note */}

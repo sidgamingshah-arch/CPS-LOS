@@ -2,6 +2,7 @@ import { Fragment, useState } from "react";
 import { decision, origination, portfolio, risk, tracking as covTracking, workflow, WorkflowView, fmt } from "../api";
 import { useApp, isNavEnabled } from "../app-context";
 import { AiBadge, Badge, Button, Card, Field, GovFlow, GradeBadge, statusTone, useAsync } from "../ui";
+import { ExplainCard, type XaiFactor } from "../xai";
 import { useCodes } from "../code-values";
 import CopilotPanel from "../CopilotPanel";
 
@@ -340,6 +341,10 @@ export default function DealWorkspace({ reference }: { reference: string }) {
       </Card>
       </section>
 
+      {/* Why this rating — unified Explainable-AI view over the existing rating
+          factor contributions + the grounded capital/explain narrative. Advisory. */}
+      {rating && <WhyThisRatingCard reference={reference} rating={rating} capital={capital} />}
+
       {/* Pricing */}
       <section id="ws-pricing" className="ws-anchor">
       <Card title="RAROC pricing" sub="Risk-adjusted price — advisory only; below-hurdle flagged for escalation (PRD §7)."
@@ -503,6 +508,41 @@ export default function DealWorkspace({ reference }: { reference: string }) {
         </div>
         <div><h4>Computation trace</h4><pre className="trace">{JSON.stringify(capital.trace, null, 2)}</pre></div>
       </div>
+    );
+  }
+
+  /**
+   * Compact "Why this rating" — the same Explainable-AI panel used on Risk Lab, here
+   * surfaced next to the rating/capital cards. It reads the EXISTING advisory endpoints
+   * (rating scoreBreakdown factors + the grounded capital/explain narrative) and never
+   * moves an authoritative figure — presentation only.
+   */
+  function WhyThisRatingCard({ reference, rating, capital }: { reference: string; rating: any; capital: any }) {
+    const expl = useAsync(() => risk.explainCapital(reference).catch(() => null), [reference, capital?.id]);
+    const factors: Record<string, any> = rating?.scoreBreakdown?.factors ?? {};
+    const ratingFactors: XaiFactor[] = Object.entries(factors).map(([k, f]: [string, any]) => ({
+      label: k,
+      value: fmt.num(f.value, 2),
+      subScore: fmt.num(f.score, 0),
+      contribution: fmt.num(f.contribution, 1),
+    }));
+    const methodBits = ["Deterministic scorecard PD/LGD/EAD"];
+    if (capital?.capitalPackCode) methodBits.push(`capital pack ${capital.capitalPackCode} v${capital.capitalPackVersion}`);
+    return (
+      <ExplainCard
+        title="Why this rating"
+        subtitle={`Model ${rating.modelGrade ?? "—"} → final ${rating.finalGrade ?? "—"} · PD ${fmt.pct(rating.pd, 2)}`}
+        compact
+        right={<GradeBadge grade={rating.finalGrade} />}
+        explanation={{
+          summary: expl.data?.explanation
+            ? <><b>Capital:</b> {expl.data.explanation}</>
+            : undefined,
+          factors: ratingFactors,
+          factorHeaders: { factor: "Factor", value: "Value", subScore: "Score", contribution: "Contribution" },
+          method: methodBits.join(" · "),
+        }}
+      />
     );
   }
 
