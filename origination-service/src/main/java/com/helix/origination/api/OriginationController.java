@@ -23,6 +23,7 @@ import com.helix.origination.entity.ProposedFacility;
 import com.helix.origination.entity.Sublimit;
 import com.helix.origination.service.OriginationService;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -31,7 +32,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -79,6 +82,20 @@ public class OriginationController {
     public Document upload(@PathVariable String reference, @Valid @RequestBody UploadDocumentRequest req,
                            @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
         return origination.uploadDocument(reference, req, actor);
+    }
+
+    /**
+     * REAL multipart file upload for document capture. Accepts the actual file bytes, stores them
+     * in the governed DMS, extracts the document's real text (PDFBox / UTF-8 / config-gated OCR),
+     * classifies from filename AND content, and persists the Document row. Additive to the legacy
+     * filename-only {@code POST /{reference}/documents} path, which is unchanged.
+     */
+    @PostMapping(value = "/{reference}/documents/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Document uploadFile(@PathVariable String reference,
+                               @RequestParam("file") MultipartFile file,
+                               @RequestParam(value = "declaredType", required = false) String declaredType,
+                               @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
+        return origination.uploadDocumentFile(reference, file, declaredType, actor);
     }
 
     @GetMapping("/{reference}/documents")

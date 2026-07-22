@@ -28,6 +28,21 @@ async function call<T>(path: string, method: Method, body?: unknown, actor = "de
   return data as T;
 }
 
+// Multipart POST for real file uploads. Deliberately does NOT set Content-Type — the browser sets
+// the multipart boundary itself. Forwards X-Actor + the bearer token exactly like call().
+async function postForm<T>(path: string, form: FormData, actor = "demo.user"): Promise<T> {
+  const headers: Record<string, string> = { "X-Actor": actor };
+  if (authToken) headers["Authorization"] = "Bearer " + authToken;
+  const res = await fetch(GATEWAY + path, { method: "POST", headers, body: form });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const message = data?.message || res.statusText || "Request failed";
+    throw new Error(message);
+  }
+  return data as T;
+}
+
 // ---- authentication ----
 export type LoginResult = {
   token: string; actor: string; displayName: string;
@@ -149,6 +164,14 @@ export const origination = {
     call<any>(`/origination/api/applications/${ref}/status`, "PATCH", { status }, actor),
   uploadDoc: (ref: string, body: any, actor: string) =>
     call<any>(`/origination/api/applications/${ref}/documents`, "POST", body, actor),
+  // REAL file upload: sends the actual bytes as multipart/form-data. The server stores them in the
+  // DMS, extracts the document's real text (PDFBox / UTF-8 / OCR) and classifies from content.
+  uploadDocumentFile: (ref: string, file: File, declaredType: string | undefined, actor: string) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    if (declaredType) form.append("declaredType", declaredType);
+    return postForm<any>(`/origination/api/applications/${ref}/documents/upload`, form, actor);
+  },
   docs: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/documents`, "GET"),
   spread: (ref: string, body: any, actor: string) =>
     call<any>(`/origination/api/applications/${ref}/spread`, "POST", body, actor),

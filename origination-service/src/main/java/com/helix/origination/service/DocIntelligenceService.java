@@ -68,17 +68,39 @@ public class DocIntelligenceService {
                 app == null ? null : app.getJurisdiction());
         String type = doc.getClassifiedType() == null ? "OTHER" : doc.getClassifiedType();
         String lang = detectLanguage(doc.getFileName());
+        String docText = doc.getExtractedText();
 
         Map<String, Object> fields = new LinkedHashMap<>();
-        double conf = templateFields(type, fields, app);
-        String model = "doc-intel-v1";
+        double conf;
+        String model;
+        boolean contentDerived = false;
+        // HONEST EXTRACTION: when the document's REAL text is present (uploaded via the multipart
+        // /documents/upload path → PDFBox / UTF-8 / OCR), derive the fields FROM that text with a
+        // deterministic content parser. The values then come from the document itself, not a
+        // per-deal template. If the text yields nothing parseable we fall back to the template so a
+        // demo is never empty. Either way the result is a SUGGESTED, human-confirmed advisory.
+        if (docText != null && !docText.isBlank()) {
+            int found = parseFieldsFromText(type, docText, fields);
+            if (found > 0) {
+                contentDerived = true;
+                conf = 0.90;                     // overall confidence of the content parse
+                model = "doc-intel-ocr-v1";      // marks the extraction as document-derived (for the UI)
+            } else {
+                conf = templateFields(type, fields, app);
+                model = "doc-intel-v1";
+            }
+        } else {
+            conf = templateFields(type, fields, app);
+            model = "doc-intel-v1";
+        }
 
         // Optional LLM extraction: when a bank has configured an external model, it drafts the
-        // extracted fields. CRITICAL GOVERNANCE: the output remains an advisory SUGGESTED
-        // DocExtraction requiring human confirm — it is NEVER auto-applied to the deterministic
-        // spread (confirm() records review accountability only, see below). Provider 'none'
-        // (default) → deterministic template, model 'doc-intel-v1', byte-identical to today.
-        LlmExtraction lx = llmExtract(type, doc.getFileName(), lang, fields, conf);
+        // extracted fields — now GROUNDED in the document's real text (passed as the user prompt).
+        // CRITICAL GOVERNANCE: the output remains an advisory SUGGESTED DocExtraction requiring
+        // human confirm — it is NEVER auto-applied to the deterministic spread (confirm() records
+        // review accountability only, see below). Provider 'none' (default) → the content parser
+        // above (or the deterministic template), byte-identical to today for text-less documents.
+        LlmExtraction lx = llmExtract(type, doc.getFileName(), lang, fields, conf, docText);
         boolean llmDrafted = lx != null;
         if (llmDrafted) {
             fields = lx.fields();
@@ -101,6 +123,10 @@ public class DocIntelligenceService {
         detail.put("language", lang);
         detail.put("fields", fields.size());
         detail.put("advisory", true);
+        detail.put("contentDerived", contentDerived);
+        if (contentDerived) {
+            detail.put("extractionMethod", doc.getExtractionMethod());
+        }
         if (llmDrafted) {
             detail.put("llmDrafted", true);
         }
@@ -118,13 +144,20 @@ public class DocIntelligenceService {
      * The result is only ever persisted as a SUGGESTED extraction (never auto-applied).
      */
     private LlmExtraction llmExtract(String type, String fileName, String lang,
-                                     Map<String, Object> deterministic, double conf) {
+                                     Map<String, Object> deterministic, double conf, String extractedText) {
         String system = "You are an ADVISORY document-intelligence extractor for wholesale-credit "
-                + "documents. Extract the key fields from the described document as a flat JSON object of "
+                + "documents. Extract the key fields from the document as a flat JSON object of "
                 + "field -> value. This is a SUGGESTION only: a named human will review and confirm it, and "
-                + "it is NEVER written directly into any financial figure. Return ONLY a JSON object.";
+                + "it is NEVER written directly into any financial figure. Extract only what the text "
+                + "actually states; do not invent values. Return ONLY a JSON object.";
         String user = "Document type: " + type + "\nFile name: " + fileName + "\nDetected language: " + lang
                 + "\nExpected fields (hint): " + deterministic.keySet();
+        // Ground the model in the document's REAL text so a configured external model actually reads
+        // the document instead of guessing from the file name. Truncated to a sane slice.
+        if (extractedText != null && !extractedText.isBlank()) {
+            String slice = extractedText.length() > 6000 ? extractedText.substring(0, 6000) : extractedText;
+            user = user + "\n\nDocument text follows:\n" + slice;
+        }
         LlmResult r = safeComplete(LlmRequest.of("doc-extract", system, user));
         if (!r.usable()) {
             return null;
@@ -499,6 +532,134 @@ public class DocIntelligenceService {
 
     private void field(Map<String, Object> fields, String key, Object value, double confidence, int page) {
         fields.put(key, Map.of("value", value, "confidence", confidence, "sourcePage", page));
+    }
+
+    // --------------------------------------------- deterministic content parser (from real text)
+
+    /**
+     * Derives extraction fields FROM the document's real text using case-insensitive regex, keyed
+     * to the document {@code type}. Each hit is stored via {@link #field} with the 1-based LINE
+     * NUMBER where it was found as the source citation, so the UI can point at the evidence. This
+     * is deterministic PARSING (not generation): every value is copied verbatim from the text.
+     * Returns the number of fields recognised — 0 means the caller should fall back to the template
+     * so a demo is never empty. The result is still a governed SUGGESTED advisory extraction.
+     */
+    int parseFieldsFromText(String type, String text, Map<String, Object> fields) {
+        if (text == null || text.isBlank()) {
+            return 0;
+        }
+        int before = fields.size();
+        switch (type == null ? "OTHER" : type) {
+            case "FINANCIAL_STATEMENT" -> {
+                money(fields, text, "revenue",
+                        "(?:total\\s+revenue|revenue\\s+from\\s+operations|revenue|turnover|net\\s+sales|sales)", 0.90);
+                money(fields, text, "ebitda", "ebitda", 0.88);
+                money(fields, text, "total_debt",
+                        "(?:total\\s+debt|total\\s+borrowings|gross\\s+debt)", 0.86);
+                period(fields, text);
+                lineTail(fields, text, "auditor", "(?:statutory\\s+auditor|auditor)s?", 0.90);
+            }
+            case "TAX_GST" -> {
+                gstin(fields, text);
+                money(fields, text, "annual_turnover",
+                        "(?:aggregate\\s+turnover|annual\\s+turnover|turnover)", 0.87);
+            }
+            case "BANK_STATEMENT" -> {
+                lineTail(fields, text, "account_number",
+                        "(?:account\\s*(?:no|number)|a/c\\s*no)\\.?\\s*[:\\-]?", 0.90);
+                money(fields, text, "average_balance", "(?:average\\s+balance|avg\\s+balance)", 0.82);
+            }
+            case "KYC_ID", "MOA_AOA" -> {
+                cin(fields, text);
+                lineTail(fields, text, "legal_name",
+                        "(?:name\\s+of\\s+(?:the\\s+)?company|legal\\s+name|entity\\s+name)", 0.88);
+            }
+            case "FACILITY_DOC", "SECURITY_DOC" -> {
+                money(fields, text, "facility_amount",
+                        "(?:facility\\s+amount|sanctioned\\s+amount|loan\\s+amount)", 0.88);
+                lineTail(fields, text, "borrower", "(?:name\\s+of\\s+borrower|borrower|obligor)", 0.85);
+            }
+            default -> {
+                // Unknown type: still attempt the common financial signals + identifiers.
+                money(fields, text, "revenue", "(?:total\\s+revenue|revenue|turnover)", 0.85);
+                gstin(fields, text);
+                cin(fields, text);
+                period(fields, text);
+            }
+        }
+        return fields.size() - before;
+    }
+
+    /** Matches {@code <label> [:-] [currency] <number>}; stores the number (long when integral). */
+    private void money(Map<String, Object> fields, String text, String key, String labelRegex, double conf) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "(?i)" + labelRegex + "\\s*[:\\-]?\\s*(?:(?:rs|inr|usd|\\$|₹|aed)\\.?\\s*)?([0-9][0-9,]*(?:\\.[0-9]+)?)")
+                .matcher(text);
+        if (m.find()) {
+            String cleaned = m.group(1).replace(",", "");
+            try {
+                double d = Double.parseDouble(cleaned);
+                Object val = (d == Math.floor(d) && !Double.isInfinite(d)
+                        && Math.abs(d) < 9.0e18) ? (Object) (long) d : (Object) d;
+                field(fields, key, val, conf, lineOf(text, m.start()));
+            } catch (NumberFormatException ignored) {
+                // not a parseable number — skip this field rather than invent one
+            }
+        }
+    }
+
+    /** Reporting period like {@code FY2025} / {@code FY 2024-25}. */
+    private void period(Map<String, Object> fields, String text) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "(?i)\\bFY\\s?(20\\d\\d(?:\\s?[-/]\\s?\\d{2,4})?)").matcher(text);
+        if (m.find()) {
+            field(fields, "reporting_period", "FY" + m.group(1).replaceAll("\\s", ""), 0.94, lineOf(text, m.start()));
+        }
+    }
+
+    /** GSTIN — 2-digit state + 10-char PAN + entity/Z/check (15 chars). */
+    private void gstin(Map<String, Object> fields, String text) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "\\b([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z])\\b").matcher(text);
+        if (m.find()) {
+            field(fields, "gstin", m.group(1), 0.96, lineOf(text, m.start()));
+        }
+    }
+
+    /** CIN — 21-char corporate identity number (e.g. U74999MH2015PLC123456). */
+    private void cin(Map<String, Object> fields, String text) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "\\b([LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6})\\b").matcher(text);
+        if (m.find()) {
+            field(fields, "cin", m.group(1), 0.95, lineOf(text, m.start()));
+        }
+    }
+
+    /** Captures the remainder of the line after {@code <label>[:-]} (trimmed + capped). */
+    private void lineTail(Map<String, Object> fields, String text, String key, String labelRegex, double conf) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "(?i)" + labelRegex + "\\s*[:\\-]?\\s*([^\\r\\n]+)").matcher(text);
+        if (m.find()) {
+            String v = m.group(1).trim();
+            if (v.length() > 120) {
+                v = v.substring(0, 120).trim();
+            }
+            if (!v.isBlank()) {
+                field(fields, key, v, conf, lineOf(text, m.start()));
+            }
+        }
+    }
+
+    /** 1-based line number of a char offset in {@code text}. */
+    private static int lineOf(String text, int offset) {
+        int line = 1;
+        int end = Math.min(offset, text.length());
+        for (int i = 0; i < end; i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+            }
+        }
+        return line;
     }
 
     private String detectLanguage(String fileName) {
