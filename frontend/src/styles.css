@@ -1232,3 +1232,17 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .cmp-yes { color: #136b24; font-weight: 700; }
 .cmp-no { color: var(--muted-soft); }
 
+
+/* global / combined cash-flow (relationship consolidated debt-service) */
+.gcf-stats { margin-bottom: 10px; }
+.gcf-formula {
+  padding: 10px 14px; border-radius: var(--r-md); border: 1px dashed var(--hairline);
+  background: var(--det-soft); color: var(--muted); font-size: 12.5px; margin-bottom: 8px;
+}
+.gcf-formula .mono { color: var(--text); }
+.gcf-warn {
+  padding: 8px 12px; border-radius: var(--r-md); border: 1px solid var(--hairline);
+  background: var(--surface-soft); font-size: 12px; margin-bottom: 8px;
+}
+.gcf-warn ul { margin: 4px 0 0; padding-left: 18px; }
+.gcf-note { margin-top: 10px; font-size: 11.5px; color: var(--muted-soft); }
