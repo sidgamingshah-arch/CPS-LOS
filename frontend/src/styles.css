@@ -1232,3 +1232,9 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .cmp-yes { color: #136b24; font-weight: 700; }
 .cmp-no { color: var(--muted-soft); }
 
+
+/* ---- Independent Risk Note (CLoM R1-13) narrative ---- */
+.rn-narrative .rn-section { margin-bottom: 14px; }
+.rn-narrative .rn-section:last-child { margin-bottom: 0; }
+.rn-narrative .rn-section h4 { margin: 0 0 4px; font-size: 13px; letter-spacing: .02em; }
+.rn-narrative .rn-section p { white-space: pre-wrap; margin: 0; }

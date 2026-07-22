@@ -34,6 +34,7 @@ import Scf from "./pages/Scf";
 import Syndication from "./pages/Syndication";
 import DocIntel from "./pages/DocIntel";
 import RiskLab from "./pages/RiskLab";
+import RiskNotes from "./pages/RiskNotes";
 import CreditProposal from "./pages/CreditProposal";
 import ApprovalRules from "./pages/ApprovalRules";
 import DocGen from "./pages/DocGen";
@@ -94,6 +95,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Assess & Decide",
     items: [
       { key: "risklab", label: "Risk Lab" },
+      { key: "risknotes", label: "Risk Notes" },
       { key: "projections", label: "Projections" },
       { key: "pricinglab", label: "Pricing Lab" },
       { key: "cad", label: "CAD · Documentation" },
@@ -173,6 +175,7 @@ const CRUMB: Record<string, string> = {
   escrow: "Escrow monitoring · append-only versioned budget lines · category-tagged transactions · deterministic budget-vs-actual + RAG (VALIDATION_PARAMETER) · ECL/exposure/limit untouched",
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
   risklab: "Advisory overlays · statistical RAG scoring · macro directional impact (non-binding)",
+  risknotes: "Independent risk note · risk-function opinion record · draft → submit → review → approve · reassign / reject / reverse · rating of record never moves",
   projections: "Multi-year proforma · driver assumptions · projected DSCR · sensitivity (advisory)",
   mis: "Composition · RAROC variance · ECL · ageing · watchlist",
   reportbuilder: "Self-service · whitelisted datasets · maker-checker on saved defs · deterministic figures",
@@ -482,6 +485,7 @@ export default function App() {
             {view === "escrow" && <Escrow />}
             {view === "customer360" && <Customer360 />}
             {view === "risklab" && <RiskLab />}
+            {view === "risknotes" && <RiskNotes />}
             {view === "projections" && <Projections />}
             {view === "mis" && <Mis />}
             {view === "reportbuilder" && <ReportBuilder />}
