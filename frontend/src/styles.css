@@ -1232,3 +1232,11 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .cmp-yes { color: #136b24; font-weight: 700; }
 .cmp-no { color: var(--muted-soft); }
 
+/* U9: role-dashboard "view my team" scope toggle + field-access note */
+.team-scope-bar {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; border: 1px solid var(--line, #e2e6ea);
+  border-radius: 8px; background: var(--panel, #fff);
+}
+.team-scope-note { font-size: 12px; }
+

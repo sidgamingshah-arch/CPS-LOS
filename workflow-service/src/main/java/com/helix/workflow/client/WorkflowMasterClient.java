@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -64,5 +65,24 @@ public class WorkflowMasterClient {
         return listActive("OOO_CALENDAR").stream()
                 .filter(r -> actor.equalsIgnoreCase(r.recordKey()))
                 .findFirst();
+    }
+
+    /**
+     * The actorIds that report to {@code supervisor} per the {@code USER_HIERARCHY} master
+     * (recordKey = actorId, payload {@code {supervisor, department, role}}). Best-effort and
+     * DEFAULT-PERMISSIVE for the "view my team" inbox scope: an outage or an unmapped supervisor
+     * yields an empty list, so team scope degrades to self-only (no regression).
+     */
+    public List<String> subordinatesOf(String supervisor) {
+        if (supervisor == null || supervisor.isBlank()) return List.of();
+        List<String> out = new ArrayList<>();
+        for (MasterRecordDto r : listActive("USER_HIERARCHY")) {
+            if (r.payload() == null) continue;
+            Object sup = r.payload().get("supervisor");
+            if (sup != null && supervisor.equalsIgnoreCase(String.valueOf(sup)) && r.recordKey() != null) {
+                out.add(r.recordKey());
+            }
+        }
+        return out;
     }
 }
