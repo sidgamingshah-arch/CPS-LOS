@@ -1,8 +1,10 @@
 package com.helix.risk.api;
 
+import com.helix.risk.client.ScoringApprovalPolicyClient;
 import com.helix.risk.dto.RiskDtos.OverrideRatingRequest;
 import com.helix.risk.dto.RiskDtos.OverrideStats;
 import com.helix.risk.dto.RiskDtos.RiskSummary;
+import com.helix.risk.dto.RiskDtos.ScoringApprovalSimulateRequest;
 import com.helix.risk.entity.CapitalResult;
 import com.helix.risk.entity.PricingResult;
 import com.helix.risk.entity.Rating;
@@ -58,6 +60,25 @@ public class RiskController {
     @GetMapping("/{reference}/scoring-approval")
     public Map<String, Object> scoringApproval(@PathVariable String reference) {
         return risk.scoringApproval(reference);
+    }
+
+    /**
+     * Simulate the scoring-approval routing for hypothetical rating parameters — read-only, NO
+     * persistence, NO rating mutation. Evaluates the ACTIVE SCORING_APPROVAL_POLICY through the very
+     * same engine the rating path uses, so the simulated routing matches a real scored rating with
+     * the same params. Powers the Approval-Rules matrix "simulate routing" panel. Returns
+     * {matchedRuleId, requireApproval, requiredAuthority}.
+     */
+    @PostMapping("/scoring-approval/simulate")
+    public Map<String, Object> simulateScoringApproval(@RequestBody ScoringApprovalSimulateRequest req) {
+        return risk.simulateScoringApproval(new ScoringApprovalPolicyClient.Params(
+                req.exposure() == null ? 0d : req.exposure(),
+                req.grade(),
+                req.scoreBand(),
+                req.overrideNotches() == null ? 0 : req.overrideNotches(),
+                Boolean.TRUE.equals(req.overridden()),
+                req.segment(),
+                req.jurisdiction()));
     }
 
     @GetMapping("/override-stats")

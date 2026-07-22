@@ -34,6 +34,8 @@ import Scf from "./pages/Scf";
 import Syndication from "./pages/Syndication";
 import DocIntel from "./pages/DocIntel";
 import RiskLab from "./pages/RiskLab";
+import CreditProposal from "./pages/CreditProposal";
+import ApprovalRules from "./pages/ApprovalRules";
 import DocGen from "./pages/DocGen";
 import Commentary from "./pages/Commentary";
 import PricingLab from "./pages/PricingLab";
@@ -98,6 +100,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "perfection", label: "MOE Perfection" },
       { key: "docgen", label: "Doc Generation" },
       { key: "commentary", label: "AI Commentary" },
+      { key: "creditproposal", label: "Credit Proposal" },
       { key: "committee", label: "Committee Room" },
       { key: "coi", label: "Conflict of Interest" },
       { key: "notings", label: "Notings" },
@@ -127,6 +130,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "rulepacks", label: "Jurisdictions & Rule Packs" },
       { key: "masters", label: "Master Data" },
       { key: "modelbuilder", label: "Model Builder" },
+      { key: "approvalrules", label: "Approval Rules" },
       { key: "governance", label: "AI Governance" },
       { key: "notifications", label: "Notifications" },
       { key: "audit", label: "Audit Trail" },
@@ -160,6 +164,8 @@ const CRUMB: Record<string, string> = {
   perfection: "Mortgage / MOE security perfection · ordered role-gated steps · MOE-vetting SoD · vendor RFQ · optional limit-release gate",
   docgen: "Template-driven document generation · clause add/remove/edit · human-confirm gate",
   commentary: "AI narrative commentary · grounded · advisory · human-confirm gate",
+  creditproposal: "CAM authoring · format picker · generate (versioned) · side-by-side format compare (non-persisting preview) · figures identical across formats",
+  approvalrules: "Scoring-approval policy · visual matrix · first-match-wins routing · simulate · maker-checker save · never touches a figure",
   pricinglab: "Pricing scenario optimiser · goal-seek · advisory (authoritative pricing untouched)",
   monitoring: "Deferred docs · conditions subsequent · renewals · reminders · escalation · DMS feed",
   srm: "Structured review / renewal on the Noting engine · SRM_CHECKLIST · linked SRM_RENEWAL noting · AUTHORIZED advances the MER next-review date",
@@ -463,6 +469,7 @@ export default function App() {
             {view === "perfection" && <Perfection />}
             {view === "docgen" && <DocGen />}
             {view === "commentary" && <Commentary />}
+            {view === "creditproposal" && <CreditProposal />}
             {view === "committee" && <Committee />}
             {view === "coi" && <Coi />}
             {view === "notings" && <Notings />}
@@ -486,6 +493,7 @@ export default function App() {
             {view === "governance" && <Governance />}
             {view === "masters" && <Masters />}
             {view === "modelbuilder" && <ModelBuilder />}
+            {view === "approvalrules" && <ApprovalRules />}
             {view === "audit" && <AuditLog />}
             {view === "workspace" && ref && <DealWorkspace reference={ref} />}
           </div>

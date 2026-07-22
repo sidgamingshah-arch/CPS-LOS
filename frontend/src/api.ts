@@ -206,6 +206,14 @@ export const risk = {
   macroHistory: (ref: string) => call<any[]>(`/risk/api/risk/${ref}/macro-impact`, "GET"),
   // ---- configurable, parameter-routed scoring approval (gate, not a figure change) ----
   scoringApproval: (ref: string) => call<any>(`/risk/api/risk/${ref}/scoring-approval`, "GET"),
+  // Read-only, NON-persisting: simulate the SCORING_APPROVAL_POLICY routing for hypothetical
+  // params (exposure/grade/overrideNotches/overridden/segment/jurisdiction/scoreBand). Evaluates
+  // the ACTIVE policy via the same engine the rating path uses; no rating is read or mutated.
+  simulateScoringApproval: (body: {
+    exposure?: number; grade?: string; overrideNotches?: number; overridden?: boolean;
+    segment?: string; jurisdiction?: string; scoreBand?: string;
+  }) => call<{ matchedRuleId: string; requireApproval: boolean; requiredAuthority: string | null }>(
+    "/risk/api/risk/scoring-approval/simulate", "POST", body),
 };
 
 // ---- configurable scoring-model engine (sections of typed questions; advisory composite) ----
@@ -370,6 +378,14 @@ export const decision = {
   // Available CAM proposal formats for the picker; optional segment flags/sorts the default first.
   proposalFormats: (segment?: string) =>
     call<any[]>(`/decision/api/decisions/proposal-formats${segment ? `?segment=${encodeURIComponent(segment)}` : ""}`, "GET"),
+  // Render-only, NON-persisting proposal under a chosen CAM format (side-by-side compare). Reuses
+  // the format-aware assembly of `generate` but writes NO version and stamps NO audit — comparing
+  // formats never spams versions. `generate` stays the real, persisting action.
+  previewProposal: (ref: string, format?: string) =>
+    call<{
+      applicationReference: string; format: string; label: string; sections: string[];
+      markdown: string; html: string; citations: Record<string, any>; llmDrafted: boolean;
+    }>(`/decision/api/decisions/${ref}/credit-proposal/preview${format ? `?format=${encodeURIComponent(format)}` : ""}`, "GET"),
 };
 
 // ---- conflict-of-interest (COI) attestations ----

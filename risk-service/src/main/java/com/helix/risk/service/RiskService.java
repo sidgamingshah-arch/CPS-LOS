@@ -315,13 +315,39 @@ public class RiskService {
         return m;
     }
 
+    /**
+     * Simulate the SCORING_APPROVAL_POLICY routing for hypothetical scored-rating parameters —
+     * read-only, NON-persisting. Reuses the exact evaluation logic ({@link #resolveApproval}) that
+     * the real rating path uses in {@link #applyScoringApproval}, so the simulated routing is
+     * byte-identical to what a scored rating with the same params would receive. No rating is read,
+     * written or mutated; nothing is persisted. Powers the Approval-Rules matrix "simulate routing"
+     * panel. Returns {matchedRuleId, requireApproval, requiredAuthority}.
+     */
+    public Map<String, Object> simulateScoringApproval(Params params) {
+        Resolution res = resolveApproval(params);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("matchedRuleId", res.ruleId());
+        m.put("requireApproval", res.requireApproval());
+        m.put("requiredAuthority", res.requiredAuthority());
+        return m;
+    }
+
     // ------------------------------------------------------ scoring-approval routing (gate only)
+
+    /**
+     * Resolve the routing via the optional policy client, failing open to the flat CREDIT_OFFICER
+     * gate when the (optional) bean is absent — the single evaluation path shared by the persisting
+     * rating gate ({@link #applyScoringApproval}) and the read-only simulate endpoint.
+     */
+    private Resolution resolveApproval(Params params) {
+        return scoringApprovalPolicy == null
+                ? ScoringApprovalPolicyClient.FLAT
+                : scoringApprovalPolicy.resolve(params);
+    }
 
     /** Resolve + persist the SCORING_APPROVAL_POLICY routing onto a scored/overridden rating. */
     private void applyScoringApproval(Rating rating, Params params) {
-        Resolution res = scoringApprovalPolicy == null
-                ? ScoringApprovalPolicyClient.FLAT
-                : scoringApprovalPolicy.resolve(params);
+        Resolution res = resolveApproval(params);
         rating.setApprovalRequired(res.requireApproval());
         rating.setRequiredAuthority(res.requiredAuthority());
         rating.setApprovalStatus(res.requireApproval() ? "PENDING_APPROVAL" : "NOT_REQUIRED");

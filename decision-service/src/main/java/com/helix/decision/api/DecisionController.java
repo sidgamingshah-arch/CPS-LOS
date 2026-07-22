@@ -153,4 +153,17 @@ public class DecisionController {
     public List<CreditProposal> proposalVersions(@PathVariable String reference) {
         return proposals.versions(reference);
     }
+
+    /**
+     * Render a credit proposal under a chosen CAM {@code format} WITHOUT persisting a version — no
+     * DB write, no CREDIT_PROPOSAL_GENERATED audit. Reuses the format-aware assembly, render-only,
+     * so the side-by-side compare on the Credit-Proposal screen can show the actual output of each
+     * format without spamming proposal versions. The persisting {@code generate} stays the real action.
+     */
+    @GetMapping("/{reference}/credit-proposal/preview")
+    public CreditProposalService.ProposalPreview previewProposal(
+            @PathVariable String reference,
+            @RequestParam(required = false) String format) {
+        return proposals.preview(reference, format);
+    }
 }
