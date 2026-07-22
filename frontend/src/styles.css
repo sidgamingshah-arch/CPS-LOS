@@ -1232,3 +1232,6 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .cmp-yes { color: #136b24; font-weight: 700; }
 .cmp-no { color: var(--muted-soft); }
 
+
+/* email-actionable approve/reject (CLoM F12) */
+.notif-action { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border, #d8dee3); }
