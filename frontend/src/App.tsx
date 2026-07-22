@@ -53,6 +53,7 @@ import Coi from "./pages/Coi";
 import DrawingPower from "./pages/DrawingPower";
 import Notifications from "./pages/Notifications";
 import Notings from "./pages/Notings";
+import Annexures from "./pages/Annexures";
 import IpNotes from "./pages/IpNotes";
 import PostureChip from "./pages/PostureChip";
 import NotificationBell from "./notification-center";
@@ -101,6 +102,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "docgen", label: "Doc Generation" },
       { key: "commentary", label: "AI Commentary" },
       { key: "creditproposal", label: "Credit Proposal" },
+      { key: "annexures", label: "CAM Annexures" },
       { key: "committee", label: "Committee Room" },
       { key: "coi", label: "Conflict of Interest" },
       { key: "notings", label: "Notings" },
@@ -165,6 +167,7 @@ const CRUMB: Record<string, string> = {
   docgen: "Template-driven document generation · clause add/remove/edit · human-confirm gate",
   commentary: "AI narrative commentary · grounded · advisory · human-confirm gate",
   creditproposal: "CAM authoring · format picker · generate (versioned) · side-by-side format compare (non-persisting preview) · figures identical across formats",
+  annexures: "CAM annexures · ANNEXURE_TYPE-master-driven · sections materialised + version-pinned · optional advisory AI draft · DRAFT→SUBMITTED→REVIEWED→APPROVED (SoD reviewer/approver≠author) · deal grade/PD/spread untouched",
   approvalrules: "Scoring-approval policy · visual matrix · first-match-wins routing · simulate · maker-checker save · never touches a figure",
   pricinglab: "Pricing scenario optimiser · goal-seek · advisory (authoritative pricing untouched)",
   monitoring: "Deferred docs · conditions subsequent · renewals · reminders · escalation · DMS feed",
@@ -470,6 +473,7 @@ export default function App() {
             {view === "docgen" && <DocGen />}
             {view === "commentary" && <Commentary />}
             {view === "creditproposal" && <CreditProposal />}
+            {view === "annexures" && <Annexures />}
             {view === "committee" && <Committee />}
             {view === "coi" && <Coi />}
             {view === "notings" && <Notings />}
