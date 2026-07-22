@@ -1395,4 +1395,37 @@ button.btn.small { padding: 3px 10px; font-size: 12px; }
   border-radius: 8px; background: var(--panel, #fff);
 }
 .team-scope-note { font-size: 12px; }
+/* ---- Integration Hub console (U-C) ---- */
+.ih-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.ih-note { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.ih-connectors { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+.ih-conn {
+  border: 1px solid var(--hairline); border-radius: var(--r-md); padding: 14px 16px;
+  background: var(--canvas); display: flex; flex-direction: column; gap: 10px;
+}
+.ih-conn-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.ih-conn-kind { font-weight: 600; color: var(--ink); font-size: 14px; }
+.ih-conn-svc { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.ih-conn-blurb { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.ih-conn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; margin-top: 2px; }
+.ih-conn-fig { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ih-conn-fig .k {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted-soft); font-weight: 600;
+}
+.ih-conn-fig .v { font-size: 13px; color: var(--ink); font-weight: 600; }
+.ih-health {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700;
+  padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+}
+.ih-health .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.ih-health.green { background: var(--human-soft); color: var(--human); }
+.ih-health.green .dot { background: var(--human); }
+.ih-health.amber { background: rgba(157, 87, 0, .10); color: var(--warn); }
+.ih-health.amber .dot { background: var(--warn); }
+.ih-mode {
+  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--hairline); color: var(--muted);
+}
+.ih-mode.live { color: var(--human); border-color: var(--human); }
 

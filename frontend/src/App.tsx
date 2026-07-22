@@ -46,6 +46,7 @@ import Commentary from "./pages/Commentary";
 import PricingLab from "./pages/PricingLab";
 import Spreading from "./pages/Spreading";
 import Exports from "./pages/Exports";
+import IntegrationHub from "./pages/IntegrationHub";
 import Groups from "./pages/Groups";
 import Cpt from "./pages/Cpt";
 import WorkflowTracker from "./pages/WorkflowTracker";
@@ -145,6 +146,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "masters", label: "Master Data" },
       { key: "modelbuilder", label: "Model Builder" },
       { key: "approvalrules", label: "Approval Rules" },
+      { key: "integrationhub", label: "Integration Hub" },
       { key: "governance", label: "AI Governance" },
       { key: "notifications", label: "Notifications" },
       { key: "audit", label: "Audit Trail" },
@@ -204,6 +206,7 @@ const CRUMB: Record<string, string> = {
   rulepacks: "Regulatory abstraction layer",
   masters: "Generic Master-Data engine · maker-checker SoD · 22 master types",
   modelbuilder: "Configure scoring models · sections · typed questions · visibility rules · master-driven options · maker-checker",
+  integrationhub: "Integration Hub · inbound connectors (canonical ingestion) · outbound feeds (symmetric export) · append-only audit event stream · read-only",
   governance: "AI off-switch · capability-level · per-jurisdiction override · 403 enforced",
   committee: "Committee/quorum voting · SoD (router can't vote · no double-vote) · sanction letter (AI draft → human confirm)",
   coi: "Conflict-of-interest attestations · named-human self-declaration · gates the decision/vote only where the DOA pack requires it (default-off)",
@@ -516,6 +519,7 @@ export default function App() {
             {view === "workflowtracker" && <WorkflowTracker />}
             {view === "tatreports" && <TatReports />}
             {view === "exports" && <Exports />}
+            {view === "integrationhub" && <IntegrationHub />}
             {view === "copilot" && <Copilot />}
             {view === "rulepacks" && <RulePacks />}
             {view === "governance" && <Governance />}
