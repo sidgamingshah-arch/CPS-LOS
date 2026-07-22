@@ -1396,3 +1396,13 @@ button.btn.small { padding: 3px 10px; font-size: 12px; }
 }
 .team-scope-note { font-size: 12px; }
 
+/* U-B: auto data fetch — provenance chip row on every ingested (advisory INPUT) record */
+.prov-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.prov-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px dashed var(--hairline-soft, #d6dce2);
+  background: var(--det-soft); color: var(--ocean-7, var(--muted));
+  font-size: 11px; font-weight: 500; letter-spacing: 0.01em; white-space: nowrap;
+}
+

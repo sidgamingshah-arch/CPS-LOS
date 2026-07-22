@@ -126,6 +126,20 @@ export const counterparty = {
     call<any>(`/counterparty/api/counterparties/rekyc/sweep` + (asOf ? `?asOf=${asOf}` : ""), "POST", undefined, actor),
 };
 
+// ---- inbound source-system auto data fetch (credit bureau + CRM) ----
+// Simulated PULLs by default (no external system needed). Every pulled record carries
+// provenance (source / vendor / retrieved-at) and is flagged advisory — an INPUT that
+// NEVER moves an authoritative figure. `latestBureau` / `latestCrm` return 404 when
+// nothing has been pulled yet, so callers should `.catch(() => null)` for empty state.
+export const sourceIngest = {
+  pullBureau: (id: number, actor: string) =>
+    call<any>(`/counterparty/api/counterparties/${id}/ingest/bureau/pull`, "POST", undefined, actor),
+  pullCrm: (id: number, actor: string) =>
+    call<any>(`/counterparty/api/counterparties/${id}/ingest/crm/pull`, "POST", undefined, actor),
+  latestBureau: (id: number) => call<any>(`/counterparty/api/counterparties/${id}/bureau`, "GET"),
+  latestCrm: (id: number) => call<any>(`/counterparty/api/counterparties/${id}/crm`, "GET"),
+};
+
 // ---- origination ----
 export const origination = {
   list: () => call<any[]>("/origination/api/applications", "GET"),
@@ -781,8 +795,18 @@ export const initiation = {
   decide: (id: number, body: any, actor: string) => call<any>(`/counterparty/api/initiation/prospects/${id}/decision`, "POST", body, actor),
   approve: (id: number, actor: string) => call<any>(`/counterparty/api/initiation/prospects/${id}/approve`, "POST", undefined, actor),
   fetchCheck: (id: number, body: any, actor: string) => call<any>(`/counterparty/api/initiation/prospects/${id}/checks/fetch`, "POST", body, actor),
+  // Convenience over fetchCheck: fetch one source-system check (defaults to CREDIT_BUREAU;
+  // server derives entityName/entityType from the counterparty when omitted).
+  fetchChecks: (prospectId: number, actor: string, body: any = { checkType: "CREDIT_BUREAU" }) =>
+    call<any>(`/counterparty/api/initiation/prospects/${prospectId}/checks/fetch`, "POST", body, actor),
   refreshCheck: (checkId: number, actor: string) => call<any>(`/counterparty/api/initiation/checks/${checkId}/refresh`, "POST", undefined, actor),
   checks: (id: number) => call<any[]>(`/counterparty/api/initiation/prospects/${id}/checks`, "GET"),
+  // CRM as system-of-record: a pull creates a GOVERNED PROSPECT (never an approved obligor);
+  // dedup + idempotency guarantee no duplicate; a negative-list hit is flagged, never auto-approved.
+  pullBorrower: (body: any, actor: string) =>
+    call<any>("/counterparty/api/initiation/ingest/crm/pull-borrower", "POST", body ?? {}, actor),
+  pullBatch: (body: any, actor: string) =>
+    call<any>("/counterparty/api/initiation/ingest/crm/pull-batch", "POST", body ?? {}, actor),
   suggestGroup: (id: number, actor: string) =>
     call<any>(`/counterparty/api/initiation/counterparties/${id}/group/suggest`, "POST", undefined, actor),
   createGroup: (body: any, actor: string) =>
