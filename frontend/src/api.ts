@@ -604,6 +604,16 @@ export const escrow = {
   budgetVsActual: (ref: string) => call<any>(`/portfolio/api/escrow/accounts/${ref}/budget-vs-actual`, "GET"),
 };
 
+// ---- global / combined cash-flow (relationship consolidated debt-service; deterministic) ----
+export const globalCashflow = {
+  list: (groupReference?: string) =>
+    call<any[]>("/portfolio/api/portfolio/global-cashflow"
+      + (groupReference ? `?groupReference=${encodeURIComponent(groupReference)}` : ""), "GET"),
+  get: (gcfRef: string) => call<any>(`/portfolio/api/portfolio/global-cashflow/${gcfRef}`, "GET"),
+  assemble: (groupReference: string, actor: string) =>
+    call<any>("/portfolio/api/portfolio/global-cashflow", "POST", { groupReference }, actor),
+};
+
 // ---- CAD ----
 export const cad = {
   initiate: (body: any, actor: string) => call<any>("/decision/api/cad/cases", "POST", body, actor),

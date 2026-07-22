@@ -205,6 +205,7 @@ public class PortfolioUpstreamClient {
             case "risk" -> risk;
             case "decision" -> decision;
             case "config" -> config;
+            case "counterparty" -> counterparty;
             default -> null;
         };
         if (c == null) return Map.of();
@@ -213,6 +214,45 @@ public class PortfolioUpstreamClient {
         } catch (Exception e) {
             log.warn("upstream {} {} unavailable ({})", svc, uri, e.getMessage());
             return Map.of();
+        }
+    }
+
+    /**
+     * Group membership + per-member exposure from counterparty-service, keyed by the group
+     * reference. A missing group surfaces as 404 and an outage as 502 (not swallowed) so the
+     * global cash-flow consolidation can tell "no such group" from "counterparty unreachable".
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> groupExposure(String groupReference) {
+        try {
+            Map<String, Object> m = counterparty.get()
+                    .uri("/api/initiation/groups/by-reference/{r}/exposure", groupReference)
+                    .retrieve().body(Map.class);
+            return m == null ? Map.of() : m;
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound nf) {
+            throw ApiException.notFound("No group: " + groupReference);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY,
+                    "counterparty-service group exposure unavailable: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Origination applications for a counterparty (by its reference). Best-effort / fail-soft:
+     * a 404 or an outage returns an empty list so a single unreadable member never fails the
+     * whole group consolidation — the caller warns + skips that member.
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> applicationsForCounterparty(String counterpartyRef) {
+        try {
+            List<?> raw = origination.get()
+                    .uri("/api/applications/by-counterparty/{r}", counterpartyRef)
+                    .retrieve().body(List.class);
+            return raw == null ? List.of() : (List<Map<String, Object>>) raw;
+        } catch (Exception e) {
+            log.warn("origination applications-by-counterparty unavailable for {} ({})",
+                    counterpartyRef, e.getMessage());
+            return List.of();
         }
     }
 
@@ -256,6 +296,7 @@ public class PortfolioUpstreamClient {
             case "risk" -> risk;
             case "decision" -> decision;
             case "config" -> config;
+            case "counterparty" -> counterparty;
             default -> null;
         };
         if (c == null) return List.of();

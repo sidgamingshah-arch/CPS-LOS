@@ -26,6 +26,7 @@ import Perfection from "./pages/Perfection";
 import Monitoring from "./pages/Monitoring";
 import MonitoringArtifacts from "./pages/MonitoringArtifacts";
 import Escrow from "./pages/Escrow";
+import GlobalCashflow from "./pages/GlobalCashflow";
 import Srm from "./pages/Srm";
 import Limits from "./pages/Limits";
 import Masters from "./pages/Masters";
@@ -126,6 +127,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "srm", label: "SRM · Renewals" },
       { key: "monitoringartifacts", label: "Monitoring Artifacts" },
       { key: "escrow", label: "Escrow Monitoring" },
+      { key: "globalcashflow", label: "Global Cash-flow" },
       { key: "customer360", label: "Customer-360" },
       { key: "mis", label: "MIS · Reports" },
       { key: "reportbuilder", label: "Ad-hoc Reports" },
@@ -185,6 +187,7 @@ const CRUMB: Record<string, string> = {
   srm: "Structured review / renewal on the Noting engine · SRM_CHECKLIST · linked SRM_RENEWAL noting · AUTHORIZED advances the MER next-review date",
   monitoringartifacts: "One master-driven lifecycle · call memo/plant visit/LCR/QPR/broker/stock audit/audit note · review→approve→authorize SoD · vendor RFQ · ECL/exposure untouched",
   escrow: "Escrow monitoring · append-only versioned budget lines · category-tagged transactions · deterministic budget-vs-actual + RAG (VALIDATION_PARAMETER) · ECL/exposure/limit untouched",
+  globalcashflow: "Global / combined cash-flow · relationship consolidated debt-service across obligor + guarantors + group members · deterministic combined DSCR + per-member contribution · member spreads untouched",
   customer360: "Borrower 360 · profile · limits · triggers · financials · RAROC · provisioning",
   risklab: "Advisory overlays · statistical RAG scoring · macro directional impact (non-binding)",
   risknotes: "Independent risk note · risk-function opinion record · draft → submit → review → approve · reassign / reject / reverse · rating of record never moves",
@@ -499,6 +502,7 @@ export default function App() {
             {view === "srm" && <Srm />}
             {view === "monitoringartifacts" && <MonitoringArtifacts />}
             {view === "escrow" && <Escrow />}
+            {view === "globalcashflow" && <GlobalCashflow />}
             {view === "customer360" && <Customer360 />}
             {view === "risklab" && <RiskLab />}
             {view === "risknotes" && <RiskNotes />}
