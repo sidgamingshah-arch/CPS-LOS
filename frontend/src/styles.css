@@ -1232,3 +1232,37 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
 .cmp-yes { color: #136b24; font-weight: 700; }
 .cmp-no { color: var(--muted-soft); }
 
+/* ============================================================================
+   DataTable inline cell editing (CLoM F5). Opt-in per column via `editable` +
+   the table's `onCellSave`; inert (nothing here applies) unless a cell opts in,
+   so existing tables stay visually identical. Appended section.
+   ============================================================================ */
+.dt-cell-edit { cursor: text; }
+.dt-edit-trigger {
+  display: inline-flex; align-items: center; gap: 6px; cursor: text;
+  border-radius: var(--r-sm); outline: none;
+}
+.dt-edit-trigger:focus-visible { box-shadow: 0 0 0 2px var(--ocean-8); }
+.dt-edit-pencil { opacity: 0; font-size: 11px; color: var(--muted); transition: opacity .12s ease; }
+.dt-cell-edit:hover .dt-edit-pencil,
+.dt-edit-trigger:focus-visible .dt-edit-pencil { opacity: .7; }
+.dt-edit { display: inline-flex; flex-direction: column; gap: 3px; min-width: 90px; }
+.dt-edit-input {
+  padding: 4px 8px; font: inherit; font-size: 12.5px; width: 100%;
+  border: 1px solid var(--ocean-8); border-radius: var(--r-sm);
+  background: var(--canvas); color: var(--ink);
+}
+.dt-edit-input:focus { outline: none; box-shadow: 0 0 0 2px var(--light-blue-soft); }
+.dt-edit.has-error .dt-edit-input { border-color: var(--bad); }
+.dt-edit.busy .dt-edit-input { opacity: .6; }
+.dt-edit-err { font-size: 11px; color: var(--bad); }
+.dt-edit-spin {
+  width: 12px; height: 12px; border-radius: 50%; align-self: flex-start;
+  border: 2px solid var(--hairline); border-top-color: var(--ocean-8);
+  animation: dt-edit-spin .6s linear infinite;
+}
+@keyframes dt-edit-spin { to { transform: rotate(360deg); } }
+
+/* selected row marker for DataTable adoptions that had a click-to-select row */
+.dt-table tr.dt-row-selected > td { background: var(--surface-soft); }
+

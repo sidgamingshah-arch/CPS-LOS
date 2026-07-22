@@ -242,6 +242,13 @@ export type Col<T> = {
   width?: string;
   /** Cell/header alignment; "right" reuses the numeric (tabular) column style. */
   align?: "left" | "right" | "center";
+  /**
+   * Opt-in per-cell inline editing (CLoM F5). Only takes effect when the table is
+   * also given an `onCellSave` handler; otherwise it is ignored and the cell renders
+   * and behaves exactly as before. When ON, clicking the cell opens an inline editor
+   * (Enter commits, Escape / blur cancel).
+   */
+  editable?: boolean;
 };
 
 export type DataTableProps<T> = {
@@ -255,6 +262,15 @@ export type DataTableProps<T> = {
   empty?: React.ReactNode;
   /** Slot for page-specific actions, right of the toolbar. */
   toolbarRight?: React.ReactNode;
+  /** Optional extra class(es) per row (e.g. to mark a selected row). Additive: when
+   *  absent the row markup is byte-identical to before. */
+  rowClassName?: (row: T) => string | undefined;
+  /**
+   * Inline-edit commit handler. When provided together with a column's `editable`
+   * flag, editable cells become click-to-edit. Awaited on Enter: resolve to close
+   * the editor, reject to surface the error inline and keep the editor open.
+   */
+  onCellSave?: (row: T, colKey: string, newValue: string) => Promise<void>;
 };
 
 type DtSort = { key: string; dir: "asc" | "desc" } | null;
@@ -285,6 +301,7 @@ function dtStore(key: string, val: unknown) {
 
 export function DataTable<T>({
   id, columns, rows, rowKey, onRowClick, initialPageSize = 25, empty, toolbarRight,
+  rowClassName, onCellSave,
 }: DataTableProps<T>) {
   const colsKey = `helix.dt.${id}.cols`;
   const sizeKey = `helix.dt.${id}.size`;
@@ -300,10 +317,17 @@ export function DataTable<T>({
   const [views, setViews] = useState<DtView[]>(() => dtLoad<DtView[]>(viewsKey, []));
   const [menu, setMenu] = useState<null | "cols" | "views">(null);
   const [viewName, setViewName] = useState("");
+  // Inline-edit state (inert unless a column is `editable` AND onCellSave is set).
+  const [editing, setEditing] = useState<{ rowKey: string; colKey: string } | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const colsBtnRef = useRef<HTMLButtonElement>(null);
   const viewsBtnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Guards against a double-submit (Enter pressed twice, or blur racing a commit).
+  const savingRef = useRef(false);
 
   useEffect(() => { dtStore(colsKey, hidden); }, [colsKey, hidden]);
   useEffect(() => { dtStore(sizeKey, pageSize); }, [sizeKey, pageSize]);
@@ -347,6 +371,40 @@ export function DataTable<T>({
     return typeof v === "number" ? v : String(v);
   }, []);
   const basisStr = useCallback((col: Col<T>, row: T) => String(basis(col, row)), [basis]);
+
+  // ---- inline cell editing ----
+  const startEdit = useCallback((row: T, col: Col<T>, rk: string) => {
+    if (savingRef.current) return;
+    // Re-clicking the cell already being edited must not wipe the in-progress draft.
+    if (editing && editing.rowKey === rk && editing.colKey === col.key) return;
+    setEditValue(basisStr(col, row));
+    setEditError(null);
+    setEditing({ rowKey: rk, colKey: col.key });
+  }, [basisStr, editing]);
+
+  const cancelEdit = useCallback(() => {
+    if (savingRef.current) return; // never tear down mid-commit
+    setEditing(null);
+    setEditError(null);
+  }, []);
+
+  const commitEdit = useCallback(async (row: T, col: Col<T>) => {
+    if (savingRef.current || !onCellSave) return; // in-flight guard
+    savingRef.current = true;
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      await onCellSave(row, col.key, editValue);
+      savingRef.current = false;
+      setEditBusy(false);
+      setEditing(null); // success → close the editor
+    } catch (e: any) {
+      // Reject → keep the editor open and surface the reason inline.
+      savingRef.current = false;
+      setEditBusy(false);
+      setEditError(e && e.message ? String(e.message) : "Save failed");
+    }
+  }, [onCellSave, editValue]);
 
   const visibleCols = columns.filter((c) => !hidden.includes(c.key));
 
@@ -553,14 +611,54 @@ export function DataTable<T>({
               <tbody>
                 {visible.map((row) => {
                   const k = rowKey(row);
+                  const extraCls = rowClassName?.(row);
+                  const trCls = [onRowClick ? "rowlink" : "", extraCls || ""].filter(Boolean).join(" ") || undefined;
                   return (
-                    <tr key={k} className={onRowClick ? "rowlink" : undefined}
+                    <tr key={k} className={trCls}
                       onClick={onRowClick ? () => onRowClick(row) : undefined}>
-                      {visibleCols.map((c) => (
-                        <td key={c.key} className={alignCls(c)}>
-                          {c.render ? c.render(row) : String((row as any)[c.key] ?? "")}
-                        </td>
-                      ))}
+                      {visibleCols.map((c) => {
+                        // Editing only engages when the column opts in AND the table has a save
+                        // handler. Otherwise the cell is byte-identical to the original markup.
+                        const cellEditable = !!(c.editable && onCellSave);
+                        if (!cellEditable) {
+                          return (
+                            <td key={c.key} className={alignCls(c)}>
+                              {c.render ? c.render(row) : String((row as any)[c.key] ?? "")}
+                            </td>
+                          );
+                        }
+                        const isEditingCell = editing?.rowKey === k && editing?.colKey === c.key;
+                        return (
+                          <td key={c.key} className={[alignCls(c), "dt-cell-edit"].filter(Boolean).join(" ")}
+                            onClick={(e) => { e.stopPropagation(); if (!isEditingCell) startEdit(row, c, k); }}>
+                            {isEditingCell ? (
+                              <span className={`dt-edit${editBusy ? " busy" : ""}${editError ? " has-error" : ""}`}>
+                                <input
+                                  className="dt-edit-input" autoFocus value={editValue} readOnly={editBusy}
+                                  aria-label={`Edit ${c.header || c.key}`} aria-invalid={editError ? true : undefined}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if ((e.nativeEvent as any).isComposing) return; // don't commit mid-IME
+                                    if (e.key === "Enter") { e.preventDefault(); commitEdit(row, c); }
+                                    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelEdit(); }
+                                  }}
+                                  onBlur={() => { if (!savingRef.current) cancelEdit(); }}
+                                />
+                                {editBusy && <span className="dt-edit-spin" aria-hidden="true" />}
+                                {editError && <span className="dt-edit-err" role="alert">{editError}</span>}
+                              </span>
+                            ) : (
+                              <span className="dt-edit-trigger" role="button" tabIndex={0}
+                                aria-label={`Edit ${c.header || c.key}`} title="Click to edit"
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); startEdit(row, c, k); } }}>
+                                {c.render ? c.render(row) : String((row as any)[c.key] ?? "")}
+                                <span className="dt-edit-pencil" aria-hidden="true">✎</span>
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })}
