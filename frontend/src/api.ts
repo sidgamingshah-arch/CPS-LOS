@@ -399,6 +399,31 @@ export const coi = {
   ) => call<any>("/decision/api/coi", "POST", body, actor),
 };
 
+// ---- document comparison / incremental-change diff (CLoM F57) ----
+// Deterministic, read-only structured comparison of two versioned artifacts already in
+// decision-service: two credit-proposal versions (leftRef/rightRef = version numbers) or two
+// generated-document versions (leftRef/rightRef = document ids). Returns a change table
+// (ADDED/REMOVED/CHANGED/UNCHANGED). Never mutates either source.
+export type DiffRow = {
+  section: string; changeType: "ADDED" | "REMOVED" | "CHANGED" | "UNCHANGED";
+  oldValue: string | null; newValue: string | null;
+};
+export type Comparison = {
+  comparisonRef: string; kind: string; subjectRef: string;
+  leftRef: string; rightRef: string; leftLabel: string; rightLabel: string;
+  added: number; removed: number; changed: number; unchanged: number;
+  advisory: boolean; createdBy: string; createdAt: string; diff: DiffRow[];
+};
+export const docCompare = {
+  list: (subjectRef: string) =>
+    call<Comparison[]>(`/decision/api/doc-compare?subjectRef=${encodeURIComponent(subjectRef)}`, "GET"),
+  get: (comparisonRef: string) => call<Comparison>(`/decision/api/doc-compare/${comparisonRef}`, "GET"),
+  compare: (
+    body: { kind: string; subjectRef: string; leftRef: string; rightRef: string },
+    actor: string,
+  ) => call<Comparison>("/decision/api/doc-compare", "POST", body, actor),
+};
+
 // ---- notings (governed decision records: TOD, CAM note, product paper, deferrals, …) ----
 export const notings = {
   list: (params?: { subjectRef?: string; status?: string; type?: string }) => {

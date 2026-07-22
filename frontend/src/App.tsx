@@ -35,6 +35,7 @@ import Syndication from "./pages/Syndication";
 import DocIntel from "./pages/DocIntel";
 import RiskLab from "./pages/RiskLab";
 import CreditProposal from "./pages/CreditProposal";
+import DocCompare from "./pages/DocCompare";
 import ApprovalRules from "./pages/ApprovalRules";
 import DocGen from "./pages/DocGen";
 import Commentary from "./pages/Commentary";
@@ -101,6 +102,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "docgen", label: "Doc Generation" },
       { key: "commentary", label: "AI Commentary" },
       { key: "creditproposal", label: "Credit Proposal" },
+      { key: "doccompare", label: "Document Compare" },
       { key: "committee", label: "Committee Room" },
       { key: "coi", label: "Conflict of Interest" },
       { key: "notings", label: "Notings" },
@@ -165,6 +167,7 @@ const CRUMB: Record<string, string> = {
   docgen: "Template-driven document generation · clause add/remove/edit · human-confirm gate",
   commentary: "AI narrative commentary · grounded · advisory · human-confirm gate",
   creditproposal: "CAM authoring · format picker · generate (versioned) · side-by-side format compare (non-persisting preview) · figures identical across formats",
+  doccompare: "Deterministic incremental-change diff · two proposal or document versions · ADDED/REMOVED/CHANGED/UNCHANGED change table · side-by-side · read-only over sources",
   approvalrules: "Scoring-approval policy · visual matrix · first-match-wins routing · simulate · maker-checker save · never touches a figure",
   pricinglab: "Pricing scenario optimiser · goal-seek · advisory (authoritative pricing untouched)",
   monitoring: "Deferred docs · conditions subsequent · renewals · reminders · escalation · DMS feed",
@@ -470,6 +473,7 @@ export default function App() {
             {view === "docgen" && <DocGen />}
             {view === "commentary" && <Commentary />}
             {view === "creditproposal" && <CreditProposal />}
+            {view === "doccompare" && <DocCompare />}
             {view === "committee" && <Committee />}
             {view === "coi" && <Coi />}
             {view === "notings" && <Notings />}

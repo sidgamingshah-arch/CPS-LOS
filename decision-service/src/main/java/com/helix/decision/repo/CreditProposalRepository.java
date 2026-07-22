@@ -10,4 +10,6 @@ public interface CreditProposalRepository extends JpaRepository<CreditProposal, 
     Optional<CreditProposal> findFirstByApplicationReferenceOrderByVersionDesc(String applicationReference);
 
     List<CreditProposal> findByApplicationReferenceOrderByVersionDesc(String applicationReference);
+
+    Optional<CreditProposal> findByApplicationReferenceAndVersion(String applicationReference, int version);
 }
