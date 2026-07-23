@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { counterparty, origination, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, type Col, DataTable, EmptyState, Field, statusTone, useAsync } from "../ui";
+import { Badge, Button, Card, type Col, DataTable, EmptyState, Field, QuickCreate, statusTone, useAsync } from "../ui";
 import { useCodes } from "../code-values";
 import { evalPolicy, useFieldPolicy } from "../field-policy";
 
@@ -36,7 +36,44 @@ export default function Deals() {
           rows={apps.data || []}
           rowKey={(a) => a.reference}
           onRowClick={(a) => nav("workspace", a.reference)}
-          toolbarRight={<Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New deal"}</Button>}
+          toolbarRight={
+            <div className="btnrow">
+              <QuickCreate
+                buttonLabel="＋ Quick create"
+                buttonKind="subtle"
+                title="Quick-create a deal"
+                sub="Fast path for a standard, unsecured application. Use + New deal for collateral and sublimits."
+                fields={[
+                  { name: "counterparty", label: "Counterparty", type: "select", required: true,
+                    options: (cps.data || []).map((c: any) => ({ value: String(c.id), label: `${c.legalName} · ${c.segment}` })) },
+                  { name: "facilityType", label: "Facility type", type: "select",
+                    options: facilities.map((x) => ({ value: x.code, label: x.label })) },
+                  { name: "requestedAmount", label: "Requested amount", type: "number", required: true, placeholder: "e.g. 800000000" },
+                  { name: "currency", label: "Currency", type: "select",
+                    options: ["INR", "USD", "EUR", "GBP", "AED"].map((c) => ({ value: c, label: c })) },
+                  { name: "tenorMonths", label: "Tenor (months)", type: "number", placeholder: "e.g. 60" },
+                  { name: "purpose", label: "Purpose", placeholder: "e.g. Capacity expansion" },
+                ]}
+                submitLabel="Create & open"
+                onSubmit={async (v) => {
+                  const cp = (cps.data || []).find((c: any) => String(c.id) === v.counterparty);
+                  if (!cp) throw new Error("Select a counterparty — onboard one first if the list is empty.");
+                  const app = await origination.create({
+                    counterpartyId: cp.id, counterpartyRef: cp.reference, counterpartyName: cp.legalName,
+                    jurisdiction: cp.jurisdiction, segment: cp.segment,
+                    facilityType: v.facilityType || "TERM_LOAN", requestedAmount: Number(v.requestedAmount),
+                    currency: v.currency || "INR", tenorMonths: Number(v.tenorMonths) || 60,
+                    purpose: v.purpose.trim() || "Working capital",
+                    collateralType: "", secured: false, collateralValue: 0,
+                  }, actor);
+                  notify(`Created ${app.reference}`);
+                  apps.reload();
+                  nav("workspace", app.reference);
+                }}
+              />
+              <Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New deal"}</Button>
+            </div>
+          }
           empty={apps.loading ? <div className="loading">Loading…</div> : (
             <EmptyState
               glyph="✦"

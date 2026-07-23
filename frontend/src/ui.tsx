@@ -697,3 +697,353 @@ export function DataTable<T>({
     </div>
   );
 }
+
+/* ============================================================================
+   QuickCreate — a reusable "＋ Quick create" modal (gap #52). A compact,
+   config-driven form rendered inside a focus-trapped, Escape-dismissable dialog.
+   Each row reuses Field (hint / required / error slots) so inline validation and
+   accessibility come for free. Adopted on list screens (Counterparties, Deals) as
+   a fast create path that sits ALONGSIDE — never replaces — the full create forms.
+   a11y: role="dialog" + aria-modal + aria-labelledby; focus moves in on open,
+   is trapped while open, and is restored to the trigger on close.
+   ============================================================================ */
+
+export type QuickField = {
+  name: string;
+  label: string;
+  /** Control type; defaults to "text". */
+  type?: "text" | "number" | "select" | "textarea";
+  required?: boolean;
+  hint?: string;
+  placeholder?: string;
+  /** Options for a "select" field. */
+  options?: { value: string; label: string }[];
+};
+
+export function QuickCreate({
+  buttonLabel = "＋ Quick create",
+  buttonKind = "ghost",
+  title,
+  sub,
+  fields,
+  submitLabel = "Create",
+  onSubmit,
+}: {
+  buttonLabel?: React.ReactNode;
+  buttonKind?: string;
+  title: string;
+  sub?: string;
+  fields: QuickField[];
+  submitLabel?: string;
+  /** Resolve to close the modal; reject (Error) to keep it open and show the reason. */
+  onSubmit: (values: Record<string, string>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const seed = useCallback(() => {
+    const init: Record<string, string> = {};
+    for (const f of fields) init[f.name] = f.type === "select" ? (f.options?.[0]?.value ?? "") : "";
+    setValues(init);
+    setErrors({});
+  }, [fields]);
+
+  const openModal = () => { seed(); setBusy(false); setOpen(true); };
+  const close = useCallback(() => {
+    setOpen(false);
+    setBusy(false);
+    triggerRef.current?.focus();
+  }, []);
+
+  // Move focus in, trap Tab within the dialog, and close on Escape while open.
+  useEffect(() => {
+    if (!open) return;
+    const dlg = dialogRef.current;
+    const focusables = () =>
+      Array.from(dlg?.querySelectorAll<HTMLElement>(
+        'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])',
+      ) ?? []).filter((el) => !el.hasAttribute("disabled"));
+    focusables()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
+      if (e.key === "Tab") {
+        const els = focusables();
+        if (els.length === 0) return;
+        const first = els[0], last = els[els.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [open, close]);
+
+  const validate = (): boolean => {
+    const errs: Record<string, string> = {};
+    for (const f of fields) {
+      const v = (values[f.name] ?? "").trim();
+      if (f.required && !v) errs[f.name] = `${f.label} is required`;
+      else if (f.type === "number" && v && Number.isNaN(Number(v))) errs[f.name] = "Enter a valid number";
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const submit = async () => {
+    if (busy) return;
+    if (!validate()) return;
+    setBusy(true);
+    try {
+      await onSubmit(values);
+      close();
+    } catch (e: any) {
+      // Keep the modal open; surface the server / caller message against the form.
+      setErrors((prev) => ({ ...prev, _form: e?.message ? String(e.message) : "Create failed" }));
+      setBusy(false);
+    }
+  };
+
+  const setVal = (name: string, v: string) => setValues((prev) => ({ ...prev, [name]: v }));
+
+  return (
+    <>
+      <button ref={triggerRef} type="button" className={`btn ${buttonKind}`} onClick={openModal}>{buttonLabel}</button>
+      {open && (
+        <div className="qc-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+          <div
+            className="qc-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}
+            ref={dialogRef} onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="qc-head">
+              <div>
+                <h3 id={titleId}>{title}</h3>
+                {sub && <div className="sub">{sub}</div>}
+              </div>
+              <button className="qc-close" type="button" aria-label="Close" onClick={close}>×</button>
+            </div>
+            <div className="qc-body">
+              {fields.map((f) => {
+                const err = errors[f.name] || null;
+                const shared = {
+                  value: values[f.name] ?? "",
+                  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+                    setVal(f.name, e.target.value),
+                  placeholder: f.placeholder,
+                };
+                return (
+                  <Field key={f.name} label={f.label} required={f.required} hint={f.hint} error={err}>
+                    {f.type === "select" ? (
+                      <select {...shared}>
+                        {(f.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    ) : f.type === "textarea" ? (
+                      <textarea rows={3} {...shared} />
+                    ) : (
+                      <input type={f.type === "number" ? "number" : "text"} {...shared} />
+                    )}
+                  </Field>
+                );
+              })}
+              {errors._form && <div className="alert err" role="alert">{errors._form}</div>}
+            </div>
+            <div className="qc-foot">
+              <Button kind="subtle" onClick={close}>Cancel</Button>
+              <Button onClick={submit} busy={busy}>{submitLabel}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ============================================================================
+   RichText + MarkdownView (gap #58) — an XSS-safe, dependency-free rich-text
+   field for free-text / clause / notes inputs. To stay CSP- and XSS-safe with
+   NO external library it is a lightweight MARKDOWN editor: a small toolbar
+   (bold · italic · bullet · numbered · link) that edits and STORES a markdown
+   string (the same string flows through the existing API calls — no backend
+   change), paired with `MarkdownView`, a strict-whitelist renderer.
+
+   MarkdownView NEVER uses dangerouslySetInnerHTML: it parses markdown into React
+   elements from a fixed whitelist (p, strong, em, ul/ol/li, a[href], br). React
+   escapes all text content, and hrefs are scheme-checked, so injected HTML or
+   javascript:/data: URLs can never execute.
+   ============================================================================ */
+
+/** Allow only http(s)/mailto and site-relative (#, /) hrefs. Returns null for
+ *  anything else (javascript:, data:, vbscript:, …) so the link degrades to text. */
+export function sanitizeHref(href: string): string | null {
+  const t = (href || "").trim();
+  if (!t) return null;
+  if (/^(https?:|mailto:)/i.test(t)) return t;
+  if (/^[/#]/.test(t)) return t;
+  return null;
+}
+
+/** Render inline markdown (**bold**, *italic*, [text](href)) to escaped React nodes. */
+function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const re = /(\*\*([^*]+)\*\*)|(\*([^*]+)\*)|(\[([^\]]+)\]\(([^)\s]+)\))/;
+  let rest = text;
+  let k = 0;
+  while (rest.length) {
+    const m = re.exec(rest);
+    if (!m) { nodes.push(rest); break; }
+    if (m.index > 0) nodes.push(rest.slice(0, m.index));
+    if (m[1]) {
+      nodes.push(<strong key={`${keyPrefix}-b${k}`}>{renderInline(m[2], `${keyPrefix}-b${k}i`)}</strong>);
+    } else if (m[3]) {
+      nodes.push(<em key={`${keyPrefix}-i${k}`}>{renderInline(m[4], `${keyPrefix}-i${k}i`)}</em>);
+    } else {
+      const href = sanitizeHref(m[7]);
+      if (href) {
+        nodes.push(
+          <a key={`${keyPrefix}-l${k}`} href={href} target="_blank" rel="noopener noreferrer">{m[6]}</a>,
+        );
+      } else {
+        nodes.push(m[6]); // unsafe scheme → render the link text only, inert
+      }
+    }
+    k += 1;
+    rest = rest.slice(m.index + m[0].length);
+  }
+  return nodes;
+}
+
+/** Strict-whitelist markdown renderer. Safe by construction (no raw HTML). */
+export function MarkdownView({ md, className, empty }: {
+  md?: string | null; className?: string; empty?: React.ReactNode;
+}) {
+  const text = (md ?? "").replace(/\r\n/g, "\n");
+  if (!text.trim()) {
+    return <div className={`md-view${className ? " " + className : ""}`}>{empty ?? <span className="muted">—</span>}</div>;
+  }
+  const lines = text.split("\n");
+  const isUl = (l: string) => /^\s*[-*]\s+/.test(l);
+  const isOl = (l: string) => /^\s*\d+\.\s+/.test(l);
+  const blocks: React.ReactNode[] = [];
+  let i = 0;
+  let b = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i += 1; continue; }
+    if (isUl(line)) {
+      const items: string[] = [];
+      while (i < lines.length && isUl(lines[i])) { items.push(lines[i].replace(/^\s*[-*]\s+/, "")); i += 1; }
+      blocks.push(<ul key={`b${b}`}>{items.map((it, j) => <li key={j}>{renderInline(it, `b${b}-${j}`)}</li>)}</ul>);
+    } else if (isOl(line)) {
+      const items: string[] = [];
+      while (i < lines.length && isOl(lines[i])) { items.push(lines[i].replace(/^\s*\d+\.\s+/, "")); i += 1; }
+      blocks.push(<ol key={`b${b}`}>{items.map((it, j) => <li key={j}>{renderInline(it, `b${b}-${j}`)}</li>)}</ol>);
+    } else {
+      const para: string[] = [];
+      while (i < lines.length && lines[i].trim() && !isUl(lines[i]) && !isOl(lines[i])) { para.push(lines[i]); i += 1; }
+      const inner: React.ReactNode[] = [];
+      para.forEach((p, j) => {
+        if (j > 0) inner.push(<br key={`br${b}-${j}`} />);
+        inner.push(...renderInline(p, `p${b}-${j}`));
+      });
+      blocks.push(<p key={`b${b}`}>{inner}</p>);
+    }
+    b += 1;
+  }
+  return <div className={`md-view${className ? " " + className : ""}`}>{blocks}</div>;
+}
+
+/** Controlled markdown editor with a small formatting toolbar and a Preview toggle. */
+export function RichText({
+  value, onChange, rows = 5, placeholder, id, ariaLabel, disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  rows?: number;
+  placeholder?: string;
+  id?: string;
+  ariaLabel?: string;
+  disabled?: boolean;
+}) {
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const [preview, setPreview] = useState(false);
+
+  const surround = (before: string, after: string, ph: string) => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart ?? value.length;
+    const end = ta.selectionEnd ?? value.length;
+    const sel = value.slice(start, end) || ph;
+    const next = value.slice(0, start) + before + sel + after + value.slice(end);
+    onChange(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = start + before.length;
+      ta.selectionEnd = start + before.length + sel.length;
+    });
+  };
+
+  const prefixLines = (make: (i: number) => string) => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart ?? 0;
+    const end = ta.selectionEnd ?? 0;
+    const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+    const nl = value.indexOf("\n", end);
+    const lineEnd = nl === -1 ? value.length : nl;
+    const block = value.slice(lineStart, lineEnd) || "";
+    const rebuilt = block.split("\n").map((l, idx) => make(idx) + l).join("\n");
+    const next = value.slice(0, lineStart) + rebuilt + value.slice(lineEnd);
+    onChange(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = lineStart;
+      ta.selectionEnd = lineStart + rebuilt.length;
+    });
+  };
+
+  const insertLink = () => {
+    const url = window.prompt("Link URL (https://…)");
+    if (!url) return;
+    const href = sanitizeHref(url);
+    if (!href) { window.alert("Only http(s), mailto or relative links are allowed."); return; }
+    surround("[", `](${href})`, "link text");
+  };
+
+  const TbBtn = ({ label, title, onClick }: { label: React.ReactNode; title: string; onClick: () => void }) => (
+    <button type="button" className="rt-tb-btn" title={title} aria-label={title}
+      disabled={disabled || preview} onMouseDown={(e) => e.preventDefault()} onClick={onClick}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div className={`rt${disabled ? " disabled" : ""}`}>
+      <div className="rt-toolbar" role="toolbar" aria-label="Text formatting">
+        <TbBtn label={<b>B</b>} title="Bold" onClick={() => surround("**", "**", "bold text")} />
+        <TbBtn label={<i>I</i>} title="Italic" onClick={() => surround("*", "*", "italic text")} />
+        <TbBtn label="• List" title="Bullet list" onClick={() => prefixLines(() => "- ")} />
+        <TbBtn label="1. List" title="Numbered list" onClick={() => prefixLines((i) => `${i + 1}. `)} />
+        <TbBtn label="Link" title="Insert link" onClick={insertLink} />
+        <span className="rt-tb-spacer" />
+        <button type="button" className={`rt-tb-btn rt-tb-toggle${preview ? " active" : ""}`}
+          aria-pressed={preview} onClick={() => setPreview((p) => !p)}>
+          {preview ? "Write" : "Preview"}
+        </button>
+      </div>
+      {preview ? (
+        <div className="rt-preview"><MarkdownView md={value} empty={<span className="muted">Nothing to preview.</span>} /></div>
+      ) : (
+        <textarea
+          ref={taRef} id={id} className="rt-textarea mono" rows={rows} value={value}
+          placeholder={placeholder} aria-label={ariaLabel} disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+      <div className="rt-hint">Markdown — **bold**, *italic*, - lists, [links](https://…). Stored as text.</div>
+    </div>
+  );
+}

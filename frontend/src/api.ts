@@ -951,6 +951,63 @@ export const syndication = {
     call<any[]>(`/origination/api/syndication/${ref}/transfers`, "GET"),
 };
 
+// ---- syndication Information Memoranda (IM workspace, gap #80) ----
+// A versioned IM per syndicated deal: draft → circulate → finalise (or withdraw).
+// finalise enforces SoD (403 if finaliser == creator). Sections are a free-text
+// (markdown) map authored by named humans; every write forwards the X-Actor header.
+export type SyndicationIm = {
+  id: number;
+  imRef: string;
+  applicationRef: string;
+  version: number;
+  status: "DRAFT" | "CIRCULATED" | "FINAL" | "WITHDRAWN";
+  sections: Record<string, string>;
+  createdBy: string;
+  createdAt: string;
+  finalisedBy?: string;
+};
+export const syndicationIm = {
+  list: (reference: string) =>
+    call<SyndicationIm[]>(`/origination/api/syndication/${encodeURIComponent(reference)}/im`, "GET"),
+  get: (id: number) => call<SyndicationIm>(`/origination/api/syndication/im/${id}`, "GET"),
+  create: (reference: string, body: { title?: string }, actor: string) =>
+    call<SyndicationIm>(`/origination/api/syndication/${encodeURIComponent(reference)}/im`, "POST", body, actor),
+  section: (id: number, body: { key: string; content: string }, actor: string) =>
+    call<SyndicationIm>(`/origination/api/syndication/im/${id}/section`, "POST", body, actor),
+  circulate: (id: number, actor: string) =>
+    call<SyndicationIm>(`/origination/api/syndication/im/${id}/circulate`, "POST", undefined, actor),
+  finalise: (id: number, actor: string) =>
+    call<SyndicationIm>(`/origination/api/syndication/im/${id}/finalise`, "POST", undefined, actor),
+  withdraw: (id: number, actor: string) =>
+    call<SyndicationIm>(`/origination/api/syndication/im/${id}/withdraw`, "POST", undefined, actor),
+};
+
+// ---- external customer / vendor portal (gap #23) ----
+// A token-scoped, external-facing surface: read the RFI context (topic, question,
+// message timeline), post a response, and upload a document. The token is the sole
+// credential — an invalid/expired token returns a non-2xx that the caller surfaces
+// as a clean message (never a crash). Writes forward the X-Actor header.
+export type PortalMessage = { author: string; body: string; at: string };
+export type PortalContext = {
+  topic: string;
+  question: string;
+  status: string;
+  deadline?: string;
+  messages: PortalMessage[];
+};
+export const portal = {
+  context: (token: string) =>
+    call<PortalContext>(`/counterparty/api/portal/${encodeURIComponent(token)}`, "GET"),
+  respond: (token: string, message: string, actor: string) =>
+    call<PortalContext>(`/counterparty/api/portal/${encodeURIComponent(token)}/respond`, "POST", { message }, actor),
+  upload: (token: string, file: File, actor: string) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return postForm<{ storedDocId: number; fileName: string }>(
+      `/counterparty/api/portal/${encodeURIComponent(token)}/documents`, form, actor);
+  },
+};
+
 // ---- post-sanction facility amendments (DoA-routed) ----
 export const amendments = {
   propose: (ref: string, body: any, actor: string) =>
