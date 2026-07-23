@@ -128,4 +128,15 @@ public class WorkflowController {
         int n = engine.slaSweepNow();
         return Map.of("flagged", n);
     }
+
+    /**
+     * Test/ops hook for the generalized auto-movement sweep (config-driven auto-advance /
+     * auto-lapse). Mirrors {@code /sla-sweep}; returns the number of cases moved. A no-op
+     * unless a stage / work-item explicitly declared an auto key.
+     */
+    @PostMapping("/auto-movement/sweep")
+    public Map<String, Object> autoMovementSweep() {
+        int n = engine.autoMovementSweepNow();
+        return Map.of("moved", n);
+    }
 }

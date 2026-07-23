@@ -4,6 +4,7 @@ import com.helix.common.audit.AuditService;
 import com.helix.common.web.ApiException;
 import com.helix.workflow.client.DefinitionClient;
 import com.helix.workflow.dto.WorkflowDefinitionDto;
+import com.helix.workflow.entity.WorkItem;
 import com.helix.workflow.entity.WorkflowInstance;
 import com.helix.workflow.entity.WorkflowStageState;
 import com.helix.workflow.entity.WorkflowTransition;
@@ -14,9 +15,12 @@ import com.helix.workflow.repo.WorkflowTransitionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -67,16 +71,36 @@ public class WorkflowEngine {
      */
     private final WorkItemService workItems;
 
+    /**
+     * Per-item short transaction for the auto-movement sweep. Default REQUIRED propagation (NOT
+     * REQUIRES_NEW): the sweep orchestrator is non-transactional, so each call opens its own
+     * fresh transaction and commits before the next — the single-connection SQLite pool never
+     * deadlocks, and one failing item cannot roll back the others.
+     */
+    private final TransactionTemplate txTemplate;
+
+    /**
+     * Master guard for the auto-movement sweep. Defaults TRUE: it is safe because the sweep only
+     * ever touches stages / items that EXPLICITLY declared an auto key, and no existing seeded
+     * pack or task does — so a default-on sweep is a strict no-op on today's data. Flip to false
+     * via {@code helix.workflow.auto-movement.enabled} (env {@code HELIX_WORKFLOW_AUTOMOVEMENT_ENABLED}).
+     */
+    private final boolean autoMovementEnabled;
+
     public WorkflowEngine(WorkflowInstanceRepository instances, WorkflowStageStateRepository stages,
                           WorkflowTransitionRepository transitions, DefinitionClient definitions,
                           AuditService audit,
-                          @Autowired(required = false) WorkItemService workItems) {
+                          @Autowired(required = false) WorkItemService workItems,
+                          PlatformTransactionManager txManager,
+                          @Value("${helix.workflow.auto-movement.enabled:true}") boolean autoMovementEnabled) {
         this.instances = instances;
         this.stages = stages;
         this.transitions = transitions;
         this.definitions = definitions;
         this.audit = audit;
         this.workItems = workItems;
+        this.txTemplate = new TransactionTemplate(txManager);
+        this.autoMovementEnabled = autoMovementEnabled;
     }
 
     // =============================================================== materialise
@@ -123,6 +147,12 @@ public class WorkflowEngine {
                 state.setJoinPolicy(jp == null ? null : String.valueOf(jp));
                 Object qk = s.get("queueKey");
                 state.setQueueKey(qk == null ? null : String.valueOf(qk));
+                // OPTIONAL auto-movement keys — null/absent for every existing seeded pack, so
+                // the auto-movement sweep is a strict no-op on today's lifecycles.
+                state.setAutoAdvanceAfterHours(s.get("autoAdvanceAfterHours") instanceof Number aa ? aa.intValue() : null);
+                state.setAutoLapseAfterHours(s.get("autoLapseAfterHours") instanceof Number al ? al.intValue() : null);
+                Object lts = s.get("autoLapseToStatus");
+                state.setAutoLapseToStatus(lts == null ? null : String.valueOf(lts));
                 state.setStatus("PENDING");
                 stages.save(state);
                 if (ordinal == 0) {
@@ -617,6 +647,171 @@ public class WorkflowEngine {
         return flagged;
     }
 
+    // =============================================================== auto-movement sweep
+
+    /**
+     * Scheduled generalized case movement — config-driven, condition-based auto-advance /
+     * auto-lapse. A strict no-op unless a stage / work-item explicitly declared an auto key,
+     * so it never touches a lifecycle that did not opt in. Wrapped so it can never crash the
+     * scheduler (mirrors {@link #slaSweep()}).
+     */
+    @Scheduled(cron = "${helix.workflow.auto-movement.sweep-cron:0 */5 * * * *}")
+    public void autoMovementSweep() {
+        if (!autoMovementEnabled) return;
+        try {
+            autoMovementSweepNow();
+        } catch (Exception e) {
+            // Never let the sweep crash the scheduler.
+        }
+    }
+
+    /**
+     * Run one auto-movement pass and return the number of cases moved (advanced + lapsed
+     * instances + lapsed work-items). Each candidate is handled in its OWN short transaction
+     * (see {@link #txTemplate}) inside a try/catch, so a single bad item is skipped rather than
+     * aborting the whole sweep — the same resilience posture as {@link #slaSweep()}.
+     *
+     * <p>Governed guarantees:
+     * <ul>
+     *   <li>Only stages / items that EXPLICITLY declared an auto key are eligible — everything
+     *       else is byte-identical to before this feature existed.</li>
+     *   <li>A human-gated ({@code humanGate=true}) or decision-gate ({@code autonomy=D}) stage is
+     *       NEVER auto-advanced — a named human still owns that transition.</li>
+     *   <li>Every movement appends a WorkflowTransition / WorkItemEvent and stamps an audit event
+     *       with actorType SYSTEM (actor {@code system.auto-movement}).</li>
+     * </ul>
+     */
+    public int autoMovementSweepNow() {
+        if (!autoMovementEnabled) return 0;
+        Instant now = Instant.now();
+        int moved = 0;
+
+        // 1. Stage-driven auto-advance / auto-lapse on ACTIVE instances (one move per instance
+        //    per pass — repeated passes progress a lifecycle further, exactly like the SLA sweep).
+        for (WorkflowInstance snap : instances.findByStatusOrderByIdDesc("ACTIVE")) {
+            Long id = snap.getId();
+            try {
+                Integer r = txTemplate.execute(status -> applyStageAutoMovement(id, now));
+                if (r != null) moved += r;
+            } catch (Exception e) {
+                log.warn("auto-movement sweep skipped instance id {} ({})", id, e.getMessage());
+            }
+        }
+
+        // 2. Work-item auto-lapse (each in its own short transaction on the WorkItemService bean).
+        if (workItems != null) {
+            for (WorkItem wiSnap : workItems.autoLapseCandidates()) {
+                String ref = wiSnap.getTaskRef();
+                try {
+                    if (workItems.autoLapse(ref, now)) moved++;
+                } catch (Exception e) {
+                    log.warn("auto-movement sweep skipped work-item {} ({})", ref, e.getMessage());
+                }
+            }
+        }
+        return moved;
+    }
+
+    /**
+     * Apply at most one stage-driven auto-movement to a single instance, inside a short
+     * transaction. Returns 1 if the instance was moved (advanced or lapsed), else 0.
+     */
+    private int applyStageAutoMovement(Long instanceId, Instant now) {
+        WorkflowInstance wf = instances.findById(instanceId).orElse(null);
+        if (wf == null || !"ACTIVE".equals(wf.getStatus())) return 0;
+        List<WorkflowStageState> all = stages.findByInstanceIdOrderByOrdinalAsc(wf.getId());
+        for (WorkflowStageState s : all) {
+            if (!"IN_PROGRESS".equals(s.getStatus()) || s.getEnteredAt() == null) continue;
+            // Auto-lapse takes priority — it is a terminal expiry of the whole request.
+            if (s.getAutoLapseAfterHours() != null
+                    && now.isAfter(s.getEnteredAt().plusSeconds(s.getAutoLapseAfterHours() * 3600L))) {
+                autoLapseInstance(wf, s, now);
+                return 1;
+            }
+            // Auto-advance — but NEVER over a human gate / decision gate.
+            if (s.getAutoAdvanceAfterHours() != null
+                    && now.isAfter(s.getEnteredAt().plusSeconds(s.getAutoAdvanceAfterHours() * 3600L))) {
+                if (s.isHumanGate() || "D".equalsIgnoreCase(s.getAutonomy())) {
+                    log.debug("auto-advance declined for {}/{} — human/decision gate owns it",
+                            wf.getApplicationReference(), s.getStageKey());
+                    continue;   // a human still owns this transition
+                }
+                autoAdvanceStage(wf, all, s, now);
+                return 1;
+            }
+        }
+        return 0;
+    }
+
+    /** Lapse the whole instance to the stage's declared terminal status (default {@code LAPSED}). */
+    private void autoLapseInstance(WorkflowInstance wf, WorkflowStageState stage, Instant now) {
+        String toStatus = (stage.getAutoLapseToStatus() == null || stage.getAutoLapseToStatus().isBlank())
+                ? "LAPSED" : stage.getAutoLapseToStatus().trim().toUpperCase(Locale.ROOT);
+        wf.setStatus(toStatus);
+        wf.setCompletedAt(now);
+        instances.save(wf);
+        WorkflowTransition tx = new WorkflowTransition();
+        tx.setInstanceId(wf.getId());
+        tx.setFromStageKey(stage.getStageKey());
+        tx.setToStageKey(null);
+        tx.setKind("AUTO_LAPSED");
+        tx.setActor("system.auto-movement");
+        tx.setActorType("SYSTEM");
+        tx.setNote("Auto-lapsed to " + toStatus + " after " + stage.getAutoLapseAfterHours()
+                + "h in stage " + stage.getStageKey());
+        transitions.save(tx);
+        audit.engine("WORKFLOW_AUTO_LAPSED", "WorkflowInstance", wf.getApplicationReference(),
+                "Auto-lapsed to " + toStatus + " from stage " + stage.getStageKey(),
+                Map.of("stageKey", stage.getStageKey(), "toStatus", toStatus,
+                        "autoLapseAfterHours", stage.getAutoLapseAfterHours()));
+    }
+
+    /**
+     * Complete the current IN_PROGRESS stage as SYSTEM and enter the next, reusing the same
+     * parallel-group-aware cursor helper the human {@link #advance} path uses. Appends an
+     * AUTO_ADVANCED transition and an engine audit event.
+     */
+    private void autoAdvanceStage(WorkflowInstance wf, List<WorkflowStageState> all,
+                                  WorkflowStageState target, Instant now) {
+        target.setStatus("COMPLETE");
+        target.setCompletedAt(now);
+        target.setCompletedBy("system.auto-movement");
+        target.setCompletedByType("SYSTEM");
+        target.setNote("Auto-advanced after " + target.getAutoAdvanceAfterHours() + "h dwell");
+        if (target.getSlaDueAt() != null && now.isAfter(target.getSlaDueAt())) {
+            target.setSlaBreached(true);
+        }
+        stages.save(target);
+
+        EnterResult entered = advanceCursorAfterComplete(all, target, wf, now,
+                wf.getApplicationReference(), "system.auto-movement");
+        WorkflowStageState next = entered.next();
+        if (entered.instanceCompleted()) {
+            wf.setStatus("COMPLETED");
+            wf.setCompletedAt(now);
+        }
+        rollupSlaBreach(wf);
+        instances.save(wf);
+
+        WorkflowTransition tx = new WorkflowTransition();
+        tx.setInstanceId(wf.getId());
+        tx.setFromStageKey(target.getStageKey());
+        tx.setToStageKey(next == null ? (entered.instanceCompleted() ? null : wf.getCurrentStageKey())
+                : next.getStageKey());
+        tx.setKind(entered.instanceCompleted() ? "AUTO_COMPLETED" : "AUTO_ADVANCED");
+        tx.setActor("system.auto-movement");
+        tx.setActorType("SYSTEM");
+        tx.setNote("Auto-advanced from " + target.getStageKey());
+        transitions.save(tx);
+
+        audit.engine("WORKFLOW_AUTO_ADVANCED", "WorkflowInstance", wf.getApplicationReference(),
+                "Stage " + target.getStageKey() + " auto-advanced; entered "
+                        + (next == null ? "(end)" : next.getStageKey()),
+                Map.of("stageKey", target.getStageKey(),
+                        "nextStageKey", next == null ? "" : next.getStageKey(),
+                        "autoAdvanceAfterHours", target.getAutoAdvanceAfterHours()));
+    }
+
     // =============================================================== helpers
 
     /** Outcome of advancing the cursor after a stage completes. */
@@ -726,7 +921,7 @@ public class WorkflowEngine {
             CreateTaskRequest req = new CreateTaskRequest(
                     "WorkflowInstance", applicationReference, "STAGE_" + stage.getStageKey(),
                     stage.getQueueKey(), null, null, stage.getSlaHours(),
-                    dedupeKey, "SYSTEM", payload);
+                    dedupeKey, "SYSTEM", null, payload);
             workItems.create(req, actor == null ? "system" : actor);
         } catch (Exception e) {
             log.warn("stage-entry task mirror skipped for {}/{} ({})",
