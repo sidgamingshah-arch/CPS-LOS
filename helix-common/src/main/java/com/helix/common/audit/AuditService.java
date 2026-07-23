@@ -45,6 +45,20 @@ public class AuditService {
         return write("engine", "SYSTEM", eventType, subjectType, subjectId, summary, detail);
     }
 
+    /**
+     * Record an action originated by an EXTERNAL party (a customer / vendor acting through the
+     * tokened self-service portal). The {@code actorType} is stamped {@code EXTERNAL} — never
+     * {@code HUMAN} — because it is NOT a named-human action inside the bank: possession of the
+     * one-time portal token is the only credential, so the trail must not dress it up as an
+     * internal user. Mirrors the {@code EXTERNAL} authorType on the query message log.
+     */
+    @Transactional
+    public AuditEvent external(String actor, String eventType, String subjectType, String subjectId,
+                               String summary, Map<String, Object> detail) {
+        return write(actor == null || actor.isBlank() ? "external" : actor, "EXTERNAL",
+                eventType, subjectType, subjectId, summary, detail);
+    }
+
     private AuditEvent write(String actor, String actorType, String eventType, String subjectType,
                              String subjectId, String summary, Map<String, Object> detail) {
         AuditEvent event = new AuditEvent();
