@@ -3,7 +3,7 @@ import { config, counterparty, fmt, initiation, sourceIngest } from "../api";
 import { useApp } from "../app-context";
 import {
   AiBadge, Badge, Button, Card, type Col, DataTable, EmptyState, Field, GovFlow,
-  statusTone, Unchanged, useAsync,
+  QuickCreate, statusTone, Unchanged, useAsync,
 } from "../ui";
 import { useCodes } from "../code-values";
 
@@ -79,6 +79,32 @@ export default function Counterparties() {
                   catch (e: any) { notify(e.message, true); }
                 }}>Run re-KYC sweep</Button>
                 <Button kind="subtle" onClick={() => setPulling((p) => !p)}>{pulling ? "Close CRM pull" : "Pull borrower from CRM"}</Button>
+                <QuickCreate
+                  buttonLabel="＋ Quick create"
+                  buttonKind="subtle"
+                  title="Quick-onboard a counterparty"
+                  sub="Fast path for a low-risk obligor. Use + New for the full form with risk flags."
+                  fields={[
+                    { name: "legalName", label: "Legal name", required: true, placeholder: "e.g. Meridian Steel Ltd" },
+                    { name: "segment", label: "Segment", type: "select", options: segments.map((s) => ({ value: s.code, label: s.label })) },
+                    { name: "jurisdiction", label: "Jurisdiction", type: "select", options: jurisdictions.map((j: any) => ({ value: j.code, label: j.code })) },
+                    { name: "sector", label: "Sector", placeholder: "e.g. MANUFACTURING" },
+                    { name: "country", label: "Country", placeholder: "e.g. IN" },
+                  ]}
+                  submitLabel="Onboard"
+                  onSubmit={async (v) => {
+                    const cp = await counterparty.create({
+                      legalName: v.legalName.trim(), legalForm: "PRIVATE_LTD", registrationNo: "",
+                      jurisdiction: v.jurisdiction || "IN-RBI", segment: v.segment || "MID_CORPORATE",
+                      sector: v.sector.trim() || "MANUFACTURING", country: v.country.trim() || "IN",
+                      listedEntity: false, regulatedFi: false, pep: false, adverseMedia: false,
+                      highRiskJurisdiction: false, complexOwnership: false,
+                    }, actor);
+                    notify(`Onboarded ${cp.legalName} · CDD ${cp.cddTier}`);
+                    list.reload();
+                    setSelId(cp.id);
+                  }}
+                />
                 <Button kind="ghost" onClick={() => setCreating((c) => !c)}>{creating ? "Close" : "+ New"}</Button>
               </div>
             }

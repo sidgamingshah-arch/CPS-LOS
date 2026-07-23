@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { origination, docs, printing } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, EmptyState, Field, GovFlow, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, GovFlow, RichText, useAsync } from "../ui";
 
 /** Shape of a generated document as returned by docs.list / docs.generate */
 type GeneratedDocument = {
@@ -399,11 +399,12 @@ export default function DocGen() {
                           placeholder="Override clause title"
                         />
                       </Field>
-                      <Field label="Custom text (optional)">
-                        <textarea
+                      <Field label="Custom text (optional)" hint="Rich text — stored as markdown; no HTML is ever rendered.">
+                        <RichText
                           value={addText}
-                          onChange={(e) => setAddText(e.target.value)}
-                          rows={3}
+                          onChange={setAddText}
+                          rows={4}
+                          ariaLabel="Custom clause body text"
                           placeholder="Override clause body text"
                         />
                       </Field>
