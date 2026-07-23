@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export HELIX_DATA_DIR="${HELIX_DATA_DIR:-$ROOT/data}"
 mkdir -p "$HELIX_DATA_DIR"
+# Separate, externalised LLM endpoint config (helix.llm.*). Absolute path so it
+# resolves no matter where this script is launched from. Provider defaults to
+# `none` (deterministic, offline) inside the file; set HELIX_LLM_* env vars (or
+# edit config/llm.yml) to point at a real model — env always overrides the file.
+export HELIX_LLM_CONFIG="${HELIX_LLM_CONFIG:-$ROOT/config/llm.yml}"
 # G7: enable the test-only fail-closed-posture outage-simulation hook in the local/e2e stack
 # (prod default is false; the endpoint does not exist unless this is true).
 export HELIX_RBAC_SIMULATE_OUTAGE_ENABLED="${HELIX_RBAC_SIMULATE_OUTAGE_ENABLED:-true}"

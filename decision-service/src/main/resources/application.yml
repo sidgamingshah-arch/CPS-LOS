@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: decision-service
+  config:
+    import: "optional:file:${HELIX_LLM_CONFIG:config/llm.yml}"
   datasource:
     url: jdbc:sqlite:${HELIX_DATA_DIR:./data}/decision.db
     driver-class-name: org.sqlite.JDBC

@@ -38,6 +38,10 @@ Thumbs.db
 .env
 .env.local
 
+# Local LLM config override (keep a filled-in copy — with a real endpoint/key — out of git).
+# The committed config/llm.yml reads the API key from HELIX_LLM_API_KEY, so it holds no secret.
+config/*.local.yml
+
 # TS build info
 frontend/tsconfig.tsbuildinfo
 
