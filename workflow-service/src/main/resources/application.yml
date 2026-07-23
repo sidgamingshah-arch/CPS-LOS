@@ -34,3 +34,9 @@ helix:
     base-url: ${CONFIG_SERVICE_URL:http://localhost:8081}
   workflow:
     sla-sweep-cron: "0 */5 * * * *"   # every 5 minutes
+    auto-movement:
+      # Generalized config-driven case movement (auto-advance / auto-lapse). Safe to leave ON:
+      # the sweep only touches stages / work-items that EXPLICITLY declared an auto key, so it is
+      # a strict no-op on every existing pack and task (verified by e2e_auto_movement.py).
+      enabled: true
+      sweep-cron: "0 */5 * * * *"     # every 5 minutes

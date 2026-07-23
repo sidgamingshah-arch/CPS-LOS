@@ -35,4 +35,7 @@ public interface WorkItemRepository extends JpaRepository<WorkItem, Long> {
     List<WorkItem> findByJoinGroupIdOrderByIdAsc(String joinGroupId);
 
     long countByAssigneeIgnoreCaseAndStatusIn(String assignee, List<String> statuses);
+
+    /** Auto-movement sweep candidates: open tasks that explicitly declared an auto-lapse window. */
+    List<WorkItem> findByAutoLapseAfterHoursNotNullAndStatusInOrderByIdAsc(List<String> statuses);
 }

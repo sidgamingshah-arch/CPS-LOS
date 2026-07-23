@@ -76,7 +76,8 @@ public class TaskController {
     private static CreateTaskRequest withDerivedActorType(CreateTaskRequest b, String actor) {
         if (b == null) return null;
         return new CreateTaskRequest(b.subjectType(), b.subjectRef(), b.taskType(), b.queueKey(),
-                b.assignee(), b.priority(), b.slaHours(), b.dedupeKey(), derivedActorType(actor), b.payload());
+                b.assignee(), b.priority(), b.slaHours(), b.dedupeKey(), derivedActorType(actor),
+                b.autoLapseAfterHours(), b.payload());
     }
 
     private static FanoutRequest withDerivedActorType(FanoutRequest b, String actor) {

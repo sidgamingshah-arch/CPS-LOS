@@ -97,6 +97,15 @@ public class WorkItem {
     @Column(name = "created_by", length = 80)
     private String createdBy;
 
+    /**
+     * OPTIONAL auto-lapse window in hours. When non-null AND the task has been open past this
+     * many hours since {@code createdAt}, the auto-movement sweep lapses (cancels) it as SYSTEM.
+     * NULL (the default for every task created today) means the task is never auto-lapsed — so
+     * behaviour is byte-identical when the caller does not set it.
+     */
+    @Column(name = "auto_lapse_after_hours")
+    private Integer autoLapseAfterHours;
+
     @Convert(converter = JsonAttributeConverters.MapConverter.class)
     @Column(length = 4000)
     private Map<String, Object> payload = Map.of();
