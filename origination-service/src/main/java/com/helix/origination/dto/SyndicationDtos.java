@@ -33,4 +33,14 @@ public class SyndicationDtos {
     public record AllocationResult(String applicationReference, String drawdownRef, double drawdownAmount,
                                    double allocatedTotal, boolean reused, List<AllocationLine> lines) {
     }
+
+    // ============================================================ information memorandum
+
+    /** Create a DRAFT Information Memorandum for a syndication deal. {@code title} optional. */
+    public record CreateImRequest(String title) {
+    }
+
+    /** Upsert a single IM section by {@code key} (e.g. RISK_FACTORS) with free-text {@code content}. */
+    public record ImSectionRequest(@NotBlank String key, String content) {
+    }
 }
