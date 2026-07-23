@@ -22,6 +22,38 @@ cd frontend && npm install && npm run dev    # UI on http://localhost:5173
 The seeder prints the five showcase obligors at the end — **confirm they match the list below**
 (names are deterministic from a fixed seed). Open **http://localhost:5173**.
 
+### LLM configuration (optional — decide before you start services)
+
+All AI capabilities read one externalised file: **`config/llm.yml`** (loaded by every service; env
+vars override it). The single switch is `helix.llm.provider`:
+
+- **`none` (default):** no external call anywhere; every AI screen uses its built-in, deterministic
+  grounded output. The demo is fully offline and repeatable. **Everything still works** — doc
+  capture/OCR, spreading, XAI cards, the governance visuals — because none of the authoritative
+  path depends on a model.
+- **A real provider (`openai` / `anthropic` / `azure-openai`):** the GenAI prose (borrower
+  summaries, narrative commentary, screening rationale, copilot) is generated **live** by your
+  endpoint. Set it without editing code:
+  ```bash
+  export HELIX_LLM_PROVIDER=anthropic        # or openai / azure-openai
+  export HELIX_LLM_API_KEY=<your key>         # kept in env, never written to git
+  export HELIX_LLM_MODEL=<your model/deployment name>
+  export HELIX_LLM_BASE_URL=<endpoint>        # required for azure; optional otherwise
+  bash scripts/run-all.sh
+  ```
+  It is fail-soft: if the endpoint is slow or unreachable it silently falls back to the
+  deterministic text within the timeout, so a live model can never break the demo.
+
+**How this maps to "the 5 obligors are fine, everything beyond is live":** the five showcase
+obligors already have their advisory artifacts **stored**, so viewing them shows the vetted content
+with no model call. **Any fresh AI action — a new obligor/deal, or clicking draft / summarise /
+extract / optimise / ask-copilot on a new subject — makes a real call** to the configured endpoint.
+(Re-running an AI action on one of the five would also call the model and replace its stored draft,
+so drive live calls from new subjects and leave the five on their seeded content.)
+
+Governance is identical either way: the model only drafts **advisory, human-gated** text; it never
+writes an authoritative figure, grade, price or decision.
+
 ---
 
 ## 1. Login & personas

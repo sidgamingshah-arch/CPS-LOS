@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: origination-service
+  config:
+    import: "optional:file:${HELIX_LLM_CONFIG:config/llm.yml}"
   datasource:
     url: jdbc:sqlite:${HELIX_DATA_DIR:./data}/origination.db
     driver-class-name: org.sqlite.JDBC

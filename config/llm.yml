@@ -1,0 +1,72 @@
+# =============================================================================
+# Helix — external LLM endpoint configuration (kept SEPARATE on purpose)
+# =============================================================================
+# This is the SINGLE place you point Helix at a large language model. Every AI
+# capability in every service resolves its client from these values. It is read
+# by all services via `spring.config.import` in each service's application.yml,
+# so one edit here flows everywhere.
+#
+# GOVERNANCE (unchanged whether the provider is `none` or a live model):
+#   A configured model only ever drafts ADVISORY, human-gated text and
+#   extractions at the platform boundary. It NEVER writes an authoritative
+#   figure, grade, price or decision. The deterministic figure path and every
+#   human-confirm / maker-checker gate behave identically with or without a
+#   model, and an outage/slow model always falls back to the deterministic path.
+#
+# DEFAULT (provider: none):
+#   No external call is made anywhere; every capability uses its built-in
+#   deterministic / grounded output. This is the safe, fully-offline demo mode.
+#
+# HOW REAL CALLS HAPPEN IN THE DEMO  (the important part)
+#   * The 5 seeded showcase obligors already have their advisory artifacts
+#     stored, so simply VIEWING them shows the vetted, pre-baked content — no
+#     model call is made on a read.
+#   * ANY fresh AI action — a NEW obligor/deal, or clicking "draft / summarise /
+#     extract / optimise / ask copilot" on a new subject — makes a REAL call to
+#     the endpoint below whenever `provider` is not `none`. That is where the
+#     live model shows. (Re-running an AI action on one of the 5 would also call
+#     the model and replace its stored draft — so leave the 5 on their seeded
+#     content during the demo and drive live calls from new subjects.)
+#
+# SECRETS
+#   Do NOT paste your API key into this file. Export it as HELIX_LLM_API_KEY in
+#   the environment; the placeholder below reads it at runtime, so no key ever
+#   lands in git. Every value here also honours an environment override
+#   (HELIX_LLM_PROVIDER, HELIX_LLM_BASE_URL, HELIX_LLM_MODEL, …), which always
+#   wins over the file.
+# =============================================================================
+helix:
+  llm:
+    # none | openai | anthropic | azure-openai
+    # Leave `none` for a deterministic offline demo; set a real provider to make
+    # live calls for every fresh AI action.
+    provider: ${HELIX_LLM_PROVIDER:none}
+
+    # Chat endpoint base URL for the chosen provider, e.g.
+    #   openai        -> https://api.openai.com/v1     (POST {base-url}/chat/completions)
+    #   anthropic     -> https://api.anthropic.com     (POST {base-url}/v1/messages)
+    #   azure-openai  -> https://{your-resource}.openai.azure.com
+    base-url: ${HELIX_LLM_BASE_URL:}
+
+    # API key — keep this as the env placeholder and export HELIX_LLM_API_KEY.
+    # Sent as Bearer (openai) / api-key (azure) / x-api-key (anthropic); never logged.
+    api-key: ${HELIX_LLM_API_KEY:}
+
+    # Default chat model / Azure deployment name. Leave blank to rely solely on
+    # the per-capability overrides below. (Use your provider's model identifier.)
+    model: ${HELIX_LLM_MODEL:}
+
+    # Fail-soft budget: an outage or slow model never blocks a request beyond this.
+    timeout-ms: ${HELIX_LLM_TIMEOUT_MS:20000}
+    max-tokens: ${HELIX_LLM_MAX_TOKENS:1024}
+    temperature: ${HELIX_LLM_TEMPERATURE:0.2}
+
+    # Optional per-capability model overrides (a missing key falls back to `model`).
+    # Keys are the capability names used by the callers. Fill with your provider's
+    # model identifiers, e.g.:
+    # capability-models:
+    #   copilot: <your-model-name>
+    #   commentary: <your-model-name>
+    #   doc-extract: <your-model-name>
+    #   screening-rationale: <your-model-name>
+    capability-models: {}
