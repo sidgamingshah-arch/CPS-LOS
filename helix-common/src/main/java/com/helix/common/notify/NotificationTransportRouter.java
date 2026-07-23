@@ -20,7 +20,9 @@ import java.util.List;
  *       (no real transmission, {@code providerRef = outbox:<id>}, {@code transport = OUTBOX}).</li>
  *   <li>{@code smtp} — {@link SmtpTransport} (JavaMail).</li>
  *   <li>{@code sms} — {@link SmsTransport} (HTTP gateway).</li>
- *   <li>{@code all} — both email and SMS; the combined {@link Result} is {@code SENT} when at
+ *   <li>{@code graph} — {@link GraphMailTransport} (Microsoft Graph {@code sendMail}, config-gated,
+ *       fail-soft; token/secret never logged).</li>
+ *   <li>{@code all} — both email (SMTP) and SMS; the combined {@link Result} is {@code SENT} when at
  *       least one channel delivered, recording every provider id and any per-channel failure.</li>
  * </ul>
  *
@@ -38,17 +40,20 @@ public class NotificationTransportRouter implements NotificationTransport {
     private final OutboxTransport outbox;
     private final ObjectProvider<SmtpTransport> smtp;
     private final ObjectProvider<SmsTransport> sms;
+    private final ObjectProvider<GraphMailTransport> graph;
     private final String mode;
 
     public NotificationTransportRouter(OutboxTransport outbox,
                                        ObjectProvider<SmtpTransport> smtp,
                                        ObjectProvider<SmsTransport> sms,
+                                       ObjectProvider<GraphMailTransport> graph,
                                        @Value("${helix.notify.transport:outbox}") String mode) {
         this.outbox = outbox;
         this.smtp = smtp;
         this.sms = sms;
+        this.graph = graph;
         this.mode = mode == null ? "outbox" : mode.trim().toLowerCase();
-        if (!List.of("outbox", "smtp", "sms", "all").contains(this.mode)) {
+        if (!List.of("outbox", "smtp", "sms", "graph", "all").contains(this.mode)) {
             log.warn("unknown helix.notify.transport='{}' — defaulting to outbox (record-only)", mode);
         }
     }
@@ -58,6 +63,7 @@ public class NotificationTransportRouter implements NotificationTransport {
         return switch (mode) {
             case "smtp" -> "SMTP";
             case "sms" -> "SMS";
+            case "graph" -> "GRAPH";
             case "all" -> "ALL";
             default -> "OUTBOX";
         };
@@ -68,6 +74,7 @@ public class NotificationTransportRouter implements NotificationTransport {
         return switch (mode) {
             case "smtp" -> viaSmtp(n);
             case "sms" -> viaSms(n);
+            case "graph" -> viaGraph(n);
             case "all" -> combine(viaSmtp(n), viaSms(n));
             default -> outbox.dispatch(n);   // outbox / unknown — record-only, byte-identical
         };
@@ -81,6 +88,11 @@ public class NotificationTransportRouter implements NotificationTransport {
     private Result viaSms(Notification n) {
         SmsTransport t = sms.getIfAvailable();
         return t != null ? t.dispatch(n) : Result.failed("SMS transport unavailable");
+    }
+
+    private Result viaGraph(Notification n) {
+        GraphMailTransport t = graph.getIfAvailable();
+        return t != null ? t.dispatch(n) : Result.failed("Graph mail transport unavailable");
     }
 
     /** {@code all}-mode merge: SENT if either channel delivered; every provider id / error kept. */

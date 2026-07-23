@@ -25,4 +25,13 @@ public interface QueryThreadRepository extends JpaRepository<QueryThread, Long> 
 
     /** SCHEDULED threads whose deferred release time has arrived (platform sweep). */
     List<QueryThread> findByStatusAndScheduleAtLessThanEqualOrderByIdAsc(QueryStatus status, Instant cutoff);
+
+    /**
+     * Resolve the single thread whose stored one-time response-token hash matches (self-service
+     * portal). Only the SHA-256 hash is ever persisted, so the caller hashes the presented raw
+     * token and looks it up here — the token IS the lookup key, which structurally scopes access
+     * to EXACTLY ONE thread (no thread id in the path, so no IDOR). Mirrors the
+     * {@code findByApproveTokenHash} lookup on the notification action lane.
+     */
+    Optional<QueryThread> findByResponseTokenHash(String responseTokenHash);
 }

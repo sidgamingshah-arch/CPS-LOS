@@ -57,8 +57,16 @@ public class HelixSecurityConfig {
 
     private static final Logger log = LoggerFactory.getLogger(HelixSecurityConfig.class);
 
-    /** Always-open paths in the secure profiles: health, the SPA bootstrap, and legacy login. */
-    private static final String[] OPEN_PATHS = {"/actuator/**", "/api/security/mode", "/api/auth/login"};
+    /**
+     * Always-open paths in the secure profiles: health, the SPA bootstrap, legacy login, and the
+     * external customer/vendor self-service portal ({@code /api/portal/**}) — the latter is reached
+     * by unauthenticated external parties whose ONLY credential is the one-time RFI token, so it
+     * must not require a bearer/basic identity even under {@code oidc}/{@code ldap}. The portal is
+     * itself token-gated end to end (see {@code PortalService}); allow-listing it here only defers
+     * the credential check to that token, it does not open any thread data to anonymous callers.
+     */
+    private static final String[] OPEN_PATHS = {"/actuator/**", "/api/security/mode", "/api/auth/login",
+            "/api/portal/**"};
 
     // ---- none (default) -------------------------------------------------------------------------
 
