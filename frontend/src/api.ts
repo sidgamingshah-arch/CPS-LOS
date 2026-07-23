@@ -966,20 +966,32 @@ export type SyndicationIm = {
   createdAt: string;
   finalisedBy?: string;
 };
+// The backend stores each section as an object {title,content,order,source} and names
+// the deal link `applicationReference`; the UI works in a flat {key: markdown} map, so
+// normalise on the way in (keeps the screen code shape-agnostic to the wire format).
+function normIm(im: any): SyndicationIm {
+  const raw = (im && im.sections) || {};
+  const sections: Record<string, string> = {};
+  for (const k of Object.keys(raw)) {
+    const v = raw[k];
+    sections[k] = typeof v === "string" ? v : ((v && v.content) ?? "");
+  }
+  return { ...im, applicationRef: (im && (im.applicationReference ?? im.applicationRef)) ?? "", sections };
+}
 export const syndicationIm = {
   list: (reference: string) =>
-    call<SyndicationIm[]>(`/origination/api/syndication/${encodeURIComponent(reference)}/im`, "GET"),
-  get: (id: number) => call<SyndicationIm>(`/origination/api/syndication/im/${id}`, "GET"),
+    call<any[]>(`/origination/api/syndication/${encodeURIComponent(reference)}/im`, "GET").then((a) => (a ?? []).map(normIm)),
+  get: (id: number) => call<any>(`/origination/api/syndication/im/${id}`, "GET").then(normIm),
   create: (reference: string, body: { title?: string }, actor: string) =>
-    call<SyndicationIm>(`/origination/api/syndication/${encodeURIComponent(reference)}/im`, "POST", body, actor),
+    call<any>(`/origination/api/syndication/${encodeURIComponent(reference)}/im`, "POST", body, actor).then(normIm),
   section: (id: number, body: { key: string; content: string }, actor: string) =>
-    call<SyndicationIm>(`/origination/api/syndication/im/${id}/section`, "POST", body, actor),
+    call<any>(`/origination/api/syndication/im/${id}/section`, "POST", body, actor).then(normIm),
   circulate: (id: number, actor: string) =>
-    call<SyndicationIm>(`/origination/api/syndication/im/${id}/circulate`, "POST", undefined, actor),
+    call<any>(`/origination/api/syndication/im/${id}/circulate`, "POST", undefined, actor).then(normIm),
   finalise: (id: number, actor: string) =>
-    call<SyndicationIm>(`/origination/api/syndication/im/${id}/finalise`, "POST", undefined, actor),
+    call<any>(`/origination/api/syndication/im/${id}/finalise`, "POST", undefined, actor).then(normIm),
   withdraw: (id: number, actor: string) =>
-    call<SyndicationIm>(`/origination/api/syndication/im/${id}/withdraw`, "POST", undefined, actor),
+    call<any>(`/origination/api/syndication/im/${id}/withdraw`, "POST", undefined, actor).then(normIm),
 };
 
 // ---- external customer / vendor portal (gap #23) ----
@@ -995,16 +1007,24 @@ export type PortalContext = {
   deadline?: string;
   messages: PortalMessage[];
 };
+// The backend returns message authors as `from` (redacted to BANK/YOU) and the upload
+// result as `filename`; normalise to the UI's {author}/{fileName} shape on the way in.
+function normCtx(c: any): PortalContext {
+  return {
+    topic: c?.topic, question: c?.question, status: c?.status, deadline: c?.deadline,
+    messages: ((c && c.messages) || []).map((m: any) => ({ author: m.from ?? m.author ?? "BANK", body: m.body, at: m.at })),
+  };
+}
 export const portal = {
   context: (token: string) =>
-    call<PortalContext>(`/counterparty/api/portal/${encodeURIComponent(token)}`, "GET"),
+    call<any>(`/counterparty/api/portal/${encodeURIComponent(token)}`, "GET").then(normCtx),
   respond: (token: string, message: string, actor: string) =>
-    call<PortalContext>(`/counterparty/api/portal/${encodeURIComponent(token)}/respond`, "POST", { message }, actor),
+    call<any>(`/counterparty/api/portal/${encodeURIComponent(token)}/respond`, "POST", { message }, actor).then(normCtx),
   upload: (token: string, file: File, actor: string) => {
     const form = new FormData();
     form.append("file", file, file.name);
-    return postForm<{ storedDocId: number; fileName: string }>(
-      `/counterparty/api/portal/${encodeURIComponent(token)}/documents`, form, actor);
+    return postForm<any>(`/counterparty/api/portal/${encodeURIComponent(token)}/documents`, form, actor)
+      .then((r) => ({ storedDocId: r?.storedDocId, fileName: r?.filename ?? r?.fileName }));
   },
 };
 
