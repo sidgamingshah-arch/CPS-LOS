@@ -49,6 +49,17 @@ public class RiskNoteController {
         return service.updateSections(ref, req, actor);
     }
 
+    /**
+     * Ground the exposure / collateral / RAROC DETAIL sections verbatim from the deterministic record
+     * (deal envelope + authoritative pricing), so the risk officer's critique of the CAM sits beside
+     * the real figures. Quoted, not AI; the qualitative sections stay the officer's (or AI-drafted) opinion.
+     */
+    @PostMapping("/{ref}/ground")
+    public RiskNote ground(@PathVariable String ref,
+                           @RequestHeader(value = "X-Actor", defaultValue = "risk.analyst") String actor) {
+        return service.groundFromDeal(ref, actor);
+    }
+
     @PostMapping("/{ref}/submit")
     public RiskNote submit(@PathVariable String ref,
                            @RequestHeader(value = "X-Actor", defaultValue = "risk.analyst") String actor) {

@@ -8,8 +8,10 @@ import com.helix.common.llm.LlmRequest;
 import com.helix.common.llm.LlmResult;
 import com.helix.common.web.ApiException;
 import com.helix.risk.client.OriginationClient;
+import com.helix.risk.dto.CreditInputsDto;
 import com.helix.risk.dto.RiskNoteDtos.CreateRiskNoteRequest;
 import com.helix.risk.dto.RiskNoteDtos.UpdateSectionsRequest;
+import com.helix.risk.entity.PricingResult;
 import com.helix.risk.entity.Rating;
 import com.helix.risk.entity.RiskNote;
 import com.helix.risk.entity.RiskNote.RecommendedAction;
@@ -42,11 +44,27 @@ import java.util.UUID;
 @Service
 public class RiskNoteService {
 
-    /** Canonical narrative sections of an independent risk note. */
-    static final List<String> SECTION_KEYS = List.of("RISK_OPINION", "KEY_RISKS", "MITIGANTS", "RECOMMENDATION");
+    /**
+     * Canonical narrative sections of an independent risk note — the risk officer's critique of the
+     * CAM. The QUALITATIVE sections are the officer's opinion (optionally AI-drafted); the DETAIL
+     * sections (exposure / collateral / RAROC) are grounded verbatim from the deterministic record.
+     */
+    static final List<String> SECTION_KEYS = List.of(
+            "RISK_OPINION", "WAYS_OUT", "KEY_RISKS", "MITIGANTS",
+            "EXPOSURE_DETAILS", "COLLATERAL_DETAILS", "RAROC_DETAILS", "RECOMMENDATION");
+
+    /** Qualitative opinion sections the AI may draft (prose) — never the grounded detail sections. */
+    private static final List<String> AI_DRAFTABLE = List.of(
+            "RISK_OPINION", "WAYS_OUT", "KEY_RISKS", "MITIGANTS", "RECOMMENDATION");
+
+    /** Detail sections assembled DETERMINISTICALLY from upstream figures (never AI-drafted). */
+    private static final List<String> DETAIL_SECTIONS = List.of(
+            "EXPOSURE_DETAILS", "COLLATERAL_DETAILS", "RAROC_DETAILS");
 
     private static final Map<String, String> SECTION_BRIEF = Map.of(
-            "RISK_OPINION", "the independent risk view on this credit overall",
+            "RISK_OPINION", "the independent risk view on this credit overall, critically appraising the CAM",
+            "WAYS_OUT", "a ways-out / SWOT analysis — strengths, weaknesses, opportunities, threats, "
+                    + "and the primary + secondary exit routes if the credit deteriorates",
             "KEY_RISKS", "the principal risks (financial, business, structural, ESG)",
             "MITIGANTS", "the mitigants and structural protections that offset those risks",
             "RECOMMENDATION", "the risk function's recommendation and any conditions");
@@ -57,15 +75,18 @@ public class RiskNoteService {
     private final AuditService audit;
     private final AiGovernanceClient governance;
     private final LlmClient llm;
+    private final com.helix.risk.repo.PricingResultRepository pricing;
 
     public RiskNoteService(RiskNoteRepository notes, RatingRepository ratings, OriginationClient origination,
-                           AuditService audit, AiGovernanceClient governance, LlmClient llm) {
+                           AuditService audit, AiGovernanceClient governance, LlmClient llm,
+                           com.helix.risk.repo.PricingResultRepository pricing) {
         this.notes = notes;
         this.ratings = ratings;
         this.origination = origination;
         this.audit = audit;
         this.governance = governance;
         this.llm = llm;
+        this.pricing = pricing;
     }
 
     // ---- create / read ----
@@ -149,6 +170,77 @@ public class RiskNoteService {
                 Map.of("riskNoteRef", saved.getRiskNoteRef(), "sections", new ArrayList<>(merged.keySet()),
                         "aiDrafted", aiDrafted));
         return saved;
+    }
+
+    /**
+     * Ground the DETAIL sections (exposure / collateral / RAROC) of a DRAFT note VERBATIM from the
+     * deterministic record — the deal envelope (facilities / collateral) and the authoritative
+     * pricing. These are quoted figures, not opinion or AI: the officer's critique (RISK_OPINION /
+     * WAYS_OUT / KEY_RISKS / MITIGANTS) sits alongside them. Fail-soft when an upstream is unreachable.
+     */
+    @Transactional
+    public RiskNote groundFromDeal(String ref, String actor) {
+        requireActor(actor);
+        RiskNote n = get(ref);
+        if (n.getStatus() != Status.DRAFT) {
+            throw ApiException.conflict("Only a DRAFT risk note can be grounded (is " + n.getStatus() + ")");
+        }
+        Map<String, Object> merged = new LinkedHashMap<>(n.getSections() == null ? Map.of() : n.getSections());
+        CreditInputsDto in = null;
+        try { in = origination.creditInputs(n.getSubjectRef()); } catch (Exception ignored) { }
+        merged.put("EXPOSURE_DETAILS", exposureDetail(in));
+        merged.put("COLLATERAL_DETAILS", collateralDetail(in));
+        merged.put("RAROC_DETAILS", rarocDetail(n.getSubjectRef()));
+        n.setSections(merged);
+        RiskNote saved = notes.save(n);
+        audit.human(actor, "RISK_NOTE_GROUNDED", "Application", saved.getSubjectRef(),
+                "Grounded exposure / collateral / RAROC detail on risk note %s (quoted from the record)"
+                        .formatted(saved.getRiskNoteRef()),
+                Map.of("riskNoteRef", saved.getRiskNoteRef(), "sections", DETAIL_SECTIONS));
+        return saved;
+    }
+
+    private String exposureDetail(CreditInputsDto in) {
+        if (in == null) return "Exposure details unavailable (deal envelope unreachable).";
+        StringBuilder sb = new StringBuilder();
+        sb.append("Requested exposure ").append(fmtMoney(in.requestedAmount())).append(" ").append(in.currency())
+          .append(" (").append(in.facilityType()).append("). ");
+        if (in.facilities() != null && !in.facilities().isEmpty()) {
+            sb.append(in.facilities().size()).append(" facilit(y/ies): ");
+            for (var f : in.facilities()) sb.append(f.facilityType()).append(" ").append(fmtMoney(f.amount())).append("; ");
+        }
+        return sb.toString().trim();
+    }
+
+    private String collateralDetail(CreditInputsDto in) {
+        if (in == null) return "Collateral details unavailable.";
+        StringBuilder sb = new StringBuilder();
+        sb.append("Primary security: ").append(in.collateralType() == null ? "UNSECURED" : in.collateralType())
+          .append(" valued ").append(fmtMoney(in.collateralValue())).append(". ");
+        if (in.collaterals() != null && !in.collaterals().isEmpty()) {
+            sb.append(in.collaterals().size()).append(" collateral item(s): ");
+            for (var c : in.collaterals()) sb.append(c.collateralType()).append(" ").append(fmtMoney(c.marketValue())).append("; ");
+        }
+        if (in.collateralValue() > 0 && in.requestedAmount() > 0) {
+            sb.append("Indicative cover ").append(Math.round(in.collateralValue() / in.requestedAmount() * 100.0))
+              .append("% of exposure.");
+        }
+        return sb.toString().trim();
+    }
+
+    private String rarocDetail(String ref) {
+        PricingResult p = pricing.findFirstByApplicationReferenceOrderByCreatedAtDesc(ref).orElse(null);
+        if (p == null) return "RAROC not yet computed (pricing pending).";
+        return ("RAROC %.1f%% vs hurdle %.1f%% (%s); recommended all-in rate %.2f%%; "
+                + "EAD %s, expected loss %s, capital charge %s.")
+                .formatted(p.getRaroc() * 100, p.getHurdleRaroc() * 100,
+                        p.isBelowHurdle() ? "BELOW hurdle — escalate" : "meets hurdle",
+                        p.getRecommendedRate() * 100, fmtMoney(p.getEad()),
+                        fmtMoney(p.getExpectedLoss()), fmtMoney(p.getCapitalCharge()));
+    }
+
+    private static String fmtMoney(double v) {
+        return String.format("%,.0f", v);
     }
 
     // ---- workflow transitions ----
@@ -337,7 +429,7 @@ public class RiskNoteService {
         String model = null;
         String grade = n.getGradeSnapshot();
         double pd = n.getPdSnapshot();
-        for (String key : SECTION_KEYS) {
+        for (String key : AI_DRAFTABLE) {
             Object existing = sections.get(key);
             if (existing != null && !String.valueOf(existing).isBlank()) {
                 continue;   // human-authored — never overwritten

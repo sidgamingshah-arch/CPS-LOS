@@ -165,6 +165,35 @@ st, ap = call("POST", f"/risk/api/risk-notes/{rn}/approve", {"note": "endorsed b
 ap = must(st, ap, "approve")
 check("approve by a different human -> APPROVED", ap["status"] == "APPROVED", str(ap))
 
+print("\n== 2b. Enriched CAM critique: WAYS_OUT/SWOT + grounded exposure/collateral/RAROC ==")
+# Price the deal so the RAROC detail is real (not the pricing-pending fallback).
+call("POST", f"/risk/api/risk/{ref}/pricing", actor="pricing.analyst")
+grade0 = call("GET", f"/risk/api/risk/{ref}")[1]["rating"]["finalGrade"]
+st, en = call("POST", "/risk/api/risk-notes", {"subjectRef": ref, "recommendedAction": "SUPPORT"}, actor=AUTHOR)
+enr = must(st, en, "create enriched note")["riskNoteRef"]
+st, ws = call("PUT", f"/risk/api/risk-notes/{enr}/sections", {"sections": {"WAYS_OUT":
+    "Primary exit: refinance on improved DSCR. Secondary: enforce the property charge (cover >100%). "
+    "SWOT — strengths: market position; weaknesses: working-capital cycle; opportunities: capacity upside; "
+    "threats: commodity-price volatility."}}, actor=AUTHOR)
+ws = must(st, ws, "author WAYS_OUT")
+check("WAYS_OUT (ways-out / SWOT) is an accepted narrative section", "WAYS_OUT" in ws.get("sections", {}),
+      str(list(ws.get("sections", {}).keys())))
+st, g = call("POST", f"/risk/api/risk-notes/{enr}/ground", actor=AUTHOR)
+g = must(st, g, "ground detail sections")
+gs = g.get("sections", {})
+check("EXPOSURE_DETAILS grounded from the deal envelope (quotes the exposure)",
+      "400" in str(gs.get("EXPOSURE_DETAILS", "")).replace(",", ""), str(gs.get("EXPOSURE_DETAILS")))
+check("COLLATERAL_DETAILS grounded (security + indicative cover)",
+      "cover" in str(gs.get("COLLATERAL_DETAILS", "")).lower(), str(gs.get("COLLATERAL_DETAILS")))
+check("RAROC_DETAILS grounded (RAROC vs hurdle)",
+      "RAROC" in str(gs.get("RAROC_DETAILS", "")), str(gs.get("RAROC_DETAILS")))
+check("grounding did NOT overwrite the human WAYS_OUT critique",
+      "Primary exit" in str(gs.get("WAYS_OUT", "")), str(gs.get("WAYS_OUT")))
+# The authoritative rating is unchanged by authoring/grounding the enriched note.
+grade1 = call("GET", f"/risk/api/risk/{ref}")[1]["rating"]["finalGrade"]
+check("authoritative grade UNCHANGED after the enriched risk-note critique", grade1 == grade0,
+      f"{grade0} -> {grade1}")
+
 print("\n== 3. reassign moves the work-item owner ==")
 st, r2 = call("POST", "/risk/api/risk-notes", {"subjectRef": ref}, actor=AUTHOR)
 r2 = must(st, r2, "create for reassign")
