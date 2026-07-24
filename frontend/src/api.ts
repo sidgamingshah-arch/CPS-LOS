@@ -194,16 +194,28 @@ export const origination = {
   facilityViews: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/facilities/view`, "GET"),
   addFacility: (ref: string, body: any, actor: string) =>
     call<any>(`/origination/api/applications/${ref}/facilities`, "POST", body, actor),
+  // Edit a proposed facility in place (pre-sanction only; primary facility not editable).
+  updateFacility: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/facilities/${id}`, "PATCH", body, actor),
   removeFacility: (id: number, actor: string) =>
     call<any>(`/origination/api/applications/facilities/${id}`, "DELETE", undefined, actor),
   sublimits: (facilityId: number) => call<any[]>(`/origination/api/applications/facilities/${facilityId}/sublimits`, "GET"),
   addSublimit: (facilityId: number, body: any, actor: string) =>
     call<any>(`/origination/api/applications/facilities/${facilityId}/sublimits`, "POST", body, actor),
+  // Edit a sublimit in place (pre-sanction only); parent facility cap re-checked server-side.
+  updateSublimit: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/sublimits/${id}`, "PATCH", body, actor),
   removeSublimit: (id: number, actor: string) =>
     call<any>(`/origination/api/applications/sublimits/${id}`, "DELETE", undefined, actor),
   collaterals: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/collaterals`, "GET"),
   addCollateral: (ref: string, body: any, actor: string) =>
     call<any>(`/origination/api/applications/${ref}/collaterals`, "POST", body, actor),
+  // Edit a collateral's descriptive fields in place (pre-sanction only). Market value changes
+  // route through the collateral-intel revalue -> review gate, NOT here.
+  updateCollateral: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/collaterals/${id}`, "PATCH", body, actor),
+  removeCollateral: (id: number, actor: string) =>
+    call<any>(`/origination/api/applications/collaterals/${id}`, "DELETE", undefined, actor),
   perfectCollateral: (id: number, actor: string) =>
     call<any>(`/origination/api/applications/collaterals/${id}/perfect`, "POST", undefined, actor),
   // collateral intelligence: extraction + LTV revaluation + charge-Excel
