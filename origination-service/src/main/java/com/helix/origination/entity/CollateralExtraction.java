@@ -84,6 +84,13 @@ public class CollateralExtraction {
     /** Set on confirm — the real collateral this extraction materialised into. */
     private Long linkedCollateralId;
 
+    /**
+     * When the extraction was derived from an uploaded {@link Document} (rather than typed text),
+     * the source Document id. Provenance only; nullable for the pasted-text path.
+     */
+    @Column(name = "source_document_id")
+    private Long sourceDocumentId;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;

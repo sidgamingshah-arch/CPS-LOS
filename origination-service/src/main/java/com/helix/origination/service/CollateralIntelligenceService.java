@@ -13,11 +13,13 @@ import com.helix.origination.dto.Dtos.AddCollateralRequest;
 import com.helix.origination.entity.Collateral;
 import com.helix.origination.entity.CollateralExtraction;
 import com.helix.origination.entity.CollateralRevaluation;
+import com.helix.origination.entity.Document;
 import com.helix.origination.entity.LoanApplication;
 import com.helix.origination.entity.ProposedFacility;
 import com.helix.origination.repo.CollateralExtractionRepository;
 import com.helix.origination.repo.CollateralRepository;
 import com.helix.origination.repo.CollateralRevaluationRepository;
+import com.helix.origination.repo.DocumentRepository;
 import com.helix.origination.repo.LoanApplicationRepository;
 import com.helix.origination.repo.ProposedFacilityRepository;
 import org.springframework.stereotype.Service;
@@ -93,6 +95,7 @@ public class CollateralIntelligenceService {
     private final CollateralRepository collaterals;
     private final ProposedFacilityRepository facilities;
     private final LoanApplicationRepository applications;
+    private final DocumentRepository documents;
     private final OriginationService origination;
     private final AuditService audit;
     private final com.helix.common.governance.AiGovernanceClient governance;
@@ -104,6 +107,7 @@ public class CollateralIntelligenceService {
                                          CollateralRepository collaterals,
                                          ProposedFacilityRepository facilities,
                                          LoanApplicationRepository applications,
+                                         DocumentRepository documents,
                                          OriginationService origination,
                                          AuditService audit,
                                          com.helix.common.governance.AiGovernanceClient governance,
@@ -113,6 +117,7 @@ public class CollateralIntelligenceService {
         this.collaterals = collaterals;
         this.facilities = facilities;
         this.applications = applications;
+        this.documents = documents;
         this.origination = origination;
         this.audit = audit;
         this.governance = governance;
@@ -123,6 +128,22 @@ public class CollateralIntelligenceService {
 
     @Transactional
     public CollateralExtraction extract(String reference, String documentKind, String text, String actor) {
+        return extract(reference, documentKind, text, null, actor);
+    }
+
+    /**
+     * Type-aware collateral extraction. The document text is resolved from EITHER the supplied
+     * {@code text} (typed / pasted) OR — when {@code documentId} is given — the real extracted text
+     * of a {@link Document} already uploaded via the {@code /documents/upload} path (PDFBox / UTF-8 /
+     * OCR). The document route feeds the SAME deterministic parser + advisory LLM pipeline, so the
+     * result is byte-identical to pasting that document's text. Either way the output is a SUGGESTED,
+     * human-confirmed advisory — {@link #confirm} is the sole gate that materialises a real
+     * {@link Collateral}; no authoritative figure is written here. {@code documentId} wins when both
+     * are present.
+     */
+    @Transactional
+    public CollateralExtraction extract(String reference, String documentKind, String text,
+                                        Long documentId, String actor) {
         LoanApplication app = applications.findByReference(reference)
                 .orElseThrow(() -> ApiException.notFound("No application: " + reference));
         governance.enforce(com.helix.common.governance.AiCapability.COLLATERAL_INTEL, app.getJurisdiction());
@@ -130,15 +151,42 @@ public class CollateralIntelligenceService {
         if (!MANDATORY.containsKey(kind)) {
             throw ApiException.badRequest("Unknown documentKind '" + documentKind + "'");
         }
+
+        // Resolve the source text. Prefer an uploaded Document's real extracted text (a first-class,
+        // DMS-backed document that appears in the deal's document list); else fall back to typed text.
+        String content = text;
+        Long sourceDocumentId = null;
+        String docSignal = null;
+        if (documentId != null) {
+            Document doc = documents.findById(documentId)
+                    .orElseThrow(() -> ApiException.notFound("No document: " + documentId));
+            if (!app.getId().equals(doc.getApplicationId())) {
+                throw ApiException.badRequest(
+                        "Document " + documentId + " does not belong to application " + reference);
+            }
+            String extracted = doc.getExtractedText();
+            if (extracted == null || extracted.isBlank()) {
+                throw ApiException.badRequest("Document " + documentId + " has no extracted text ("
+                        + "extractionMethod " + doc.getExtractionMethod() + ") — nothing to derive from");
+            }
+            content = extracted;
+            sourceDocumentId = documentId;
+            docSignal = "derived from uploaded document #" + documentId + " ('" + doc.getFileName()
+                    + "', " + doc.getExtractionMethod() + ")";
+        }
+        if (content == null || content.isBlank()) {
+            throw ApiException.badRequest("Provide either 'text' or a 'documentId' with extracted text");
+        }
+
         Map<String, Object> fields = new LinkedHashMap<>();
         List<String> signals = new ArrayList<>();
         switch (kind) {
-            case "VALUATION_REPORT" -> parseValuation(text, fields, signals);
-            case "TITLE_DEED"       -> parseTitleDeed(text, fields, signals);
-            case "INSURANCE_POLICY" -> parseInsurance(text, fields, signals);
-            case "VEHICLE_RC"       -> parseVehicleRc(text, fields, signals);
-            case "BOND_CERT"        -> parseBondCert(text, fields, signals);
-            case "PG_DEED"          -> parsePgDeed(text, fields, signals);
+            case "VALUATION_REPORT" -> parseValuation(content, fields, signals);
+            case "TITLE_DEED"       -> parseTitleDeed(content, fields, signals);
+            case "INSURANCE_POLICY" -> parseInsurance(content, fields, signals);
+            case "VEHICLE_RC"       -> parseVehicleRc(content, fields, signals);
+            case "BOND_CERT"        -> parseBondCert(content, fields, signals);
+            case "PG_DEED"          -> parsePgDeed(content, fields, signals);
             default                 -> { /* unreachable */ }
         }
 
@@ -151,7 +199,7 @@ public class CollateralIntelligenceService {
         // unusable reply → the deterministic regex extraction, byte-identical to today.
         boolean llmDrafted = false;
         String llmModel = null;
-        LlmResult lr = llmExtractCollateral(kind, text, MANDATORY.get(kind));
+        LlmResult lr = llmExtractCollateral(kind, content, MANDATORY.get(kind));
         if (lr.usable()) {
             Map<String, Object> aiFields = parseAiFields(lr.text());
             if (aiFields != null && !aiFields.isEmpty()) {
@@ -160,6 +208,11 @@ public class CollateralIntelligenceService {
                 llmDrafted = true;
                 llmModel = lr.model();
             }
+        }
+        // Provenance signal: note when the text came from an uploaded document (added after the LLM
+        // branch, which resets the signals list).
+        if (docSignal != null) {
+            signals.add(docSignal);
         }
 
         List<String> missing = new ArrayList<>();
@@ -173,7 +226,8 @@ public class CollateralIntelligenceService {
         e.setApplicationReference(reference);
         e.setDocumentKind(kind);
         e.setCollateralType(KIND_TO_COLLATERAL_TYPE.get(kind));
-        e.setSourceText(text.length() > 3900 ? text.substring(0, 3900) : text);
+        e.setSourceText(content.length() > 3900 ? content.substring(0, 3900) : content);
+        e.setSourceDocumentId(sourceDocumentId);
         e.setFields(fields);
         e.setMissingMandatory(missing);
         e.setSignals(signals);
@@ -185,6 +239,9 @@ public class CollateralIntelligenceService {
         detail.put("fields", fields.size());
         detail.put("missingMandatory", missing.size());
         detail.put("advisory", true);
+        if (sourceDocumentId != null) {
+            detail.put("sourceDocumentId", sourceDocumentId);
+        }
         if (llmDrafted) {
             detail.put("llmDrafted", true);
             detail.put("llmModel", llmModel);
@@ -678,8 +735,12 @@ public class CollateralIntelligenceService {
                 + "SUGGESTION only: a named human reviews and confirms it before any collateral value is "
                 + "recorded, and it never sets an authoritative figure. Reuse figures from the document "
                 + "verbatim and never invent values. Return ONLY a JSON object. capability=collateral-extract";
+        // Grounding slice sized for REAL uploaded documents (multi-page valuation reports / title
+        // deeds), not just short pastes — matches the doc-intelligence precedent (6000 chars) so a
+        // configured model can see fields that appear past the first page. The deterministic regex
+        // parser always runs over the full untruncated text, so no field is missed either way.
         String user = "Document kind: " + kind + "\nExpected fields: " + expected + "\nDocument text:\n"
-                + (text.length() > 3500 ? text.substring(0, 3500) : text);
+                + (text.length() > 6000 ? text.substring(0, 6000) : text);
         return safeComplete(LlmRequest.of("collateral-extract", system, user));
     }
 

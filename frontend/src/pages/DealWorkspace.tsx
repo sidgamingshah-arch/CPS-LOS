@@ -1050,6 +1050,9 @@ function CollateralIntelBlock({ reference, cols, onChange }: { reference: string
   const [docText, setDocText] = useState(
     "VALUATION REPORT\nProperty type: Industrial warehouse\nAddress: Plot 14, Phase 2, Pune\nMarket value: INR 4,80,00,000\nValuation date: 2026-03-15\nValuer: Knight & Co Surveyors\n",
   );
+  const [file, setFile] = useState<File | null>(null);
+  // Bump to reset the native file <input> after a successful upload (uncontrolled element).
+  const [fileKey, setFileKey] = useState(0);
 
   const [revalCollateralId, setRevalCollateralId] = useState<number | "">("");
   const [revalNewMV, setRevalNewMV] = useState<string>("");
@@ -1067,7 +1070,7 @@ function CollateralIntelBlock({ reference, cols, onChange }: { reference: string
 
   return (
     <Card title="Collateral intelligence"
-      sub="Type-aware extraction over an uploaded collateral document, LTV-driven revaluation alerts, and the charge-Excel export. Advisory; live collateral values move only on human confirm."
+      sub="Type-aware extraction over a collateral document — upload a file (real DMS store + OCR/PDF text) or paste text — plus LTV-driven revaluation alerts and the charge-Excel export. Advisory; live collateral values move only on human confirm."
       right={<GovFlow ai="AI EXTRACTS / FLAGS" human="HUMAN CONFIRMS" note="capital projection untouched" />}>
 
       {/* Type-aware extraction */}
@@ -1078,12 +1081,27 @@ function CollateralIntelBlock({ reference, cols, onChange }: { reference: string
               {KINDS.map((k) => <option key={k} value={k}>{k.replace(/_/g, " ")}</option>)}
             </select>
           </Field>
+          <Field label="Upload collateral document" hint="PDF / image / text — stored in the DMS; the document's real text is extracted (PDFBox / UTF-8 / OCR) and fed to the same extractor. The file also appears in the deal's document list.">
+            <input key={fileKey} type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </Field>
+          <Button busy={busy} disabled={!file}
+            onClick={() => go(async () => {
+              // Advisory-only: this creates a SUGGESTED extraction, not a Collateral, so — like the
+              // "Extract from text" button below — it does NOT call onChange() (the collateral list
+              // only changes on confirm).
+              await origination.colUploadAndExtract(reference, file!, docKind, actor);
+              setFile(null); setFileKey((k) => k + 1);
+              extractions.reload();
+            }, "Document uploaded — collateral extracted, review below")}>
+            Upload &amp; extract
+          </Button>
+          <div className="muted" style={{ fontSize: 12, margin: "8px 0" }}>— or paste the document text —</div>
           <Field label="Document text">
             <textarea rows={6} value={docText} onChange={(e) => setDocText(e.target.value)} />
           </Field>
           <Button busy={busy} disabled={!docText.trim()}
             onClick={() => go(async () => { await origination.colExtract(reference, { documentKind: docKind, text: docText }, actor); extractions.reload(); }, "Collateral extracted — review below")}>
-            Extract collateral
+            Extract from text
           </Button>
         </div>
         <div>
