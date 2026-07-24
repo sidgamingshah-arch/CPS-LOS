@@ -173,8 +173,19 @@ must(st, hits, "get screening hits")
 hit = hits[0]
 check("matchedName reads back as plaintext (== legalName)", hit.get("matchedName") == LEGAL,
       str(hit.get("matchedName")))
-check("aiRationale reads back as plaintext (non-empty, cites the matched name)",
-      isinstance(hit.get("aiRationale"), str) and LEGAL in hit["aiRationale"], str(hit.get("aiRationale")))
+# Governed policy: with no LLM configured the AI rationale is NOT fabricated (aiRationale is null,
+# rationaleSource=NONE). A named human records the rationale instead — that human free text is the
+# encrypted-PII column exercised here.
+check("aiRationale is NOT fabricated when no model is configured (governed)",
+      not hit.get("aiRationale"), str(hit.get("aiRationale")))
+HUMAN_RATIONALE = f"Named-human review: weak partial match on {LEGAL}; no secondary identifier."
+st, rr = call("POST", f"/counterparty/api/counterparties/screening/{hit['id']}/rationale",
+              {"rationale": HUMAN_RATIONALE}, actor="compliance.officer")
+must(st, rr, "record named-human rationale")
+check("humanRationale reads back as plaintext (non-empty, cites the matched name)",
+      isinstance(rr.get("humanRationale"), str) and LEGAL in rr["humanRationale"], str(rr.get("humanRationale")))
+check("rationaleSource is HUMAN after recording", rr.get("rationaleSource") == "HUMAN",
+      str(rr.get("rationaleSource")))
 
 NOTE = f"Weak partial match, no secondary identifier — cleared by analyst {RUN}."
 st, disp = call("POST", f"/counterparty/api/counterparties/screening/{hit['id']}/disposition",
@@ -194,13 +205,13 @@ if raw is None:
     print("  (skipping raw-DB assertions — counterparty.db not reachable from the harness)")
 else:
     mn = raw.get("matched_name")
-    ar = raw.get("ai_rationale")
+    hr = raw.get("human_rationale")
     dn = raw.get("disposition_note")
     check("stored matched_name != plaintext (encrypted at rest)", mn is not None and mn != LEGAL, str(mn))
     check("plaintext legalName does NOT appear in the stored matched_name", mn and LEGAL not in mn, str(mn))
     check("stored matched_name is AES-GCM Base64 ciphertext", looks_like_ciphertext(mn), str(mn))
-    check("stored ai_rationale != plaintext + no plaintext leak",
-          ar is not None and LEGAL not in ar and looks_like_ciphertext(ar), str(ar))
+    check("stored human_rationale != plaintext + no plaintext leak",
+          hr is not None and LEGAL not in hr and looks_like_ciphertext(hr), str(hr))
     check("stored disposition_note is ciphertext (note not stored in the clear)",
           dn is not None and dn != NOTE and NOTE not in dn and looks_like_ciphertext(dn), str(dn))
 

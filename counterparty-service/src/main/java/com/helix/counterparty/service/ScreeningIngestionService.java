@@ -70,8 +70,10 @@ public class ScreeningIngestionService {
             hit.setMatchScore(h.matchScore());
             hit.setSeverity(h.severity());
             hit.setMatchedAttributes(h.matchedAttributes());
+            // Provenance note from the real inbound vendor feed (not fabricated AI text).
             hit.setAiRationale("Ingested from %s (%s); cites matched fields %s. Disposition is a named human action."
                     .formatted(envelope.vendor(), prov.sourceReference(), h.matchedAttributes()));
+            hit.setRationaleSource("EXTERNAL");
             hit.setDisposition(ScreeningDisposition.OPEN.name());
             hits.save(hit);
             persisted++;

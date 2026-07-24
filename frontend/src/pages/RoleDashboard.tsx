@@ -4,7 +4,7 @@ import {
   tasks, queries, counterparty, origination, ipNotes, notings,
   optimiser, cad, perfection, mer, portfolio, masters, fmt,
 } from "../api";
-import { Card, Stat, Badge, Button, useAsync } from "../ui";
+import { Card, Stat, Badge, Button, humanize, useAsync } from "../ui";
 import { personaFor, personaLabel } from "../role-scope";
 
 /**
@@ -136,21 +136,42 @@ export default function RoleDashboard() {
             : "Case-management work-items assigned to me (workflow-service)."}
           loading={taskLane.loading} rows={taskLane.data} empty={empty}
           cols={[
-            { head: "Assignee", cell: (t) => <span className="mono">{t.assignee || "—"}</span> },
-            { head: "Task", cell: (t) => <span className="mono">{t.taskRef}</span> },
-            { head: "Type", cell: (t) => <Badge>{t.taskType}</Badge> },
-            { head: "Subject", cell: (t) => <span className="mono">{t.subjectRef}</span> },
-            { head: "Status", cell: (t) => <Badge kind={t.slaBreached ? "bad" : t.status === "COMPLETED" ? "ok" : "warn"}>{t.status}</Badge> },
+            {
+              head: "Work item",
+              cell: (t) => (
+                <span>
+                  {humanize(t.taskType) || "Task"}
+                  {(t.priority === "HIGH" || t.priority === "URGENT") && <> <Badge kind="warn">{humanize(t.priority)}</Badge></>}
+                  <br /><small className="prov">{t.taskRef}</small>
+                </span>
+              ),
+            },
+            {
+              head: "About",
+              cell: (t) => (
+                <span>
+                  {humanize(t.subjectType) || "Subject"}
+                  <br /><small className="mono prov">{t.subjectRef || "—"}</small>
+                </span>
+              ),
+            },
+            { head: "Owner", cell: (t) => <span className="mono">{t.assignee || "unassigned"}</span> },
+            {
+              head: "Due",
+              cell: (t) => t.dueAt
+                ? <span>{fmt.date(t.dueAt)}{t.slaBreached && <> <Badge kind="bad">overdue</Badge></>}</span>
+                : <span className="muted">—</span>,
+            },
+            { head: "Status", cell: (t) => <Badge kind={t.slaBreached ? "bad" : t.status === "COMPLETED" ? "ok" : "warn"}>{humanize(t.status)}</Badge> },
           ]}
           onRowClick={(t) => t.subjectRef && nav("workspace", t.subjectRef)} />
 
         <ListCard title="My queries / RFIs" sub="Collaboration threads addressed to me (awaiting my response)."
           loading={myQueries.loading} rows={myQueries.data} empty={empty}
           cols={[
-            { head: "Ref", cell: (q) => <span className="mono">{q.threadRef || q.ref}</span> },
-            { head: "Topic", cell: (q) => q.topic || q.subjectType || "—" },
-            { head: "Subject", cell: (q) => <span className="mono">{q.subjectRef}</span> },
-            { head: "Status", cell: (q) => <Badge kind={q.status === "RESOLVED" ? "ok" : q.status === "OPEN" ? "warn" : "info"}>{q.status}</Badge> },
+            { head: "Query", cell: (q) => <span>{q.topic || humanize(q.subjectType) || "—"}<br /><small className="prov">{q.threadRef || q.ref}</small></span> },
+            { head: "About", cell: (q) => <span className="mono">{q.subjectRef}</span> },
+            { head: "Status", cell: (q) => <Badge kind={q.status === "RESOLVED" ? "ok" : q.status === "OPEN" ? "warn" : "info"}>{humanize(q.status)}</Badge> },
           ]} />
       </div>
 

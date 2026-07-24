@@ -85,6 +85,11 @@ public class CounterpartyService {
         cp.setAdverseMedia(req.adverseMedia());
         cp.setHighRiskJurisdiction(req.highRiskJurisdiction());
         cp.setComplexOwnership(req.complexOwnership());
+        // Config-defined flags beyond the six typed booleans (RISK_FLAG master keys).
+        if (req.extraRiskFlags() != null && !req.extraRiskFlags().isEmpty()) {
+            cp.getExtraRiskFlags().putAll(req.extraRiskFlags());
+        }
+        cp.setCreatedBy(actor);   // maker — anchors the maker≠checker KYC sign-off gate
 
         CddTier tier = deriveCddTier(cp);
         cp.setCddTier(tier.name());
@@ -262,12 +267,30 @@ public class CounterpartyService {
     }
 
     /**
-     * Final CDD risk-tier sign-off (PRD §1 HITL gate). KYC cannot be verified while
-     * any screening hit above MEDIUM severity remains open or escalated.
+     * Final CDD risk-tier sign-off (PRD §1 HITL gate). Two conditions, both enforced here:
+     * (1) maker≠checker — the named human who signs off must differ from the counterparty's
+     *     creator (SoD; skipped only for legacy rows with no recorded creator);
+     * (2) no open hits ≥ MEDIUM — KYC cannot be verified while any screening hit at/above
+     *     MEDIUM severity remains OPEN or ESCALATED.
      */
     @Transactional
     public Counterparty verifyKyc(Long id, String actor) {
         Counterparty cp = get(id);
+        // Authorization (maker≠checker) is checked BEFORE the business-rule block below: an
+        // actor who may not sign off learns nothing about the screening state. Fail-CLOSED on an
+        // unknown creator — a record with no recorded creator (should not occur after the
+        // audit-trail backfill) is refused rather than silently bypassing SoD.
+        String creator = cp.getCreatedBy();
+        if (creator == null || creator.isBlank()) {
+            throw ApiException.forbiddenAutonomy(
+                    "Segregation of duties cannot be verified: this counterparty has no recorded creator; "
+                            + "a named creator must be established before CDD sign-off");
+        }
+        if (creator.equals(actor)) {
+            throw ApiException.forbiddenAutonomy(
+                    "Segregation of duties: the CDD risk-tier sign-off must be a different named human "
+                            + "than the counterparty's creator (" + creator + ")");
+        }
         List<ScreeningHit> open = hits.findByCounterpartyIdOrderBySeverityDesc(id).stream()
                 .filter(h -> isBlockingDisposition(h.getDisposition()))
                 .filter(h -> severityRank(h.getSeverity()) >= severityRank("MEDIUM"))
