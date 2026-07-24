@@ -132,6 +132,18 @@ export const counterparty = {
   list: () => call<any[]>("/counterparty/api/counterparties", "GET"),
   get: (id: number) => call<any>(`/counterparty/api/counterparties/${id}`, "GET"),
   create: (body: any, actor: string) => call<any>("/counterparty/api/counterparties", "POST", body, actor),
+  // Create-screen autofill: upload a trade licence / MOA / AOA and get advisory field SUGGESTIONS
+  // back (legalName / cin / registrationNo / gstin + detected extras). Nothing is persisted — the
+  // human edits the pre-filled form and submits it separately. Multipart real-file path.
+  extractDoc: (file: File, declaredType: string | undefined, actor: string) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    if (declaredType) form.append("declaredType", declaredType);
+    return postForm<any>("/counterparty/api/counterparties/extract-doc", form, actor);
+  },
+  // Same advisory extraction from pasted document text (JSON path).
+  extractDocText: (text: string, declaredType: string | undefined, actor: string) =>
+    call<any>("/counterparty/api/counterparties/extract-doc", "POST", { text, declaredType }, actor),
   verifyKyc: (id: number, actor: string) =>
     call<any>(`/counterparty/api/counterparties/${id}/kyc/verify`, "POST", undefined, actor),
   runScreening: (id: number, actor: string) =>

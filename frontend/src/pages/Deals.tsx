@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { counterparty, origination, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, type Col, DataTable, EmptyState, Field, QuickCreate, statusTone, useAsync } from "../ui";
@@ -12,6 +12,10 @@ export default function Deals() {
   const facilities = useCodes("FACILITY_TYPE");
   const collaterals = useCodes("COLLATERAL_TYPE");
   const [creating, setCreating] = useState(false);
+
+  // Refresh the borrower list whenever the New-deal form opens so a counterparty onboarded
+  // earlier in the session appears in the picker without needing a full page reload.
+  useEffect(() => { if (creating) cps.reload(); }, [creating]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cols: Col<any>[] = [
     { key: "reference", header: "Reference", render: (a) => <span className="mono">{a.reference}</span> },

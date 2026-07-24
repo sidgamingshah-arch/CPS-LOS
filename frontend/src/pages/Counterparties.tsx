@@ -184,12 +184,38 @@ export default function Counterparties() {
     const flagDefs = [...(catalogue.data && catalogue.data.length ? catalogue.data : FALLBACK_FLAGS)]
       .sort((a: any, b: any) => (a?.payload?.order ?? 999) - (b?.payload?.order ?? 999));
     const [f, setF] = useState<any>({
-      legalName: "", legalForm: "PRIVATE_LTD", registrationNo: "", jurisdiction: "IN-RBI",
-      segment: "MID_CORPORATE", sector: "MANUFACTURING", country: "IN",
+      legalName: "", legalForm: "PRIVATE_LTD", registrationNo: "", cin: "", gstin: "",
+      jurisdiction: "IN-RBI", segment: "MID_CORPORATE", sector: "MANUFACTURING", country: "IN",
     });
     const [flags, setFlags] = useState<Record<string, boolean>>({});
     const [busy, setBusy] = useState(false);
+    const [extracting, setExtracting] = useState(false);
+    const [detected, setDetected] = useState<any | null>(null);
     const toggle = (k: string) => setFlags((prev) => ({ ...prev, [k]: !prev[k] }));
+
+    // AI EXTRACTS → HUMAN CONFIRMS: upload a trade licence / MOA / AOA; the deterministic parser
+    // returns SUGGESTED fields that PRE-FILL the form. Nothing is committed — the human edits and
+    // submits. We only overwrite a field the parser actually found, never a value already typed.
+    const handleExtract = async (file: File) => {
+      setExtracting(true);
+      try {
+        const s = await counterparty.extractDoc(file, undefined, actor);
+        setF((prev: any) => ({
+          ...prev,
+          legalName: s.legalName || prev.legalName,
+          registrationNo: s.registrationNo || prev.registrationNo,
+          cin: s.cin || prev.cin,
+          gstin: s.gstin || prev.gstin,
+        }));
+        setDetected(s);
+        notify(
+          s.contentDerived
+            ? "Fields pre-filled from the document — review & edit before onboarding"
+            : "No fields recognised in the document — enter the details manually",
+          !s.contentDerived,
+        );
+      } catch (e: any) { notify(e.message, true); } finally { setExtracting(false); }
+    };
 
     const submit = async () => {
       setBusy(true);
@@ -217,10 +243,54 @@ export default function Counterparties() {
         footer={<><Button kind="subtle" onClick={onClose}>Cancel</Button>
           <Button onClick={submit} busy={busy} disabled={!f.legalName}>Onboard</Button></>}
       >
+        {/* AI EXTRACTS → HUMAN CONFIRMS: optional doc upload that pre-fills the identity fields.
+            Advisory only — nothing is committed until the human reviews and clicks Onboard. */}
+        <div className="card" style={{ margin: "0 0 12px", background: "var(--ai-soft)", borderStyle: "dashed" }}>
+          <div className="flexbetween" style={{ alignItems: "flex-start" }}>
+            <div>
+              <div className="flexbetween" style={{ gap: 8, justifyContent: "flex-start" }}>
+                <b style={{ fontSize: 13 }}>Autofill from a document</b>
+                <GovFlow ai="AI EXTRACTS" human="HUMAN CONFIRMS" note="trade licence · MOA · AOA — advisory, editable, never auto-committed" />
+              </div>
+              <div className="sub" style={{ marginTop: 4 }}>
+                Upload a trade licence / MOA / AOA (PDF or text). The deterministic parser suggests
+                the legal name, CIN, registration no and GSTIN from the document's own text — you
+                still review, edit and submit.
+              </div>
+            </div>
+            <label className="btn subtle" style={{ cursor: extracting ? "wait" : "pointer", whiteSpace: "nowrap" }}>
+              {extracting ? "Extracting…" : "⇪ Upload document"}
+              <input
+                type="file"
+                accept=".pdf,.txt,.csv,.md,application/pdf,text/plain"
+                style={{ display: "none" }}
+                disabled={extracting}
+                onChange={(e) => { const file = e.target.files?.[0]; if (file) handleExtract(file); e.currentTarget.value = ""; }}
+              />
+            </label>
+          </div>
+          {detected && (detected.incorporationDate || detected.registeredAddress || (detected.directors || []).length > 0) && (
+            <div className="prov-chips" style={{ marginTop: 8 }}>
+              <AiBadge label="ALSO DETECTED · advisory (not stored)" />
+              {detected.incorporationDate && <span className="prov-chip">incorporated · {detected.incorporationDate}</span>}
+              {detected.registeredAddress && <span className="prov-chip">address · {detected.registeredAddress}</span>}
+              {(detected.directors || []).length > 0 && <span className="prov-chip">directors · {detected.directors.join(", ")}</span>}
+            </div>
+          )}
+        </div>
         <Field label="Legal name" required>
           <input value={f.legalName} onChange={(e) => setF({ ...f, legalName: e.target.value })} placeholder="e.g. Meridian Steel Ltd" />
         </Field>
         <div className="grid cols-2">
+          <Field label="Registration / trade-licence no" hint="CIN or trade-licence number">
+            <input value={f.registrationNo} onChange={(e) => setF({ ...f, registrationNo: e.target.value })} placeholder="e.g. U27100MH2015PLC123456" />
+          </Field>
+          <Field label="CIN" hint="India Corporate Identification Number">
+            <input value={f.cin} onChange={(e) => setF({ ...f, cin: e.target.value })} placeholder="21-char CIN" />
+          </Field>
+          <Field label="GSTIN" hint="India GST identification number">
+            <input value={f.gstin} onChange={(e) => setF({ ...f, gstin: e.target.value })} placeholder="15-char GSTIN" />
+          </Field>
           <Field label="Jurisdiction">
             <select value={f.jurisdiction} onChange={(e) => setF({ ...f, jurisdiction: e.target.value })}>
               {jurisdictions.map((j: any) => <option key={j.code} value={j.code}>{j.code}</option>)}

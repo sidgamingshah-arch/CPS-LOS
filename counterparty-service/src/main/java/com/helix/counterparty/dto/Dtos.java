@@ -41,6 +41,38 @@ public final class Dtos {
     public record HumanRationaleRequest(@NotBlank String rationale) {
     }
 
+    // ---- create-screen document autofill (advisory extraction; nothing persisted) --------------
+
+    /** JSON body for the extract-doc endpoint when the caller pastes raw document text. */
+    public record ExtractDocRequest(String text, String declaredType) {
+    }
+
+    /**
+     * Advisory field suggestions parsed FROM an uploaded document (trade licence / MOA / AOA) or
+     * pasted text, for pre-filling the counterparty create form. Every value is copied verbatim
+     * from the document — a named human still reviews, edits and submits. NOTHING is persisted by
+     * the extract call; this is a pure read/parse. {@code fields} carries the raw
+     * {@code key -> {value, confidence, sourceLine}} map (with a 1-based line citation) and the
+     * top-level fields are the convenience prefill values.
+     */
+    public record DocFieldSuggestion(
+            String detectedType,
+            boolean contentDerived,
+            String extractionMethod,   // TEXT | PDFBOX | EMPTY | UNSUPPORTED
+            int pageCount,
+            double overallConfidence,
+            String legalName,
+            String registrationNo,
+            String cin,
+            String gstin,
+            String incorporationDate,
+            String registeredAddress,
+            List<String> directors,
+            Map<String, Object> fields,
+            boolean advisory,
+            List<String> notes) {
+    }
+
     /** Declared ownership structure for UBO resolution (PRD §1, US-1.1). */
     public record UboStructureRequest(
             @NotNull List<NodeInput> nodes,
