@@ -120,7 +120,7 @@ export default function CopilotDock({ reference }: { reference?: string }) {
       };
       setMessages((m) => [...m, { role: "assistant", text: a?.answer ?? "", meta }]);
     } catch (e: any) {
-      const emsg = e?.message || "Couldn't reach the copilot.";
+      const emsg = e?.message || "Couldn't reach Credit Intel.";
       // Surface inline too — the toast shares the dock's corner and would be hidden.
       setMessages((m) => [...m, { role: "assistant", text: emsg, meta: { error: true } }]);
       notify(emsg, true);
@@ -132,22 +132,22 @@ export default function CopilotDock({ reference }: { reference?: string }) {
   // Collapsed → a single floating launcher (FAB) in the bottom-right corner.
   if (!open) {
     return (
-      <button className="copilot-fab" aria-label="Open Copilot" title="Copilot — grounded, non-binding assistant"
+      <button className="copilot-fab" aria-label="Open Credit Intel" title="Credit Intel — grounded, non-binding assistant"
         onClick={() => setOpen(true)}>
         <span className="copilot-fab-glyph" aria-hidden="true">✦</span>
-        <span className="copilot-fab-label">Copilot</span>
+        <span className="copilot-fab-label">Credit Intel</span>
       </button>
     );
   }
 
   return (
-    <div className="copilot-dock" role="dialog" aria-label="Copilot chat">
+    <div className="copilot-dock" role="dialog" aria-label="Credit Intel chat">
       <div className="copilot-dock-head">
         <div className="cd-title">
           <AiBadge />
-          <span className="cd-name">Copilot</span>
+          <span className="cd-name">Credit Intel</span>
         </div>
-        <button className="cd-close" aria-label="Minimise Copilot" title="Minimise" onClick={() => setOpen(false)}>×</button>
+        <button className="cd-close" aria-label="Minimise Credit Intel" title="Minimise" onClick={() => setOpen(false)}>×</button>
       </div>
 
       <div className="copilot-dock-sub">
@@ -167,7 +167,7 @@ export default function CopilotDock({ reference }: { reference?: string }) {
         {messages.map((m, i) => <MessageBubble key={i} msg={m} />)}
         {busy && (
           <div className="cd-msg assistant">
-            <div className="cd-bubble typing" aria-label="Copilot is thinking"><span /><span /><span /></div>
+            <div className="cd-bubble typing" aria-label="Credit Intel is thinking"><span /><span /><span /></div>
           </div>
         )}
       </div>
@@ -183,8 +183,8 @@ export default function CopilotDock({ reference }: { reference?: string }) {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && ask()}
-          placeholder={reference ? `Ask about ${reference}…` : "Ask the copilot…"}
-          aria-label="Ask the copilot"
+          placeholder={reference ? `Ask about ${reference}…` : "Ask Credit Intel…"}
+          aria-label="Ask Credit Intel"
         />
         <button className="cd-send" aria-label="Send" disabled={busy || !q.trim()} onClick={() => ask()}>
           {busy ? "…" : "↵"}

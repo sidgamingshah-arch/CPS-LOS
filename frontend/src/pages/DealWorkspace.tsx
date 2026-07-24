@@ -461,7 +461,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
       </section>
 
       {/* Copilot, scoped to this deal */}
-      <Card title="Ask the copilot about this deal" sub="Scoped to your role, grounded in this deal's data, non-binding (PRD §6.6).">
+      <Card title="Ask Credit Intel about this deal" sub="Scoped to your role, grounded in this deal's data, non-binding (PRD §6.6).">
         <CopilotPanel reference={reference} compact />
       </Card>
     </div>

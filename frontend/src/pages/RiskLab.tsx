@@ -9,6 +9,7 @@ import { useApp } from "../app-context";
 import { AiBadge, Badge, Button, Card, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
 import { ExplainCard, type XaiFactor } from "../xai";
 import { useCodes } from "../code-values";
+import { ACTION_MIN_ROLE, authorityLabel, can, canRole } from "../authz";
 
 type SectorOutlook = string;
 
@@ -60,10 +61,13 @@ function ScoringApproval({ approval, confirmed, busy, actor, onApprove }: {
   actor: string;
   onApprove: () => void;
 }) {
+  const { roles } = useApp();
   const authority: string = approval?.requiredAuthority ?? "CREDIT_OFFICER";
   const status: string = approval?.approvalStatus ?? (confirmed ? "APPROVED" : "PENDING_APPROVAL");
   const required: boolean = approval?.approvalRequired !== false;
   const decided = status === "APPROVED" || confirmed;
+  // Advisory authority hint — mirrors the server confirm-rank gate (default-permissive).
+  const mayApprove = canRole(authority, roles, actor);
   return (
     <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }}>
       <div className="inline" style={{ gap: 12, flexWrap: "wrap", alignItems: "center" }}>
@@ -74,9 +78,12 @@ function ScoringApproval({ approval, confirmed, busy, actor, onApprove }: {
         <Unchanged label="GRADE / PD PRESERVED" />
       </div>
       <div className="inline" style={{ gap: 10, marginTop: 10, alignItems: "center" }}>
-        <Button kind="primary" busy={busy} disabled={busy || decided} onClick={onApprove}>
-          {decided ? "Approved" : `Approve as ${authority}`}
-        </Button>
+        <span className="authz-gate"
+          title={mayApprove ? undefined : `Requires ${authorityLabel(authority)} authority`}>
+          <Button kind="primary" busy={busy} disabled={busy || decided || !mayApprove} onClick={onApprove}>
+            {decided ? "Approved" : `Approve as ${authority}`}
+          </Button>
+        </span>
         <span className="muted" style={{ fontSize: 12 }}>
           Acting as {actor} · confirming actor must hold {authority} authority; the overrider cannot self-approve.
         </span>
@@ -569,7 +576,7 @@ export default function RiskLab() {
 function ManualOverrideCard({ refValue, rating, model, onChanged }: {
   refValue: string; rating: any; model: any; onChanged: () => void;
 }) {
-  const { actor, notify } = useApp();
+  const { actor, notify, roles: actorRoles } = useApp();
   const grades = useCodes("GRADE_SCALE");
   const reasons = useCodes("OVERRIDE_REASON");
   const roles = useCodes("OVERRIDE_ROLE");
@@ -591,6 +598,9 @@ function ManualOverrideCard({ refValue, rating, model, onChanged }: {
     : 0;
   const roleLimit = roleLimits[role] ?? 1;
   const exceedsLimit = Math.abs(notch) > roleLimit;
+  // Advisory authority hint — an override changes the authoritative grade, so it
+  // needs at least override authority (default-permissive; server is the gate).
+  const mayOverride = can("rating.override", actorRoles, actor);
 
   async function submit() {
     if (!proposedGrade) { notify("Pick the grade you are overriding to", true); return; }
@@ -681,9 +691,12 @@ function ManualOverrideCard({ refValue, rating, model, onChanged }: {
       )}
 
       <div className="btnrow">
-        <Button kind="primary" busy={busy} onClick={submit} disabled={!proposedGrade || !reasonCode || exceedsLimit || busy}>
-          Apply manual override
-        </Button>
+        <span className="authz-gate"
+          title={mayOverride ? undefined : `Requires ${authorityLabel(ACTION_MIN_ROLE["rating.override"])} authority`}>
+          <Button kind="primary" busy={busy} onClick={submit} disabled={!proposedGrade || !reasonCode || exceedsLimit || busy || !mayOverride}>
+            Apply manual override
+          </Button>
+        </span>
         <span className="muted">Acting as {actor}</span>
         <Unchanged label="DETERMINISTIC PD/CAPITAL RE-DERIVED" />
       </div>

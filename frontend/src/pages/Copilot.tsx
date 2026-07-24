@@ -6,7 +6,7 @@ export default function Copilot() {
     <div className="grid">
       {/* Governance banner — same pattern as Risk Lab / Pricing Lab */}
       <div className="gov-banner">
-        <h3>Ask anything. The copilot answers from your data — or refuses.</h3>
+        <h3>Ask anything. Credit Intel answers from your data — or refuses.</h3>
         <div className="gb-sub">
           A persona-scoped, grounded-and-cited, <b>non-binding</b> conversational layer that fans out read-only across the
           nine services. It refuses to fabricate, and refuses credit-consequential actions — routing them to the gated workflow.
@@ -19,7 +19,7 @@ export default function Copilot() {
         </div>
       </div>
 
-      <Card title="Conversational copilot"
+      <Card title="Conversational Credit Intel"
             sub="Persona-scoped, grounded-and-cited, non-binding (PRD §6.6). It refuses to fabricate and refuses credit-consequential actions — routing them to the gated workflow."
             right={<GovFlow ai="USER ASKS · AI ANSWERS" human="HUMAN ACTS" note="answers cite the source; actions route to the gated workflow" />}>
         <CopilotPanel />

@@ -225,7 +225,7 @@ export default function Commentary() {
         right={<GovFlow ai="AI DRAFTS" human="HUMAN APPROVES" />}
       >
         <div className="muted" style={{ fontSize: 13, lineHeight: 1.65 }}>
-          Commentary is drafted by an AI copilot grounded on deal data retrieved live from the
+          Commentary is drafted by an AI assistant grounded on deal data retrieved live from the
           platform. Every draft is labelled <Badge kind="ai">DRAFT</Badge> and must be{" "}
           <Badge kind="ok">CONFIRMED</Badge> or <Badge kind="bad">REJECTED</Badge> by a named human
           analyst before it may appear in a credit proposal. No figure, grade, or capital number is

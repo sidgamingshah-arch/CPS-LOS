@@ -45,7 +45,7 @@ export default function CopilotPanel({ reference, compact }: { reference?: strin
         </Field>
       </div>
       <div className="btnrow">
-        <Button onClick={() => ask()} busy={busy}>Ask copilot</Button>
+        <Button onClick={() => ask()} busy={busy}>Ask Credit Intel</Button>
         {!compact && EXAMPLES.map((ex) => (
           <button key={ex} className="btn subtle" style={{ fontSize: 11 }} onClick={() => { setQ(ex); ask(ex); }}>{ex}</button>
         ))}

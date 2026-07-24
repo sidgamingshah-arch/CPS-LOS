@@ -61,6 +61,7 @@ export default function IpNotes() {
           ) : (
             <DataTable
               id="ip-notes"
+              initialSort={{ key: "createdAt", dir: "desc" }}
               columns={columns}
               rows={list.data || []}
               rowKey={(r) => r.ipNoteRef}

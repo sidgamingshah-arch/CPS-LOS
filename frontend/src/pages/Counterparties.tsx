@@ -6,6 +6,7 @@ import {
   humanize, InfoDot, Modal, QuickCreate, SimChip, statusTone, Tabs, Unchanged, useAsync,
 } from "../ui";
 import { useCodes } from "../code-values";
+import { differsFromCreator } from "../authz";
 
 // A SAMPLE ownership structure that pre-fills the UBO editor — a placeholder to edit, NOT real
 // data. The graph is whatever a human declares here; the backend runs a deterministic ownership
@@ -103,6 +104,7 @@ export default function Counterparties() {
         <Card title="Counterparties">
           <DataTable
             id="counterparties"
+            initialSort={{ key: "id", dir: "desc" }}
             columns={cols}
             rows={list.data || []}
             rowKey={(c) => String(c.id)}
@@ -486,8 +488,12 @@ export default function Counterparties() {
                   </div>
                   <div className="btnrow" style={{ marginTop: 8 }}>
                     <Button onClick={() => { setTab("screening"); act(() => counterparty.runScreening(id, actor), "Screening run"); }}>Run screening</Button>
-                    <Button kind="ghost" disabled={c.kycStatus === "VERIFIED"}
-                      onClick={() => act(() => counterparty.verifyKyc(id, actor), "KYC verified — CDD tier signed off")}>Sign off CDD / Verify KYC</Button>
+                    <span className="authz-gate"
+                      title={differsFromCreator(actor, c.createdBy) ? undefined
+                        : "Requires a different signer than the creator — segregation of duties"}>
+                      <Button kind="ghost" disabled={c.kycStatus === "VERIFIED" || !differsFromCreator(actor, c.createdBy)}
+                        onClick={() => act(() => counterparty.verifyKyc(id, actor), "KYC verified — CDD tier signed off")}>Sign off CDD / Verify KYC</Button>
+                    </span>
                     <Button kind="danger" disabled={c.lifecycleStatus === "CLOSED"}
                       onClick={() => {
                         const reason = window.prompt("Close relationship — reason?");
@@ -602,7 +608,12 @@ export default function Counterparties() {
           </div>
         )}
         <div className="btnrow" style={{ marginTop: 10 }}>
-          <Button onClick={() => act(() => initiation.approve(id, actor), "Prospect promoted to obligor")}>Promote to obligor</Button>
+          <span className="authz-gate"
+            title={differsFromCreator(actor, c.createdBy) ? undefined
+              : "Requires a different approver than the creator — segregation of duties"}>
+            <Button disabled={!differsFromCreator(actor, c.createdBy)}
+              onClick={() => act(() => initiation.approve(id, actor), "Prospect promoted to obligor")}>Promote to obligor</Button>
+          </span>
           <Button kind="ghost" onClick={() => {
             const reason = window.prompt("Drop this prospect — reason?");
             if (reason) act(() => initiation.decide(id, { proceed: false, reason }, actor), "Prospect dropped");
