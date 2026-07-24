@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { origination, commentary, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, EmptyState, Field, GovFlow, Stat, useAsync } from "../ui";
+import { Badge, Button, Card, EmptyState, Field, GovFlow, RichText, Stat, useAsync } from "../ui";
 import { CitationList, normalizeCitations } from "../xai";
 
 // ── types ──────────────────────────────────────────────────────────────────
@@ -281,11 +281,12 @@ export default function Commentary() {
                 ))}
               </select>
             </Field>
-            <Field label="Hint (optional)">
-              <textarea
-                rows={2}
+            <Field label="Hint (optional)" hint="Rich text — stored as markdown; no HTML is ever rendered.">
+              <RichText
+                rows={3}
                 value={draftHint}
-                onChange={(e) => setDraftHint(e.target.value)}
+                onChange={setDraftHint}
+                ariaLabel="Drafting hint"
                 placeholder="E.g. focus on leverage trend and covenant headroom…"
               />
             </Field>

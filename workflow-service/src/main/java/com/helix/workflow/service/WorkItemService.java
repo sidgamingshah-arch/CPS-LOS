@@ -48,7 +48,9 @@ public class WorkItemService {
     private static final Logger log = LoggerFactory.getLogger(WorkItemService.class);
 
     private static final List<String> OPEN_STATES = List.of("OPEN", "ASSIGNED");
-    private static final List<String> TERMINAL = List.of("COMPLETED", "WITHDRAWN", "CANCELLED", "SENT_BACK");
+    // "LAPSED" is a terminal, auto-movement-only status (no task is ever LAPSED today), so adding
+    // it here leaves every existing flow byte-identical while blocking re-work on a lapsed task.
+    private static final List<String> TERMINAL = List.of("COMPLETED", "WITHDRAWN", "CANCELLED", "SENT_BACK", "LAPSED");
 
     private final WorkItemRepository items;
     private final WorkItemEventRepository events;
@@ -95,6 +97,7 @@ public class WorkItemService {
         wi.setDedupeKey(dedupe);
         wi.setPriority(req.priority() == null ? 5 : req.priority());
         wi.setCreatedBy(actor);
+        wi.setAutoLapseAfterHours(req.autoLapseAfterHours());
         wi.setPayload(req.payload() == null ? Map.of() : req.payload());
 
         PoolSpec pool = resolvePool(req.queueKey());
@@ -366,6 +369,48 @@ public class WorkItemService {
         audit.human(actor, "TASK_WITHDRAWN", "WorkItem", taskRef,
                 "Withdrew " + wi.getTaskType() + " for " + wi.getSubjectRef(), Map.of("reason", str(note)));
         return saved;
+    }
+
+    // =============================================================== auto-lapse (SYSTEM, config-driven)
+
+    /**
+     * Read-only candidate scan for the auto-movement sweep: still-open tasks that explicitly
+     * declared an {@code autoLapseAfterHours} window. Tasks that never set the field (every task
+     * created today) are excluded, so the sweep is a strict no-op on the existing case book.
+     */
+    @Transactional(readOnly = true)
+    public List<WorkItem> autoLapseCandidates() {
+        return items.findByAutoLapseAfterHoursNotNullAndStatusInOrderByIdAsc(OPEN_STATES);
+    }
+
+    /**
+     * Auto-lapse a single work-item as SYSTEM — its OWN short transaction (this is a distinct
+     * bean, so the caller's non-transactional sweep opens a fresh REQUIRED tx; no REQUIRES_NEW,
+     * so the single-connection SQLite pool never deadlocks). Idempotent: a task no longer open
+     * or whose window has not elapsed is left untouched and {@code false} is returned.
+     */
+    @Transactional
+    public boolean autoLapse(String taskRef, Instant now) {
+        WorkItem wi = items.findByTaskRef(taskRef).orElse(null);
+        if (wi == null || !OPEN_STATES.contains(wi.getStatus()) || wi.getAutoLapseAfterHours() == null) {
+            return false;
+        }
+        Instant base = wi.getCreatedAt();
+        if (base == null) return false;
+        Instant deadline = base.plusSeconds(wi.getAutoLapseAfterHours() * 3600L);
+        if (!now.isAfter(deadline)) return false;   // window not yet elapsed
+        wi.setStatus("LAPSED");
+        if (wi.getDueAt() != null && now.isAfter(wi.getDueAt())) {
+            wi.setSlaBreached(true);
+        }
+        items.save(wi);
+        appendEvent(taskRef, "AUTO_LAPSED", "system.auto-movement", "SYSTEM",
+                "Auto-lapsed after " + wi.getAutoLapseAfterHours() + "h of inactivity");
+        audit.engine("TASK_AUTO_LAPSED", "WorkItem", taskRef,
+                "Auto-lapsed " + wi.getTaskType() + " for " + wi.getSubjectRef(),
+                Map.of("subjectRef", str(wi.getSubjectRef()),
+                        "autoLapseAfterHours", wi.getAutoLapseAfterHours()));
+        return true;
     }
 
     // =============================================================== reads

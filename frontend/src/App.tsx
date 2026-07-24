@@ -35,6 +35,8 @@ import Masters from "./pages/Masters";
 import Structuring from "./pages/Structuring";
 import Scf from "./pages/Scf";
 import Syndication from "./pages/Syndication";
+import SyndicationIm from "./pages/SyndicationIm";
+import Portal from "./pages/Portal";
 import DocIntel from "./pages/DocIntel";
 import RiskLab from "./pages/RiskLab";
 import RiskNotes from "./pages/RiskNotes";
@@ -83,6 +85,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "home", label: "My Workspace" },
       { key: "dashboard", label: "Portfolio Dashboard" },
       { key: "copilot", label: "Copilot" },
+      { key: "portal", label: "Customer Portal" },
     ],
   },
   {
@@ -96,6 +99,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "structuring", label: "Deal Structuring" },
       { key: "scf", label: "Supply-Chain Finance" },
       { key: "syndication", label: "Syndication" },
+      { key: "syndicationim", label: "Syndication IM" },
       { key: "spreading", label: "Financial Spreading" },
       { key: "bankingasr", label: "Banking ASR" },
       { key: "docintel", label: "Doc Intelligence" },
@@ -175,6 +179,8 @@ const CRUMB: Record<string, string> = {
   structuring: "Specialised CP variants · group · joint/dual-obligor · syndication · FI ICR · renewal copy",
   scf: "Supply-chain finance · anchor programme · deterministic spoke eligibility · PRODUCT_PAPER noting · limit via limit-service",
   syndication: "Syndicate book · fee waterfall · agency reconciliation · participant feed",
+  syndicationim: "Information Memorandum · draft → circulate → finalise · versioned · human-gated (finaliser ≠ creator)",
+  portal: "External counterparty portal · token-secured RFI response + document upload",
   docintel: "GenAI document intelligence · extraction (human-confirmed) · language · translation · checks",
   counterparties: "Onboarding · KYC/KYB · UBO",
   groups: "Advisory group identification · group insights · combined credit proposal (member figures unchanged)",
@@ -490,6 +496,8 @@ export default function App() {
             {view === "structuring" && <Structuring />}
             {view === "scf" && <Scf />}
             {view === "syndication" && <Syndication />}
+            {view === "syndicationim" && <SyndicationIm />}
+            {view === "portal" && <Portal />}
             {view === "docintel" && <DocIntel />}
             {view === "counterparties" && <Counterparties />}
             {view === "groups" && <Groups />}

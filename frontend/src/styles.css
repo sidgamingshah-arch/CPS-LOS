@@ -1637,3 +1637,121 @@ tr.dt-row-selected td {
 .cw-tl td { padding: 6px 8px; border-bottom: 1px solid var(--hairline-soft); vertical-align: top; }
 .cw-tl tr:last-child td { border-bottom: none; }
 
+
+/* ============================================================================
+   QuickCreate modal (gap #52) — a compact, focus-trapped create dialog reused on
+   list screens. Mirrors the cmdk scrim treatment for a coherent overlay language.
+   ============================================================================ */
+.qc-scrim {
+  position: fixed; inset: 0; background: rgba(4,46,57,.34); z-index: 90;
+  display: flex; align-items: flex-start; justify-content: center; padding: 10vh 16px 16px;
+}
+.qc-modal {
+  width: min(520px, 94vw); background: var(--canvas); border: 1px solid var(--hairline);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-hover);
+  display: flex; flex-direction: column; max-height: 82vh; overflow: hidden;
+}
+.qc-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 16px 18px 12px; border-bottom: 1px solid var(--hairline);
+}
+.qc-head h3 { margin: 0; font-size: 16px; }
+.qc-head .sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.qc-close {
+  border: 0; background: transparent; color: var(--muted); font-size: 22px; line-height: 1;
+  cursor: pointer; padding: 0 4px; border-radius: var(--r-sm);
+}
+.qc-close:hover { color: var(--ink); background: var(--surface-strong); }
+.qc-body { padding: 14px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.qc-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 18px; border-top: 1px solid var(--hairline); background: var(--surface-soft);
+}
+
+/* ============================================================================
+   RichText markdown editor + MarkdownView (gap #58) — XSS-safe, no dependency.
+   ============================================================================ */
+.rt { border: 1px solid var(--hairline); border-radius: var(--r-md); background: var(--canvas); overflow: hidden; }
+.rt.disabled { opacity: .7; }
+.rt-toolbar {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 6px 8px; border-bottom: 1px solid var(--hairline-soft); background: var(--surface-soft);
+}
+.rt-tb-btn {
+  border: 1px solid transparent; background: transparent; color: var(--body);
+  border-radius: var(--r-sm); padding: 3px 9px; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; line-height: 1.4;
+}
+.rt-tb-btn:hover:not(:disabled) { background: var(--surface-strong); color: var(--ink); }
+.rt-tb-btn:disabled { color: var(--muted-soft); cursor: default; }
+.rt-tb-btn.rt-tb-toggle { border-color: var(--hairline); }
+.rt-tb-btn.rt-tb-toggle.active { background: var(--ocean-8); border-color: var(--ocean-8); color: #fff; }
+.rt-tb-spacer { flex: 1 1 auto; }
+.rt-textarea {
+  width: 100%; border: 0; resize: vertical; padding: 10px 12px; font-size: 13px;
+  box-shadow: none !important; background: var(--canvas); color: var(--ink); display: block;
+}
+.rt-textarea:focus { outline: none; }
+.rt-preview { padding: 10px 12px; min-height: 60px; }
+.rt-hint { padding: 5px 12px 7px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--hairline-soft); }
+
+.md-view { font-size: 13.5px; line-height: 1.6; color: var(--body); }
+.md-view p { margin: 0 0 8px; }
+.md-view p:last-child { margin-bottom: 0; }
+.md-view ul, .md-view ol { margin: 0 0 8px; padding-left: 22px; }
+.md-view li { margin: 2px 0; }
+.md-view strong { font-weight: 700; color: var(--ink); }
+.md-view a { color: var(--ocean-8); text-decoration: underline; }
+
+/* ============================================================================
+   Customer / vendor Portal (gap #23) — deliberately distinct, minimal, external.
+   ============================================================================ */
+.portal-shell {
+  max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; padding: 4px 0 24px;
+}
+.portal-head {
+  border-radius: var(--r-lg); padding: 22px 24px; color: var(--on-dark);
+  background: linear-gradient(135deg, var(--surface-dark) 0%, var(--surface-dark-2) 100%);
+}
+.portal-brand { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.portal-brand span { color: var(--ocean-4); font-weight: 600; }
+.portal-tag { color: var(--on-dark-soft); font-size: 12.5px; margin-top: 4px; letter-spacing: .02em; }
+.portal-card {
+  background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-lg);
+  padding: 18px 20px; box-shadow: var(--shadow);
+}
+.portal-card h3 { margin: 0 0 4px; font-size: 17px; }
+.portal-section-title { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.portal-lede { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.portal-gate { border-top: 3px solid var(--ocean-8); }
+.portal-token-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.portal-token-input {
+  flex: 1 1 240px; min-width: 200px; padding: 10px 12px; font-family: var(--font-mono);
+  border: 1px solid var(--hairline); border-radius: var(--r-md); font-size: 13px;
+}
+.portal-error { margin-top: 12px; }
+.portal-req-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.portal-topic-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.portal-topic { margin: 2px 0 0; }
+.portal-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.portal-deadline { font-size: 12px; color: var(--warn); font-weight: 600; }
+.portal-question {
+  margin-top: 12px; padding: 12px 14px; background: var(--light-blue-soft);
+  border-radius: var(--r-md); font-size: 14px; line-height: 1.55; color: var(--ink);
+}
+.portal-link {
+  margin-top: 12px; border: 0; background: transparent; color: var(--ocean-8);
+  font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0;
+}
+.portal-link:hover { text-decoration: underline; }
+.portal-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.portal-msg { border: 1px solid var(--hairline-soft); border-left: 3px solid var(--ocean-5); border-radius: var(--r-md); padding: 10px 12px; }
+.portal-msg-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.portal-msg-author { font-weight: 600; font-size: 13px; color: var(--ink); }
+.portal-msg-at { font-size: 11.5px; color: var(--muted); }
+.portal-msg-body { font-size: 13.5px; line-height: 1.55; color: var(--body); white-space: pre-wrap; }
+.portal-reply, .portal-token-input:focus { outline: none; }
+.portal-reply { width: 100%; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--r-md); font-size: 13.5px; resize: vertical; }
+.portal-upload-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.portal-file { margin-top: 8px; font-size: 12.5px; }
+.portal-foot { text-align: center; font-size: 11.5px; color: var(--muted); padding: 4px 0; }

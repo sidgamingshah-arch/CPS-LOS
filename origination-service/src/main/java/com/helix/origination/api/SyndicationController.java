@@ -3,11 +3,15 @@ package com.helix.origination.api;
 import com.helix.common.export.Export;
 import com.helix.origination.dto.SyndicationDtos.AllocateRequest;
 import com.helix.origination.dto.SyndicationDtos.AllocationResult;
+import com.helix.origination.dto.SyndicationDtos.CreateImRequest;
+import com.helix.origination.dto.SyndicationDtos.ImSectionRequest;
 import com.helix.origination.dto.SyndicationDtos.SyndicateBook;
+import com.helix.origination.entity.InformationMemorandum;
 import com.helix.origination.entity.SecondaryTransfer;
 import com.helix.origination.entity.SyndicationAllocation;
 import com.helix.origination.entity.SyndicationFeedBatch;
 import com.helix.origination.entity.SyndicationInvitation;
+import com.helix.origination.service.InformationMemorandumService;
 import com.helix.origination.service.SyndicationService;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
@@ -31,9 +35,11 @@ import java.util.List;
 public class SyndicationController {
 
     private final SyndicationService syndication;
+    private final InformationMemorandumService memoranda;
 
-    public SyndicationController(SyndicationService syndication) {
+    public SyndicationController(SyndicationService syndication, InformationMemorandumService memoranda) {
         this.syndication = syndication;
+        this.memoranda = memoranda;
     }
 
     /** Full syndicate book — lenders, shares, fee waterfall, funded-to-date. */
@@ -158,5 +164,63 @@ public class SyndicationController {
     @GetMapping("/{reference}/transfers")
     public List<SecondaryTransfer> transfers(@PathVariable String reference) {
         return syndication.transfersFor(reference);
+    }
+
+    // ============================================================ information memorandum
+
+    /** Create a DRAFT IM for a syndication deal, seeded with the standard grounded sections. */
+    @PostMapping("/{reference}/im")
+    public InformationMemorandum createIm(@PathVariable String reference,
+                                          @RequestBody(required = false) CreateImRequest req,
+                                          @RequestHeader("X-Actor") String actor) {
+        return memoranda.create(reference, req == null ? null : req.title(), actor);
+    }
+
+    /** List every IM / version for a deal (newest version first). */
+    @GetMapping("/{reference}/im")
+    public List<InformationMemorandum> memorandaFor(@PathVariable String reference) {
+        return memoranda.listForDeal(reference);
+    }
+
+    /** Fetch a single IM by numeric id. */
+    @GetMapping("/im/{id}")
+    public InformationMemorandum getIm(@PathVariable Long id) {
+        return memoranda.get(id);
+    }
+
+    /** Upsert one section (DRAFT / CIRCULATED only). */
+    @PostMapping("/im/{id}/section")
+    public InformationMemorandum upsertImSection(@PathVariable Long id,
+                                                 @Valid @RequestBody ImSectionRequest req,
+                                                 @RequestHeader("X-Actor") String actor) {
+        return memoranda.upsertSection(id, req.key(), req.content(), actor);
+    }
+
+    /** DRAFT -> CIRCULATED. */
+    @PostMapping("/im/{id}/circulate")
+    public InformationMemorandum circulateIm(@PathVariable Long id,
+                                             @RequestHeader("X-Actor") String actor) {
+        return memoranda.circulate(id, actor);
+    }
+
+    /** CIRCULATED -> FINAL. SoD: the finaliser must differ from the drafter (403 otherwise). */
+    @PostMapping("/im/{id}/finalise")
+    public InformationMemorandum finaliseIm(@PathVariable Long id,
+                                            @RequestHeader("X-Actor") String actor) {
+        return memoranda.finalise(id, actor);
+    }
+
+    /** Withdraw an IM from any live state. */
+    @PostMapping("/im/{id}/withdraw")
+    public InformationMemorandum withdrawIm(@PathVariable Long id,
+                                            @RequestHeader("X-Actor") String actor) {
+        return memoranda.withdraw(id, actor);
+    }
+
+    /** Append-only re-draft: clone a FINAL / WITHDRAWN IM into a fresh DRAFT at version+1. */
+    @PostMapping("/im/{id}/redraft")
+    public InformationMemorandum redraftIm(@PathVariable Long id,
+                                           @RequestHeader("X-Actor") String actor) {
+        return memoranda.redraft(id, actor);
     }
 }

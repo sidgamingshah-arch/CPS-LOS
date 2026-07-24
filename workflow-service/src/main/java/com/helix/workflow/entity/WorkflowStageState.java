@@ -98,4 +98,30 @@ public class WorkflowStageState {
      */
     @Column(name = "queue_key", length = 60)
     private String queueKey;
+
+    /**
+     * OPTIONAL auto-advance window in hours (pack stage key {@code autoAdvanceAfterHours}).
+     * When non-null AND the stage has dwelt past it, the auto-movement sweep completes this
+     * stage as SYSTEM and enters the next. NULL for every existing seeded pack, so the engine
+     * behaves byte-identically when the key is absent. A human-gated ({@code humanGate=true})
+     * or decision-gate ({@code autonomy=D}) stage is NEVER auto-advanced even if it declares
+     * the key — a human still owns that transition.
+     */
+    @Column(name = "auto_advance_after_hours")
+    private Integer autoAdvanceAfterHours;
+
+    /**
+     * OPTIONAL auto-lapse window in hours (pack stage key {@code autoLapseAfterHours}). When
+     * non-null AND the stage has dwelt past it, the auto-movement sweep lapses the WHOLE
+     * instance to {@link #autoLapseToStatus}. NULL for every existing seeded pack.
+     */
+    @Column(name = "auto_lapse_after_hours")
+    private Integer autoLapseAfterHours;
+
+    /**
+     * OPTIONAL terminal status an auto-lapse moves the instance to (pack stage key
+     * {@code autoLapseToStatus}); defaults to {@code LAPSED} at sweep time when null.
+     */
+    @Column(name = "auto_lapse_to_status", length = 20)
+    private String autoLapseToStatus;
 }
