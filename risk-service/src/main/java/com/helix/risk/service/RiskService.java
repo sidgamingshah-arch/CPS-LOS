@@ -441,7 +441,15 @@ public class RiskService {
      */
     private Map<String, Integer> notchLimitsByRole() {
         Map<String, Integer> configured = masters.codeValueScores(OVERRIDE_ROLE_DOMAIN);
-        return configured.isEmpty() ? NOTCH_LIMITS : configured;
+        if (configured.isEmpty()) {
+            return NOTCH_LIMITS;
+        }
+        // Merge PER-ROLE over the built-in floor: a partial/malformed OVERRIDE_ROLE master (one that
+        // omits or fails to score a role) must NOT silently zero that role's ceiling — it falls back
+        // to the conservative built-in for any canonical role the master doesn't cover.
+        Map<String, Integer> merged = new java.util.HashMap<>(NOTCH_LIMITS);
+        merged.putAll(configured);
+        return merged;
     }
 
     @Transactional(readOnly = true)

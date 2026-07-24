@@ -149,8 +149,11 @@ check("extract stamped an AI audit event (actorType AI)",
 
 print("\n== C. Create still works with the human-reviewed suggestions ==")
 st, cp = call("POST", "/counterparty/api/counterparties", {
+    # The suggested GSTIN is an illustrative sample value; a human reviewing the prefill would drop
+    # or correct it before submit (identifiers are optional + checksum-validated on create). We keep
+    # the human-verified CIN/registrationNo; the GSTIN suggestion is asserted separately in §A.
     "legalName": sug["legalName"], "legalForm": "PRIVATE_LTD",
-    "registrationNo": sug["registrationNo"], "cin": sug["cin"], "gstin": sug["gstin"],
+    "registrationNo": sug["registrationNo"], "cin": sug["cin"],
     "jurisdiction": "IN-RBI", "segment": "MID_CORPORATE", "sector": "MANUFACTURING", "country": "IN",
     "listedEntity": False, "regulatedFi": False, "pep": False, "adverseMedia": False,
     "highRiskJurisdiction": False, "complexOwnership": False}, actor="rm.user")

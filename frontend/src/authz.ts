@@ -54,9 +54,10 @@ export function canRole(
   if (list.some((r) => SEE_ALL_ROLES.has(r))) return true;  // see-all role → permissive
   const required = minRole ? (AUTHORITY_RANK[up(minRole)] ?? 0) : 0;
   if (required === 0) return true;                          // requirement not rank-mapped → permissive
-  // Any role we do NOT positively recognise as ranked → permissive: never narrow
-  // for an unknown role (mirrors role-scope's "roles present but all unmapped → see-all").
-  if (list.some((r) => !(r in AUTHORITY_RANK))) return true;
+  // Permissive only when EVERY held role is unranked (mirrors role-scope's "roles present but
+  // ALL unmapped → see-all"). If the actor holds at least one recognised role we narrow on it —
+  // a single unknown tag alongside a known role must not bypass the gate.
+  if (list.every((r) => !(r in AUTHORITY_RANK))) return true;
   const best = Math.max(...list.map((r) => AUTHORITY_RANK[r] ?? 0));
   return best >= required;
 }

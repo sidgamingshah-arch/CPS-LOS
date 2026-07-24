@@ -95,8 +95,8 @@ export default function Syndication() {
         )}
 
         {ref && !b && (
-          <EmptyState glyph="◌" title="No lenders captured on this deal yet"
-            sub="Add LEAD_BANK + PARTICIPANT_LENDER participants in Deal Structuring, then the syndicate book, fee waterfall and reconciliation appear here." />
+          <EmptyState glyph="◌" title="Not a syndicated deal, or no lenders captured yet"
+            sub="Pick a syndicated deal above, or set the deal's structure to SYNDICATION and add LEAD_BANK + PARTICIPANT_LENDER participants in Deal Structuring — then the syndicate book, fee waterfall and reconciliation appear here." />
         )}
       </Card>
 

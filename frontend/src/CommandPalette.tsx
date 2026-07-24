@@ -90,10 +90,12 @@ export default function CommandPalette({
     setActive(0);
     setRecent(loadRecent());
     setTimeout(() => inputRef.current?.focus(), 0);
-    counterparty.list().then(setCps).catch(() => setCps([]));
-    origination.list().then(setDeals).catch(() => setDeals([]));
-    initiation.listGroups().then(setGroups).catch(() => setGroups([]));
-    portfolio.exposures().then(setExposures).catch(() => setExposures([]));
+    // Refetch the dynamic directories on every open so newly-created records are searchable, but
+    // keep the previously-loaded data on a transient failure (never blank a good directory to []).
+    counterparty.list().then(setCps).catch(() => setCps((p) => p ?? []));
+    origination.list().then(setDeals).catch(() => setDeals((p) => p ?? []));
+    initiation.listGroups().then(setGroups).catch(() => setGroups((p) => p ?? []));
+    portfolio.exposures().then(setExposures).catch(() => setExposures((p) => p ?? []));
     if (jurisdictions === null) config.jurisdictions().then(setJurisdictions).catch(() => setJurisdictions([]));
     if (countries === null) limits.countries().then(setCountries).catch(() => setCountries([]));
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps

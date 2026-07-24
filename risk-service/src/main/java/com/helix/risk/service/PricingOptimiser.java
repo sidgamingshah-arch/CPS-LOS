@@ -64,7 +64,9 @@ public class PricingOptimiser {
         CapitalResult capital = risk.latestCapital(reference);
         RulePackDto pack = config.activePack(in.jurisdiction(), "PRICING");
 
-        double hurdle = pack.number("hurdle_raroc", 0.15);
+        // Segment-aware hurdle (per-segment override wins), matching the authoritative PricingEngine
+        // — the goal-seek baseline must target the same hurdle the deal is priced against.
+        double hurdle = PricingEngine.resolveHurdle(pack, in.segment());
         // Same FTP as the deterministic recommended price, so the optimiser baseline matches.
         double costOfFunds = ftpService.computeFtp(in.currency(), in.jurisdiction(),
                 in.facilityType(), in.tenorMonths(), pack.number("cost_of_funds", 0.075)).ftp();

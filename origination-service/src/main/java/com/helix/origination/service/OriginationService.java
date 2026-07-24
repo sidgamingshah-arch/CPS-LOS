@@ -647,6 +647,17 @@ public class OriginationService {
         return result;
     }
 
+    /**
+     * True if the deal already carries ANY financial-spread periods (confirmed OR a work-in-progress
+     * draft). The confirm-time auto-draft uses this to only ever populate an EMPTY grid — it must
+     * never replace an analyst's existing manual draft or a confirmed spread.
+     */
+    @Transactional(readOnly = true)
+    public boolean hasSpread(String reference) {
+        LoanApplication app = applications.findByReference(reference).orElse(null);
+        return app != null && !periods.findByApplicationIdOrderByOrdinalAsc(app.getId()).isEmpty();
+    }
+
     // ------------------------------------------------- AI-extract -> grid -> human-confirm
 
     /**

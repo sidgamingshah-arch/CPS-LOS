@@ -97,7 +97,7 @@ public class PricingEngine {
      * {@code hurdle_raroc_overrides} map wins; otherwise the flat {@code hurdle_raroc} (default 0.15).
      * Config-driven throughout — the admin surfaces this via {@link #hurdleView}.
      */
-    public double resolveHurdle(RulePackDto pricingPack, String segment) {
+    public static double resolveHurdle(RulePackDto pricingPack, String segment) {
         double flat = pricingPack.number("hurdle_raroc", 0.15);
         if (segment != null && !segment.isBlank()) {
             Map<String, Object> overrides = pricingPack.map("hurdle_raroc_overrides");

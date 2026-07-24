@@ -89,7 +89,6 @@ export default function DealWorkspace({ reference }: { reference: string }) {
   // CODE_VALUE dropdowns shared across the nested forms below.
   const grades = useCodes("GRADE_SCALE");
   const overrideReasons = useCodes("OVERRIDE_REASON");
-  const overrideRoles = useCodes("OVERRIDE_ROLE");
   const decisionOutcomes = useCodes("DECISION_OUTCOME");
   const facilityTypes = useCodes("FACILITY_TYPE");
   const collateralTypes = useCodes("COLLATERAL_TYPE");
@@ -478,21 +477,24 @@ export default function DealWorkspace({ reference }: { reference: string }) {
 
   function OverrideForm({ reference, onDone }: { reference: string; onDone: () => void }) {
     const [open, setOpen] = useState(false);
-    const [g, setG] = useState("BBB"); const [rc, setRc] = useState(FALLBACK_REASON); const [role, setRole] = useState("CREDIT_OFFICER"); const [note, setNote] = useState("");
+    const [g, setG] = useState("BBB"); const [rc, setRc] = useState(FALLBACK_REASON); const [note, setNote] = useState("");
     if (!open) return <Button kind="subtle" onClick={() => setOpen(true)}>Override rating…</Button>;
+    // No "acting as role" picker — the server resolves the notch authority from the acting
+    // identity's OWN ACTOR_ROLE roles (a request-body role is never a grant), and the OVERRIDE_ROLE
+    // master (not a hardcoded list) defines each role's ceiling. Deep-link to Risk Lab for the
+    // full override surface (read-only authority display + notch-limit preview).
     return (
       <div className="card" style={{ marginTop: 10, background: "#fbfaff" }}>
         <div className="grid cols-2">
           <Field label="Proposed grade"><select value={g} onChange={(e) => setG(e.target.value)}>{grades.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}</select></Field>
-          <Field label="Role"><select value={role} onChange={(e) => setRole(e.target.value)}>{overrideRoles.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}</select></Field>
           <Field label="Reason code"><select value={rc} onChange={(e) => setRc(e.target.value)}>{overrideReasons.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}</select></Field>
           <Field label="Note"><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         </div>
         <div className="btnrow">
-          <Button onClick={() => run(() => risk.overrideRating(reference, { proposedGrade: g, reasonCode: rc, role, note }, actor), "Override applied").then(() => { setOpen(false); onDone(); })}>Apply override</Button>
+          <Button onClick={() => run(() => risk.overrideRating(reference, { proposedGrade: g, reasonCode: rc, note }, actor), "Override applied").then(() => { setOpen(false); onDone(); })}>Apply override</Button>
           <Button kind="subtle" onClick={() => setOpen(false)}>Cancel</Button>
         </div>
-        <small className="prov">Notch limits: ANALYST 1 · CREDIT_OFFICER 2 · COMMITTEE unlimited.</small>
+        <small className="prov">Notch authority is resolved from your role (OVERRIDE_ROLE master) and enforced server-side; an over-limit override is rejected and must be escalated.</small>
       </div>
     );
   }

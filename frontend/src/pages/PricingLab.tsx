@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { origination, risk, optimiser, config, fmt } from "../api";
 import { useApp } from "../app-context";
-import { AiBadge, Badge, Button, Card, DeterministicBadge, EmptyState, Field, Stat, Unchanged, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, DeterministicBadge, EmptyState, Field, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
 
 interface PricingException {
   id: number;
@@ -343,7 +343,7 @@ export default function PricingLab() {
         <Card
           title="Hurdle configuration (admin)"
           sub="The RAROC hurdle is read from the PRICING rule pack — never hardcoded. It is authored under dual sign-off in Rule Packs; this panel makes the active value (and any per-segment override) visible where pricing is decided."
-          right={<AiBadge label="CONFIG · MAKER-CHECKER" />}
+          right={<HumanBadge label="CONFIG · MAKER-CHECKER" />}
         >
           {pricingPackAsync.loading && <div className="loading">Loading pricing pack…</div>}
           {!pricingPackAsync.loading && !pricingPack && (

@@ -289,38 +289,45 @@ public class DocIntelligenceService {
         audit.human(actor, "DOC_EXTRACTION_CONFIRMED", "Application", e.getApplicationReference(),
                 "Confirmed AI extraction #%d (review — figures stay a human-confirmed spread)".formatted(extractionId),
                 Map.of("extractionId", extractionId));
-        // AI LARGER ROLE: on confirming a FINANCIAL_STATEMENT extraction, AUTO-draft the spread from
-        // it so the analyst does not have to click "populate grid" separately. This is strictly
-        // ADVISORY: spreadFromExtraction rebuilds an UNCONFIRMED DRAFT (spreadConfirmed=false) — the
-        // authoritative confirmSpread gate is untouched. GUARD: never auto-draft when the deal already
-        // carries a CONFIRMED spread, so an existing authoritative figure is never clobbered by a
-        // review action (that would violate the advisory invariant; see e2e_doc_ocr / e2e_smoke §36).
-        maybeAutoDraftSpread(saved, actor);
+        // NOTE: the advisory auto-draft is intentionally NOT done here (inside confirm()'s transaction).
+        // It runs top-level from the controller AFTER this transaction commits — see
+        // autoDraftAfterConfirm() — because spreadFromExtraction is itself @Transactional and the
+        // SQLite pool is size 1: nesting it (or an afterCommit hook, which still holds the connection
+        // until afterCompletion) would deadlock / fail to acquire a connection, and a rollback-only
+        // inner tx would 500 the confirm and lose the CONFIRMED status + audit.
         return saved;
     }
 
     /**
-     * Advisory auto-draft: a confirmed FINANCIAL_STATEMENT extraction lands as a DRAFT spread.
-     * Fail-soft (never fails the confirm) and guarded to never overwrite a CONFIRMED spread.
+     * AI LARGER ROLE (advisory): after a FINANCIAL_STATEMENT extraction is CONFIRMED, auto-draft the
+     * spread from it so the analyst need not click "populate grid" separately. Strictly advisory —
+     * spreadFromExtraction rebuilds an UNCONFIRMED DRAFT (spreadConfirmed=false); the authoritative
+     * confirmSpread gate is untouched. Called TOP-LEVEL by the controller AFTER confirm() has
+     * committed (so it opens its own transaction on a free connection — no pool-1 deadlock). Fail-soft
+     * (never surfaces an error to the confirm). GUARD: only populates an EMPTY grid — never replaces
+     * an analyst's existing manual draft (hasSpread) or a confirmed authoritative spread.
      */
-    private void maybeAutoDraftSpread(DocExtraction ext, String actor) {
-        if (!"FINANCIAL_STATEMENT".equals(ext.getClassifiedType())) {
-            return;   // only financial statements carry mappable figure lines
+    public void autoDraftAfterConfirm(Long extractionId, String actor) {
+        DocExtraction ext = extractions.findById(extractionId).orElse(null);
+        if (ext == null || !"CONFIRMED".equals(ext.getStatus())
+                || !"FINANCIAL_STATEMENT".equals(ext.getClassifiedType())) {
+            return;
         }
         String ref = ext.getApplicationReference();
-        LoanApplication app = ref == null ? null : applications.findByReference(ref).orElse(null);
-        if (app == null || app.isSpreadConfirmed()) {
-            return;   // no deal, or a confirmed authoritative spread already exists → do not touch it
+        if (ref == null) {
+            return;
         }
         try {
+            if (origination.hasSpread(ref)) {
+                return;   // an existing manual/confirmed spread must never be clobbered by a review
+            }
             origination.spreadFromExtraction(ref,
-                    new SpreadFromExtractionRequest(ext.getId(), null, null, null,
-                            "Auto-drafted from confirmed extraction #" + ext.getId()),
+                    new SpreadFromExtractionRequest(extractionId, null, null, null,
+                            "Auto-drafted from confirmed extraction #" + extractionId),
                     actor);
         } catch (Exception e) {
-            // Advisory only: a mapping miss / no-figure-fields / any error must never fail the confirm.
             log.warn("Auto-draft from confirmed extraction #{} skipped (non-fatal): {}",
-                    ext.getId(), e.getMessage());
+                    extractionId, e.getMessage());
         }
     }
 

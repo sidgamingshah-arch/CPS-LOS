@@ -153,10 +153,21 @@ public class CapitalEngine {
             }
         }
 
+        // Apportion the unlinked pool by each facility's RESIDUAL (still-uncovered) exposure, not its
+        // gross exposure — so pooled collateral flows to facilities that actually need it and is not
+        // wasted on one already fully covered by its own linked collateral (which would understate
+        // total recognised cover and overstate RWA).
+        double[] residual = new double[facilities.size()];
+        double totalResidual = 0.0;
+        for (int i = 0; i < facilities.size(); i++) {
+            residual[i] = Math.max(0.0, exposures[i] - linkedCover[i]);
+            totalResidual += residual[i];
+        }
+
         double capitalRatio = capPack.number("capital_ratio_min", 0.09);
         List<FacilityCapital> out = new ArrayList<>(facilities.size());
         for (int i = 0; i < facilities.size(); i++) {
-            double pooledShare = totalExposure > 0 ? pooledCover * (exposures[i] / totalExposure) : 0.0;
+            double pooledShare = totalResidual > 0 ? pooledCover * (residual[i] / totalResidual) : 0.0;
             double cover = linkedCover[i] + pooledShare;
             double secured = Math.min(exposures[i], cover);
             double unsecured = exposures[i] - secured;
