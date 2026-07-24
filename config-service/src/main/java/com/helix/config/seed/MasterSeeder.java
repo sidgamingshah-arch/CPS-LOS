@@ -868,13 +868,16 @@ public class MasterSeeder implements CommandLineRunner {
     }
 
     private void seedFinancialTemplates() {
-        // Default — matches everything, adds nothing: the canonical chart is unchanged.
+        // Default — matches everything, adds nothing to the chart: the canonical chart is unchanged.
+        // It DOES carry the default extractionMap (extraction-field → canonical key), so the doc-intel
+        // → spread bridge maps against the governed master rather than a hard-coded table.
         masters.seedActive("FINANCIAL_TEMPLATE", "fin-default", null, map(
                 "templateKey", "fin-default", "displayName", "Standard chart of accounts",
                 "selector", map(),
                 "extraInputLines", java.util.List.of(),
                 "extraDerivedLines", java.util.List.of(),
-                "extraRatios", java.util.List.of()));
+                "extraRatios", java.util.List.of(),
+                "extractionMap", defaultExtractionMap()));
 
         // SME — adds promoter net worth (extra input) + asset-turnover & promoter-cover ratios.
         masters.seedActive("FINANCIAL_TEMPLATE", "fin-sme", null, map(
@@ -885,7 +888,8 @@ public class MasterSeeder implements CommandLineRunner {
                 "extraDerivedLines", java.util.List.of(),
                 "extraRatios", java.util.List.of(
                         finRatio("ASSET_TURNOVER", "Asset turnover (x)", "REVENUE / TOTAL_ASSETS"),
-                        finRatio("PROMOTER_COVERAGE", "Promoter cover (x)", "PROMOTER_NET_WORTH / TOTAL_DEBT"))));
+                        finRatio("PROMOTER_COVERAGE", "Promoter cover (x)", "PROMOTER_NET_WORTH / TOTAL_DEBT")),
+                "extractionMap", defaultExtractionMap()));
 
         // MANUFACTURING — adds inventory + capacity-utilisation inputs, an inventory-days
         // derived line, and an asset-turnover ratio (resolved by sector).
@@ -898,7 +902,40 @@ public class MasterSeeder implements CommandLineRunner {
                 "extraDerivedLines", java.util.List.of(
                         finDerived("INVENTORY_DAYS", "Inventory days", "INVENTORY / COGS * 365")),
                 "extraRatios", java.util.List.of(
-                        finRatio("ASSET_TURNOVER", "Asset turnover (x)", "REVENUE / TOTAL_ASSETS"))));
+                        finRatio("ASSET_TURNOVER", "Asset turnover (x)", "REVENUE / TOTAL_ASSETS")),
+                "extractionMap", defaultExtractionMap()));
+    }
+
+    /**
+     * Default extraction-field-name → canonical INPUT taxonomy key mapping — seeded onto every
+     * FINANCIAL_TEMPLATE so the doc-intel → spread bridge resolves the mapping FROM the governed
+     * master. Mirrors origination-service's built-in fallback verbatim (parity: existing spreads
+     * are unchanged). Derived lines (EBITDA, TOTAL_DEBT, …) are intentionally absent — the engine
+     * computes them; {@code total_debt} seeds LONG_TERM_DEBT so the analyst splits before confirming.
+     */
+    private Map<String, Object> defaultExtractionMap() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("revenue", "REVENUE"); m.put("sales", "REVENUE"); m.put("turnover", "REVENUE");
+        m.put("total_revenue", "REVENUE"); m.put("annual_turnover", "REVENUE");
+        m.put("cogs", "COGS"); m.put("cost_of_goods_sold", "COGS"); m.put("cost_of_sales", "COGS");
+        m.put("operating_expenses", "OPERATING_EXPENSES"); m.put("opex", "OPERATING_EXPENSES");
+        m.put("depreciation", "DEPRECIATION"); m.put("depreciation_amortisation", "DEPRECIATION");
+        m.put("interest_expense", "INTEREST_EXPENSE"); m.put("finance_cost", "INTEREST_EXPENSE");
+        m.put("interest", "INTEREST_EXPENSE");
+        m.put("tax", "TAX"); m.put("tax_expense", "TAX");
+        m.put("total_assets", "TOTAL_ASSETS");
+        m.put("current_assets", "CURRENT_ASSETS");
+        m.put("cash", "CASH"); m.put("cash_equivalents", "CASH");
+        m.put("current_liabilities", "CURRENT_LIABILITIES");
+        m.put("short_term_debt", "SHORT_TERM_DEBT"); m.put("st_debt", "SHORT_TERM_DEBT");
+        m.put("long_term_debt", "LONG_TERM_DEBT"); m.put("lt_debt", "LONG_TERM_DEBT");
+        m.put("term_debt", "LONG_TERM_DEBT");
+        m.put("total_debt", "LONG_TERM_DEBT");
+        m.put("current_portion_ltd", "CURRENT_PORTION_LTD");
+        m.put("net_worth", "NET_WORTH"); m.put("networth", "NET_WORTH"); m.put("equity", "NET_WORTH");
+        m.put("shareholders_equity", "NET_WORTH");
+        m.put("cfo", "CFO"); m.put("cash_flow_operations", "CFO"); m.put("operating_cash_flow", "CFO");
+        return m;
     }
 
     private void seedProjectionTemplates() {

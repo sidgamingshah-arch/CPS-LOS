@@ -24,8 +24,11 @@ import com.helix.origination.entity.Document;
 import com.helix.origination.entity.LoanApplication;
 import com.helix.origination.entity.ProposedFacility;
 import com.helix.origination.entity.Sublimit;
+import com.helix.origination.service.DocIntelligenceService;
 import com.helix.origination.service.OriginationService;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,10 +49,31 @@ import java.util.Map;
 @RequestMapping("/api/applications")
 public class OriginationController {
 
-    private final OriginationService origination;
+    private static final Logger log = LoggerFactory.getLogger(OriginationController.class);
 
-    public OriginationController(OriginationService origination) {
+    private final OriginationService origination;
+    private final DocIntelligenceService docIntel;
+
+    public OriginationController(OriginationService origination, DocIntelligenceService docIntel) {
         this.origination = origination;
+        this.docIntel = docIntel;
+    }
+
+    /**
+     * Chain classify → extract on upload so the analyst does not need a separate "Extract" click.
+     * The extraction is an advisory SUGGESTED row (human confirm still required); it is fail-soft —
+     * a governance-off jurisdiction or any extraction error must never fail the upload itself.
+     */
+    private Document autoExtract(Document doc, String actor) {
+        if (doc != null && doc.getId() != null) {
+            try {
+                docIntel.extract(doc.getId(), actor);
+            } catch (Exception e) {
+                log.warn("Auto-extract on upload skipped for document #{} (non-fatal): {}",
+                        doc.getId(), e.getMessage());
+            }
+        }
+        return doc;
     }
 
     @PostMapping
@@ -84,7 +108,7 @@ public class OriginationController {
     @PostMapping("/{reference}/documents")
     public Document upload(@PathVariable String reference, @Valid @RequestBody UploadDocumentRequest req,
                            @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
-        return origination.uploadDocument(reference, req, actor);
+        return autoExtract(origination.uploadDocument(reference, req, actor), actor);
     }
 
     /**
@@ -98,7 +122,7 @@ public class OriginationController {
                                @RequestParam("file") MultipartFile file,
                                @RequestParam(value = "declaredType", required = false) String declaredType,
                                @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
-        return origination.uploadDocumentFile(reference, file, declaredType, actor);
+        return autoExtract(origination.uploadDocumentFile(reference, file, declaredType, actor), actor);
     }
 
     @GetMapping("/{reference}/documents")

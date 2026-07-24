@@ -682,6 +682,16 @@ public class OriginationService {
                     + " — only a CONFIRMED extraction may pre-fill the spread");
         }
 
+        // Resolve the extraction field → canonical taxonomy MAPPING from the deal's FINANCIAL_TEMPLATE
+        // master (so "extraction happens against the template master"). Template entries OVERRIDE /
+        // AUGMENT the built-in default; when the template omits the map the built-in applies verbatim,
+        // so behaviour is byte-identical for existing seeds.
+        com.helix.origination.client.FinancialTemplateClient.FinancialTemplate tmpl =
+                financialTemplates.resolve(app.getJurisdiction(), app.getSector(), app.getSegment());
+        Map<String, String> mapping = new LinkedHashMap<>(EXTRACTION_TO_TAXONOMY);
+        mapping.putAll(tmpl.extractionMap());   // keys already lower-cased by the client
+        boolean templateMapped = !tmpl.extractionMap().isEmpty();
+
         Map<String, Object> exFields = ext.getFields() == null ? Map.of() : ext.getFields();
         Map<String, SpreadRequest.LineInput> lines = new LinkedHashMap<>();
         List<String> unmapped = new ArrayList<>();
@@ -696,7 +706,7 @@ public class OriginationService {
                 }
                 continue;
             }
-            String canonical = EXTRACTION_TO_TAXONOMY.get(e.getKey().toLowerCase(Locale.ROOT));
+            String canonical = mapping.get(e.getKey().toLowerCase(Locale.ROOT));
             Double value = extractNumber(e.getValue());
             if (canonical == null || value == null) {
                 if (value != null || isFigureLike(e.getKey())) {
@@ -735,6 +745,8 @@ public class OriginationService {
         detail.put("mappedLines", lines.size());
         detail.put("unmappedFields", unmapped);
         detail.put("advisory", true);
+        detail.put("financialTemplate", tmpl.templateKey());
+        detail.put("mappingSource", templateMapped ? "TEMPLATE_MASTER" : "BUILT_IN");
         detail.put("spreadConfirmed", result.spreadConfirmed());   // false — human confirm still required
         audit.ai("financial-spreading", "SPREAD_DRAFTED_FROM_EXTRACTION", "Application", reference,
                 "Pre-filled a DRAFT spread from confirmed extraction #%d (%d line(s) mapped) — analyst confirm still required"
@@ -742,8 +754,11 @@ public class OriginationService {
         return result;
     }
 
-    /** Recognised extraction field names -> canonical INPUT taxonomy keys. Derived lines
-     *  (EBITDA, TOTAL_DEBT, …) are intentionally absent — the engine computes them, we never seed them. */
+    /** BUILT-IN default extraction field names -> canonical INPUT taxonomy keys — the fallback used
+     *  when the resolved FINANCIAL_TEMPLATE master omits (or does not override) a mapping entry, so
+     *  spreading stays byte-identical for existing seeds. The authoritative, governed mapping lives in
+     *  the FINANCIAL_TEMPLATE master payload ({@code extractionMap}); see {@link #spreadFromExtraction}.
+     *  Derived lines (EBITDA, TOTAL_DEBT, …) are intentionally absent — the engine computes them. */
     private static final Map<String, String> EXTRACTION_TO_TAXONOMY = extractionMap();
 
     private static Map<String, String> extractionMap() {
