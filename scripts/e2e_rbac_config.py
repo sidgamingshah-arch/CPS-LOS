@@ -73,7 +73,9 @@ def invalidate_rbac(service):
 
 
 print("== 1. Effective action→role catalogue is exposed ==")
-st, cat = call("GET", "/config/api/governance/rbac/actions")
+# The effective catalogue is served by every CONSUMER service that enforces gates (it resolves the
+# ACTION_ROLE master over the enum). config-service itself is not a consumer, so read it from one.
+st, cat = call("GET", "/decision/api/governance/rbac/actions")
 cat = must(st, cat, "catalogue")
 orig = cat.get("ORIGINATE") or {}
 cpt = cat.get("CPT_REVIEW") or {}

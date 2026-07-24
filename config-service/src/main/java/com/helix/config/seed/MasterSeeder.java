@@ -490,6 +490,32 @@ public class MasterSeeder implements CommandLineRunner {
                             "description", "Roles permitted to perform " + pa.key()));
         }
 
+        // ---- ASSIGNMENT_POOL masters — the default deal work-queues (R3-2C hybrid queue) ----
+        // Entering a queueKey'd workflow stage mints a WorkItem into that queue's pool; the deal then
+        // sits with the owning role/team and moves only on advance or reassignment (it stays globally
+        // searchable — the WorkItem is a best-effort mirror that never gates the deal). Members are the
+        // seeded persona actors; an absent pool would still create the WorkItem, just OPEN/unassigned.
+        masters.seedActive("ASSIGNMENT_POOL", "origination.queue", null,
+                map("members", java.util.List.of("rm.user", "rm.head"),
+                        "supervisors", java.util.List.of("rm.head"),
+                        "strategy", "ROUND_ROBIN", "slaHours", 8,
+                        "description", "Coverage / RM origination queue (first line)"));
+        masters.seedActive("ASSIGNMENT_POOL", "analyst.queue", null,
+                map("members", java.util.List.of("analyst.user"),
+                        "supervisors", java.util.List.of("credit.ops"),
+                        "strategy", "ROUND_ROBIN", "slaHours", 8,
+                        "description", "Credit-analyst spreading / confirmation queue"));
+        masters.seedActive("ASSIGNMENT_POOL", "approval.queue", null,
+                map("members", java.util.List.of("credit.officer", "credit.committee"),
+                        "supervisors", java.util.List.of("cro"),
+                        "strategy", "ROUND_ROBIN", "slaHours", 48,
+                        "description", "DoA / committee approval queue (second line)"));
+        masters.seedActive("ASSIGNMENT_POOL", "cad.queue", null,
+                map("members", java.util.List.of("cad.maker"),
+                        "supervisors", java.util.List.of("credit.ops"),
+                        "strategy", "ROUND_ROBIN", "slaHours", 24,
+                        "description", "Credit-administration documentation queue"));
+
         // ---- PROPOSAL_FORMAT master — CAM formats that shape the credit-proposal layout ----
         // Appended LAST to minimise merge surface. One record per CAM format keyed by a format code;
         // payload = { label, segment (for defaulting from the deal's segment), sections:[{key,title}] }.

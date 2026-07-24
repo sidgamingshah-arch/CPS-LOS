@@ -457,17 +457,17 @@ public class RulePackSeeder implements CommandLineRunner {
      */
     private Map<String, Object> workflowMidCorporate(String segment, boolean ddRequired) {
         return map("segment", segment, "stages", List.of(
-                stage("INTAKE", "Application intake & document classification", "A", true, false, 4),
+                stageQ("INTAKE", "Application intake & document classification", "A", true, false, 4, "origination.queue"),
                 stage("KYC_CDD", "KYC/CDD · UBO · screening", "C", true, true, 24),
                 stage("SPREADING", "Financial spreading with provenance", "C", true, false, 12),
-                stage("SPREAD_CONFIRM", "Analyst confirms canonical spread", "—", false, true, 4),
+                stageQ("SPREAD_CONFIRM", "Analyst confirms canonical spread", "—", false, true, 4, "analyst.queue"),
                 stage("RATING", "Scorecard rating with notch-limited overrides", "D", true, true, 8),
                 stage("CAPITAL_PROJECTION", "Capital projection for RAROC (internal)", "—", false, false, 1),
                 stage("PRICING", "RAROC-based risk-adjusted pricing (advisory)", "D", true, false, 1),
                 stage("CREDIT_PROPOSAL", "Generate credit memo (grounded, cited)", "C", true, false, 2),
-                stage("APPROVAL", "DoA routing & named-human decision", "—", false, true,
-                        ddRequired ? 72 : 48),
-                stage("DOCUMENTATION", "Sanction & security documentation · CP/CS", "C", true, true, 48),
+                stageQ("APPROVAL", "DoA routing & named-human decision", "—", false, true,
+                        ddRequired ? 72 : 48, "approval.queue"),
+                stageQ("DOCUMENTATION", "Sanction & security documentation · CP/CS", "C", true, true, 48, "cad.queue"),
                 stage("LIMIT_SETUP_BOOKING", "Limit setup · core-banking booking", "—", false, true, 8),
                 stage("MONITORING", "Covenant testing · EWS · review triggers", "A", true, true, 0),
                 stage("ECL_PROVISIONING", "Periodic ECL/IRAC (parallel to bank engine)", "—", false, false, 0),
@@ -479,14 +479,14 @@ public class RulePackSeeder implements CommandLineRunner {
         // STP-eligible clean SME path (PRD §3.3) — fewer manual touch-points; clean
         // names still require a named human at the approval gate.
         return map("segment", segment, "stp_eligible", true, "stages", List.of(
-                stage("INTAKE", "Application intake & document classification", "A", true, false, 1),
+                stageQ("INTAKE", "Application intake & document classification", "A", true, false, 1, "origination.queue"),
                 stage("KYC_CDD", "Simplified KYC (where eligible)", "C", true, true, 8),
                 stage("SPREADING", "Templated spreading + alt-data", "C", true, false, 2),
-                stage("SPREAD_CONFIRM", "Analyst confirms canonical spread", "—", false, true, 1),
+                stageQ("SPREAD_CONFIRM", "Analyst confirms canonical spread", "—", false, true, 1, "analyst.queue"),
                 stage("RATING", "Templated scorecard", "D", true, true, 1),
                 stage("CAPITAL_PROJECTION", "Capital projection for RAROC", "—", false, false, 1),
                 stage("PRICING", "RAROC-based pricing", "D", true, false, 1),
-                stage("APPROVAL", "DoA routing — STP candidate, human signs", "—", false, true, 4),
+                stageQ("APPROVAL", "DoA routing — STP candidate, human signs", "—", false, true, 4, "approval.queue"),
                 stage("LIMIT_SETUP_BOOKING", "Limit setup · booking", "—", false, true, 2),
                 stage("MONITORING", "Covenants · EWS", "A", true, true, 0)));
     }
@@ -496,6 +496,18 @@ public class RulePackSeeder implements CommandLineRunner {
                                              boolean ai, boolean humanGate, int slaHours) {
         return map("key", key, "label", label, "autonomy", autonomy, "ai", ai,
                 "humanGate", humanGate, "slaHours", slaHours);
+    }
+
+    /**
+     * A workflow stage that ALSO drops into a work-queue: entering it mints a WorkItem into
+     * {@code queueKey}'s ASSIGNMENT_POOL (R3-2C hybrid deal queue). The deal then "sits" with the
+     * owning role/team and moves on explicit advance or reassignment; it stays globally searchable
+     * (the WorkItem is a best-effort mirror that never gates the deal).
+     */
+    private static Map<String, Object> stageQ(String key, String label, String autonomy,
+                                               boolean ai, boolean humanGate, int slaHours, String queueKey) {
+        return map("key", key, "label", label, "autonomy", autonomy, "ai", ai,
+                "humanGate", humanGate, "slaHours", slaHours, "queueKey", queueKey);
     }
 
     private Map<String, Object> pricing(double hurdleRaroc, double costOfFunds, double opexRate) {
