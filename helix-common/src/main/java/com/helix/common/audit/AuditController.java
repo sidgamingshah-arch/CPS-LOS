@@ -21,9 +21,24 @@ public class AuditController {
         this.auditService = auditService;
     }
 
+    /**
+     * Recent audit trail, with optional server-side filters. With no params this is the recent
+     * window (unchanged). {@code actor} filters by USER NAME (contains); {@code q} is a free-text
+     * COUNTERPARTY / text filter matching the summary (where names appear), subject id and actor;
+     * {@code eventType}/{@code actorType}/{@code subjectType}/{@code subjectId} narrow further; and
+     * {@code from}/{@code to} bound the time window.
+     */
     @GetMapping
-    public List<AuditEvent> recent() {
-        return auditService.recent();
+    public List<AuditEvent> recent(@RequestParam(required = false) String actor,
+                                   @RequestParam(required = false) String eventType,
+                                   @RequestParam(required = false) String actorType,
+                                   @RequestParam(required = false) String subjectType,
+                                   @RequestParam(required = false) String subjectId,
+                                   @RequestParam(required = false) String q,
+                                   @RequestParam(required = false) String from,
+                                   @RequestParam(required = false) String to,
+                                   @RequestParam(required = false) Integer limit) {
+        return auditService.search(actor, eventType, actorType, subjectType, subjectId, q, from, to, limit);
     }
 
     @GetMapping("/subject")

@@ -22,7 +22,10 @@ public enum AiCapability {
     GROUP_SUGGEST("group-suggest", "Group identification advisory match"),
     COPILOT("copilot", "Conversational read-only copilot"),
     MODEL_SCORING("model-scoring",
-            "Configurable scoring-model engine — advisory section/question suggestion, human-confirmed");
+            "Configurable scoring-model engine — advisory section/question suggestion, human-confirmed"),
+    FINANCIAL_EXTRACTION("financial-extraction",
+            "Financial-statement spreading extraction — AI drafts figures from documents into the "
+            + "spread grid; the analyst confirms the authoritative spread (deterministic figures unchanged)");
 
     private final String key;
     private final String description;

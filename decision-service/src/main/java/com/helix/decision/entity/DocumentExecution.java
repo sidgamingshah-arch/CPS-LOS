@@ -63,6 +63,21 @@ public class DocumentExecution {
     @Column(length = 120)
     private String waiverTag;
 
+    /** DMS {@code StoredDocument} id of the uploaded executed/received file (set on receive-with-upload). */
+    @Column(length = 60)
+    private String receivedDocId;
+
+    /** Original filename of the uploaded received document. */
+    @Column(length = 200)
+    private String receivedFileName;
+
+    /** When the executed document was received (uploaded). */
+    private Instant receivedAt;
+
+    /** Who recorded receipt of the executed document. */
+    @Column(length = 60)
+    private String receivedBy;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;

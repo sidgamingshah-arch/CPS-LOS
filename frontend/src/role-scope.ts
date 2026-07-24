@@ -76,7 +76,9 @@ export const FALLBACK: RoleWorkspaceMap = {
   CREDIT_OPS:       { groups: [GROUP_ORIGINATE, GROUP_ASSESS], landing: "home" },
   CREDIT_OFFICER:   { groups: [GROUP_ASSESS], landing: "home" },
   CREDIT_COMMITTEE: { groups: [GROUP_ASSESS], landing: "home" },
-  COMPLIANCE:       { groups: [GROUP_ORIGINATE], items: ["governance", "audit", "notifications"], landing: "home" },
+  // Compliance is a control function (2nd/3rd line): oversight of governance + audit, NOT origination.
+  // The backend also blocks a COMPLIANCE actor from originating (ProtectedAction.ORIGINATE).
+  COMPLIANCE:       { groups: [GROUP_PORTFOLIO], items: ["governance", "audit", "notifications"], landing: "home" },
   PORTFOLIO:        { groups: [GROUP_PORTFOLIO], landing: "dashboard" },
   CAD_OPS:          { groups: [GROUP_ASSESS, GROUP_PORTFOLIO], landing: "home" },
   LOAN_OPS:         { groups: [GROUP_PORTFOLIO], landing: "home" },
@@ -209,8 +211,9 @@ export function personaFor(actor: string, roles: string[]): Persona {
   if (has("CREDIT_OFFICER") || has("CREDIT_COMMITTEE") || has("CREDIT_OPS") || has("LEGAL")) return "CREDIT";
   if (has("CAD_OPS") || has("LOAN_OPS") || has("TREASURY_OPS") || has("LIE")) return "CAD";
   if (has("ANALYST")) return "RISK";
-  if (has("RM") || has("RM_HEAD") || has("COMPLIANCE")) return "RELATIONSHIP";
-  if (has("PORTFOLIO") || has("COLLECTIONS_HEAD") || has("COLLECTIONS_OPS")) return "PORTFOLIO";
+  if (has("RM") || has("RM_HEAD")) return "RELATIONSHIP";
+  // Compliance is oversight, not coverage — bucket it with the portfolio/monitoring persona.
+  if (has("PORTFOLIO") || has("COLLECTIONS_HEAD") || has("COLLECTIONS_OPS") || has("COMPLIANCE")) return "PORTFOLIO";
   return "ADMIN";
 }
 

@@ -69,6 +69,8 @@ public class CreditProposalService {
     private final AnnexureRepository annexures;
     private final PerfectionCaseRepository perfectionCases;
     private final PerfectionStepRepository perfectionSteps;
+    /** Read-only source of human-CONFIRMED AI commentary, woven into the proposal (never a figure). */
+    private final com.helix.decision.repo.ProposalCommentaryRepository commentary;
 
     public CreditProposalService(CreditProposalRepository proposals, CovenantRepository covenants,
                                  CreditDecisionRepository decisions, UpstreamClient upstream,
@@ -78,7 +80,8 @@ public class CreditProposalService {
                                  ChecklistItemRepository checklistItems,
                                  ConditionPrecedentRepository conditionPrecedents,
                                  AnnexureRepository annexures, PerfectionCaseRepository perfectionCases,
-                                 PerfectionStepRepository perfectionSteps) {
+                                 PerfectionStepRepository perfectionSteps,
+                                 com.helix.decision.repo.ProposalCommentaryRepository commentary) {
         this.proposals = proposals;
         this.covenants = covenants;
         this.decisions = decisions;
@@ -93,6 +96,7 @@ public class CreditProposalService {
         this.annexures = annexures;
         this.perfectionCases = perfectionCases;
         this.perfectionSteps = perfectionSteps;
+        this.commentary = commentary;
     }
 
     /** No-format entry point — resolves the deal-segment default (else STANDARD). Byte-identical to
@@ -152,6 +156,8 @@ public class CreditProposalService {
         for (Section s : fmt.sections()) {
             renderSection(s.key(), md, ctx, inlineSublimits);
         }
+        // Fold human-CONFIRMED AI commentary INTO the proposal (no separate module).
+        renderConfirmedCommentary(md, reference);
 
         Map<String, Object> citations = new LinkedHashMap<>();
         citations.put("envelope", "origination-service GET /api/applications/" + reference + "/envelope");
@@ -236,6 +242,8 @@ public class CreditProposalService {
         for (Section s : fmt.sections()) {
             renderSection(s.key(), md, ctx, inlineSublimits);
         }
+        // Fold human-CONFIRMED AI commentary INTO the proposal (no separate module).
+        renderConfirmedCommentary(md, reference);
 
         Map<String, Object> citations = new LinkedHashMap<>();
         citations.put("envelope", "origination-service GET /api/applications/" + reference + "/envelope");
@@ -438,6 +446,52 @@ public class CreditProposalService {
     }
 
     /** Dispatch a stable section key to its builder. Unknown keys are skipped (forward-compatible). */
+    /** Human-CONFIRMED AI commentary section labels (parallel to CommentaryService.SECTIONS). */
+    private static final Map<String, String> COMMENTARY_TITLES = new LinkedHashMap<>() {{
+        put("industry_outlook", "Industry outlook");
+        put("management_quality", "Management quality");
+        put("financial_commentary", "Financial commentary");
+        put("structure_commentary", "Structure commentary");
+        put("risk_commentary", "Risk commentary");
+    }};
+
+    /**
+     * Weave any human-CONFIRMED AI commentary for this deal INTO the proposal document, so commentary
+     * is part of the proposal itself (not a separate module). Only CONFIRMED rows flow in (DRAFT /
+     * REJECTED ignored); the newest confirmed row per section wins. No figures are produced — the
+     * narrative is advisory prose. When there is no confirmed commentary this appends nothing, so the
+     * proposal is byte-identical to today.
+     */
+    private void renderConfirmedCommentary(Md md, String reference) {
+        List<com.helix.decision.entity.ProposalCommentary> all =
+                commentary.findByApplicationReferenceOrderByIdDesc(reference);
+        if (all == null || all.isEmpty()) return;
+        Map<String, com.helix.decision.entity.ProposalCommentary> bySection = new LinkedHashMap<>();
+        for (com.helix.decision.entity.ProposalCommentary c : all) {
+            if ("CONFIRMED".equals(c.getStatus())) bySection.putIfAbsent(c.getSection(), c);
+        }
+        if (bySection.isEmpty()) return;
+        md.spacer();
+        md.h2("AI commentary — human-confirmed");
+        md.muted("Advisory narrative drafted by AI and confirmed by a named human (maker ≠ checker). "
+                + "Figures are quoted from the deterministic record; this commentary introduces none.");
+        for (String key : COMMENTARY_TITLES.keySet()) {
+            var c = bySection.remove(key);
+            if (c != null) appendCommentary(md, key, c);
+        }
+        for (var e : bySection.entrySet()) appendCommentary(md, e.getKey(), e.getValue());
+    }
+
+    private void appendCommentary(Md md, String key, com.helix.decision.entity.ProposalCommentary c) {
+        md.line("**" + COMMENTARY_TITLES.getOrDefault(key, key) + "** — confirmed by "
+                + (c.getReviewedBy() == null ? "reviewer" : c.getReviewedBy()));
+        if (c.getNarrative() != null && !c.getNarrative().isBlank()) md.line(c.getNarrative().strip());
+        List<String> bp = c.getBulletPoints();
+        if (bp != null) {
+            for (String b : bp) md.line("• " + b);
+        }
+    }
+
     private void renderSection(String key, Md md, Ctx ctx, boolean inlineSublimits) {
         switch (key) {
             case "executive_summary" -> secExecutiveSummary(md, ctx);

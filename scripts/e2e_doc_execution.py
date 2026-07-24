@@ -26,8 +26,10 @@ Builds on the existing DocGen / GeneratedDocument. This suite proves:
 
 Run against a live stack on the gateway (:8080).
 """
+import hashlib
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -69,6 +71,31 @@ def must(st, b, label, status=200):
     return b
 
 
+def upload_receive(exec_ref, doc_id, filename, content_type, data_bytes, actor="cad.officer"):
+    """Manually-built multipart/form-data POST of the executed/received file bytes."""
+    boundary = "----helixExecBoundary" + hashlib.sha1(str(time.time()).encode()).hexdigest()[:12]
+    parts = [(f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+              f"filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n").encode()
+             + data_bytes + b"\r\n",
+             f"--{boundary}--\r\n".encode()]
+    body = b"".join(parts)
+    req = urllib.request.Request(
+        GW + f"/decision/api/execution/packages/{exec_ref}/documents/{doc_id}/receive",
+        data=body, method="POST")
+    req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+    req.add_header("X-Actor", actor)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            txt = r.read().decode()
+            return r.status, (json.loads(txt) if txt else None)
+    except urllib.error.HTTPError as e:
+        txt = e.read().decode()
+        try:
+            return e.code, json.loads(txt) if txt else None
+        except Exception:
+            return e.code, txt
+
+
 # ---------------------------------------------------------------- deal setup
 print("== exec 0. Deal setup (counterparty -> application) ==")
 st, cp = call("POST", "/counterparty/api/counterparties", {
@@ -105,7 +132,19 @@ st, docB = call("POST", f"/decision/api/docs/applications/{ref}/generate",
 docB = must(st, docB, "generate docB")
 docB_id = docB["id"]
 
-# Snapshot the authoritative source documents BEFORE any execution activity.
+# GATE: a still-DRAFT source document may NOT be enrolled for execution — its confirm-lock must
+# be passed first. This is part of "no execution without the previous gates being passed".
+st, badpkg = call("POST", "/decision/api/execution/packages", {
+    "subjectRef": ref, "documents": [{"docRef": str(docB_id)}]}, actor="cad.officer")
+check("enrolling a DRAFT document for execution is rejected (confirm-lock gate, 409)",
+      st == 409, f"{st} {badpkg}")
+
+# Confirm docB too (maker != checker) so it can legitimately enter execution.
+st, confdB = call("POST", f"/decision/api/docs/{docB_id}/confirm", {"comment": "ok"}, actor="credit.officer")
+confdB = must(st, confdB, "confirm docB")
+check("docB confirmed (confirm-lock)", confdB.get("status") == "CONFIRMED", str(confdB.get("status")))
+
+# Snapshot the authoritative source documents BEFORE any execution activity (post-confirm state).
 st, docA_before = call("GET", f"/decision/api/docs/{docA_id}")
 docA_before = must(st, docA_before, "read docA before")
 st, docB_before = call("GET", f"/decision/api/docs/{docB_id}")
@@ -161,6 +200,12 @@ check("docA SENT stamps a facade e-sign envelope id (ESN-*)", bool(env) and env.
 check("package moved OFF OPEN after first activity",
       v["executionPackage"]["status"] == "IN_PROGRESS", str(v["executionPackage"]["status"]))
 
+# GATE: docA is SENT but not yet SIGNED and not deferred/waived — it cannot jump to RECEIVED.
+st, skip = call("POST", f"/decision/api/execution/packages/{exec_ref}/documents/{dexec_a}/status",
+                {"status": "RECEIVED"}, actor="cad.officer")
+check("a SENT (un-signed) document cannot be marked RECEIVED — must be SIGNED first (409)",
+      st == 409, f"{st} {skip}")
+
 for s in sigs:
     st, v = call("POST",
                  f"/decision/api/execution/packages/{exec_ref}/documents/{dexec_a}/signatories/{s['id']}/sign",
@@ -177,11 +222,16 @@ st, ds = call("POST",
               actor="cad.officer")
 check("re-signing an already-SIGNED signatory -> 409", st == 409, f"{st} {ds}")
 
-# docA received
-st, v = call("POST", f"/decision/api/execution/packages/{exec_ref}/documents/{dexec_a}/status",
-             {"status": "RECEIVED"}, actor="cad.officer")
-v = must(st, v, "receive docA")
-check("docA RECEIVED", v["documents"][0]["document"]["status"] == "RECEIVED", "")
+# docA received by UPLOADING the executed file (stored in the governed DMS). This is the new
+# "upload of received documents" path; it is still gated (docA is SIGNED, so receipt is allowed).
+st, v = upload_receive(exec_ref, dexec_a, "docA-signed.pdf", "application/pdf",
+                       b"%PDF-1.4 executed facility agreement (signed) ...", actor="cad.officer")
+v = must(st, v, "receive docA via upload")
+doc_a_recv = v["documents"][0]["document"]
+check("docA RECEIVED via upload", doc_a_recv["status"] == "RECEIVED", str(doc_a_recv["status"]))
+check("docA receipt records the uploaded file (DMS id + filename)",
+      bool(doc_a_recv.get("receivedDocId")) and doc_a_recv.get("receivedFileName") == "docA-signed.pdf",
+      str({k: doc_a_recv.get(k) for k in ("receivedDocId", "receivedFileName")}))
 check("package still IN_PROGRESS (docB outstanding)",
       v["executionPackage"]["status"] == "IN_PROGRESS", str(v["executionPackage"]["status"]))
 
@@ -240,6 +290,7 @@ types = {e.get("eventType") for e in aud}
 check("EXECUTION_PACKAGE_CREATED recorded", "EXECUTION_PACKAGE_CREATED" in types, str(types))
 check("EXECUTION_SIGNATORY_SIGNED recorded", "EXECUTION_SIGNATORY_SIGNED" in types, str(types))
 check("EXECUTION_DOCUMENT_DEFERRED recorded", "EXECUTION_DOCUMENT_DEFERRED" in types, str(types))
+check("EXECUTION_DOCUMENT_RECEIVED (upload) recorded", "EXECUTION_DOCUMENT_RECEIVED" in types, str(types))
 check("EXECUTION_PACKAGE_COMPLETED recorded", "EXECUTION_PACKAGE_COMPLETED" in types, str(types))
 check("all execution audit events are HUMAN-actor",
       all(e.get("actorType") == "HUMAN" for e in aud) if aud else False,

@@ -133,6 +133,8 @@ public class OriginationService {
      *  when helix.config-service.base-url is set — so it is read via ObjectProvider and is a
      *  no-op when absent / on a config outage (fail-open; default byte-identical to today). */
     private final ObjectProvider<FieldPolicyService> fieldPolicy;
+    /** AI-governance off-switch for the FINANCIAL_EXTRACTION capability (AI-drafted spread). */
+    private final com.helix.common.governance.AiGovernanceClient governance;
 
     public OriginationService(LoanApplicationRepository applications, DocumentRepository documents,
                               FinancialPeriodRepository periods, SpreadCellRepository cells,
@@ -147,10 +149,12 @@ public class OriginationService {
                               com.helix.origination.client.CounterpartyClient counterparties,
                               LlmClient llm,
                               ObjectProvider<FieldPolicyService> fieldPolicy,
+                              com.helix.common.governance.AiGovernanceClient governance,
                               @Autowired(required = false) WorkflowClient workflow) {
         this.counterparties = counterparties;
         this.llm = llm;
         this.fieldPolicy = fieldPolicy;
+        this.governance = governance;
         this.applications = applications;
         this.documents = documents;
         this.periods = periods;
@@ -675,6 +679,10 @@ public class OriginationService {
     @Transactional
     public SpreadAnalysis spreadFromExtraction(String reference, SpreadFromExtractionRequest req, String actor) {
         LoanApplication app = get(reference);
+        // Governed AI capability: AI-drafting the spread from an extraction is FINANCIAL_EXTRACTION.
+        // When disabled for the jurisdiction, this returns 403 and the analyst must enter figures
+        // manually — the authoritative confirmSpread gate is unaffected either way.
+        governance.enforce(com.helix.common.governance.AiCapability.FINANCIAL_EXTRACTION, app.getJurisdiction());
         Long extractionId = req == null ? null : req.extractionId();
         DocExtraction ext;
         if (extractionId != null) {

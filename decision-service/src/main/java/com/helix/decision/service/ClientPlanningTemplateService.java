@@ -56,16 +56,18 @@ public class ClientPlanningTemplateService {
     private final AuditService audit;
     private final com.helix.common.governance.AiGovernanceClient governance;
     private final LlmClient llm;
+    private final com.helix.common.rbac.ActorDirectory roles;
 
     public ClientPlanningTemplateService(ClientPlanningTemplateRepository templates,
                                          UpstreamClient upstream, AuditService audit,
                                          com.helix.common.governance.AiGovernanceClient governance,
-                                         LlmClient llm) {
+                                         LlmClient llm, com.helix.common.rbac.ActorDirectory roles) {
         this.templates = templates;
         this.upstream = upstream;
         this.audit = audit;
         this.governance = governance;
         this.llm = llm;
+        this.roles = roles;
     }
 
     @Transactional
@@ -234,6 +236,9 @@ public class ClientPlanningTemplateService {
     public ClientPlanningTemplate review(Long id, boolean approve, String note, String actor) {
         ClientPlanningTemplate t = templates.findById(id)
                 .orElseThrow(() -> ApiException.notFound("No CPT: " + id));
+        // The relationship owner (or the credit officer over them) signs off the plan — never an
+        // analyst. Hard role gate; 403 (forbiddenAutonomy) when the actor lacks a permitted role.
+        roles.require(actor, com.helix.common.rbac.ProtectedAction.CPT_REVIEW);
         if (!"DRAFT".equals(t.getStatus())) {
             throw ApiException.conflict("CPT already " + t.getStatus());
         }

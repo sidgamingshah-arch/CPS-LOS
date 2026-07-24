@@ -59,18 +59,24 @@ public class InitiationService {
     private final ConfigMasterClient config;
     private final AuditService audit;
     private final ConfigValidator validator;
+    private final com.helix.common.rbac.ActorDirectory roles;
 
     public InitiationService(CounterpartyRepository repository, ExternalCheckRepository checks,
-                             ConfigMasterClient config, AuditService audit, ConfigValidator validator) {
+                             ConfigMasterClient config, AuditService audit, ConfigValidator validator,
+                             com.helix.common.rbac.ActorDirectory roles) {
         this.repository = repository;
         this.checks = checks;
         this.config = config;
         this.audit = audit;
         this.validator = validator;
+        this.roles = roles;
     }
 
     @Transactional
     public Counterparty createProspect(CreateProspectRequest req, String actor) {
+        // First-line gate: sourcing a borrower is coverage work. A second/third-line actor
+        // (e.g. COMPLIANCE) may not create a prospect; unroled/system connectors stay permissive.
+        roles.requireRecognised(actor, com.helix.common.rbac.ProtectedAction.ORIGINATE);
         Counterparty cp = new Counterparty();
         cp.setReference(References.forCounterparty());
         cp.setLegalName(req.legalName());

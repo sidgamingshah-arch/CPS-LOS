@@ -53,10 +53,13 @@ public class OriginationController {
 
     private final OriginationService origination;
     private final DocIntelligenceService docIntel;
+    private final com.helix.common.rbac.ActorDirectory roles;
 
-    public OriginationController(OriginationService origination, DocIntelligenceService docIntel) {
+    public OriginationController(OriginationService origination, DocIntelligenceService docIntel,
+                                 com.helix.common.rbac.ActorDirectory roles) {
         this.origination = origination;
         this.docIntel = docIntel;
+        this.roles = roles;
     }
 
     /**
@@ -79,6 +82,8 @@ public class OriginationController {
     @PostMapping
     public LoanApplication create(@Valid @RequestBody CreateApplicationRequest req,
                                   @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
+        // First-line gate: a second/third-line actor (e.g. COMPLIANCE) may not originate a deal.
+        roles.requireRecognised(actor, com.helix.common.rbac.ProtectedAction.ORIGINATE);
         return origination.create(req, actor);
     }
 

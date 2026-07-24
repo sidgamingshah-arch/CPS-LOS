@@ -121,6 +121,31 @@ public class ActorDirectory {
         }
     }
 
+    /**
+     * SOFT gate for broad first-line actions (e.g. origination) where the intent is "keep the
+     * wrong line of defence OUT" rather than "allow only a whitelist". Denies ONLY when the
+     * directory positively recognises the actor as holding roles that are ALL outside the action's
+     * allowed set (e.g. a COMPLIANCE-only actor originating). An unroled / unknown actor (empty
+     * roles) or a directory outage (null) is allowed — the gate narrows only for a role we
+     * positively recognise, mirroring the frontend's default-permissive nav philosophy. Money
+     * movement and named sign-offs must use the HARD {@link #require} instead.
+     */
+    public void requireRecognised(String actor, ProtectedAction action) {
+        Set<String> roles = rolesFor(actor);
+        if (roles == null || roles.isEmpty()) {
+            // Outage (null) or unroled/unknown actor (empty) → permissive; only narrow for a
+            // role the directory positively recognises. Name-equality SoD still applies elsewhere.
+            return;
+        }
+        boolean allowed = roles.stream().anyMatch(action.allowedRoles()::contains);
+        if (!allowed) {
+            throw ApiException.forbiddenAutonomy(
+                    "Actor '" + actor + "' holds only roles outside those permitted to " + action.key()
+                    + " (needs one of " + action.allowedRoles() + ", has " + roles
+                    + ") — origination is a first-line act; see the ACTOR_ROLE master");
+        }
+    }
+
     /** Drop both snapshots so the next lookup re-fetches. Exposed per-service via the cache endpoint. */
     public void invalidate() {
         snapshot = null;

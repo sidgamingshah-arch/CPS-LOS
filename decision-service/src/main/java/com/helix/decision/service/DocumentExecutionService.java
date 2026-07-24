@@ -46,21 +46,28 @@ public class DocumentExecutionService {
 
     private static final Set<String> DOC_STATUSES = Set.of("PENDING", "SENT", "SIGNED", "RECEIVED");
     private static final Set<String> SIDES = Set.of("INTERNAL", "CUSTOMER");
+    /** The forward-only execution stepper. A document advances one step at a time. */
+    private static final Map<String, Integer> STATUS_ORDER =
+            Map.of("PENDING", 0, "SENT", 1, "SIGNED", 2, "RECEIVED", 3);
+    /** A source GeneratedDocument may be enrolled for execution only once past its confirm-lock. */
+    private static final Set<String> ENROLLABLE_SOURCE_STATUS = Set.of("CONFIRMED", "ISSUED");
 
     private final ExecutionPackageRepository packages;
     private final DocumentExecutionRepository documents;
     private final SignatoryRepository signatories;
     private final GeneratedDocumentRepository generatedDocs;
     private final AuditService audit;
+    private final com.helix.common.dms.DocumentStoreService documentStore;
 
     public DocumentExecutionService(ExecutionPackageRepository packages, DocumentExecutionRepository documents,
                                     SignatoryRepository signatories, GeneratedDocumentRepository generatedDocs,
-                                    AuditService audit) {
+                                    AuditService audit, com.helix.common.dms.DocumentStoreService documentStore) {
         this.packages = packages;
         this.documents = documents;
         this.signatories = signatories;
         this.generatedDocs = generatedDocs;
         this.audit = audit;
+        this.documentStore = documentStore;
     }
 
     // =============================================================== create + read
@@ -81,6 +88,10 @@ public class DocumentExecutionService {
             if (dr == null || dr.docRef() == null || dr.docRef().isBlank()) {
                 throw ApiException.badRequest("Each document requires a docRef (GeneratedDocument id / reference)");
             }
+            // Gate: only a CONFIRMED/ISSUED source document may enter execution. Enrolling a
+            // still-DRAFT document (confirm-lock not yet passed) is rejected. External / non-numeric
+            // refs cannot be verified and are allowed.
+            requireEnrollableSource(dr.docRef().trim());
             DocumentExecution d = new DocumentExecution();
             d.setExecRef(saved.getExecRef());
             d.setDocRef(dr.docRef().trim());
@@ -184,6 +195,9 @@ public class DocumentExecutionService {
         if (!DOC_STATUSES.contains(target)) {
             throw ApiException.badRequest("status must be one of " + DOC_STATUSES + " (was '" + status + "')");
         }
+        // Gate: the execution stepper is forward-only and RECEIVED requires the signing gates to be
+        // passed (unless the document is deferred/waived). No jumping straight to RECEIVED.
+        enforceTransition(d, target);
         d.setStatus(target);
         // The e-sign integration is a facade: SENT stamps an envelope id (no external call).
         if ("SENT".equals(target) && (d.getEsignEnvelopeId() == null || d.getEsignEnvelopeId().isBlank())) {
@@ -225,7 +239,87 @@ public class DocumentExecutionService {
         return view(execRef);
     }
 
+    /**
+     * Record RECEIPT of a document by UPLOADING the executed/received file. The bytes are stored in
+     * the governed DMS (its own SHA-256 + audit), the receipt metadata is stamped on the document,
+     * and the status moves to RECEIVED — subject to the SAME gate as a manual receipt: the document
+     * must be SIGNED (or explicitly deferred/waived). This is the answer to "add upload of received
+     * documents", and it cannot be used to bypass the prior execution gates.
+     */
+    @Transactional
+    public PackageView receiveWithUpload(String execRef, Long docId, String filename, String contentType,
+                                         byte[] content, String actor) {
+        ExecutionPackage p = require(execRef);
+        DocumentExecution d = requireDoc(execRef, docId);
+        enforceTransition(d, "RECEIVED");
+        var stored = documentStore.store("ExecutionDocument", execRef, filename, contentType, content, actor);
+        d.setReceivedDocId(String.valueOf(stored.getId()));
+        d.setReceivedFileName(stored.getFilename());
+        d.setReceivedAt(Instant.now());
+        d.setReceivedBy(actor);
+        d.setStatus("RECEIVED");
+        documents.save(d);
+        audit.human(actor, "EXECUTION_DOCUMENT_RECEIVED", "ExecutionPackage", execRef,
+                "Received executed document %d with uploaded file '%s' (DMS #%d)".formatted(
+                        docId, filename, stored.getId()),
+                Map.of("docRef", d.getDocRef(), "receivedDocId", d.getReceivedDocId(),
+                        "fileName", filename == null ? "" : filename, "status", "RECEIVED"));
+        recompute(p);
+        return view(execRef);
+    }
+
     // =============================================================== internals
+
+    /**
+     * The execution stepper is forward-only: PENDING → SENT → SIGNED → RECEIVED, one step at a
+     * time. A document may be RECEIVED only after it is SIGNED — UNLESS it is deferred or waived,
+     * the two governed exceptions (those arrive without the full signing ceremony). Same-status is
+     * a no-op; any skip or backward move is a 409. This is the "no receipt without the prior gates"
+     * rule the tester asked for.
+     */
+    private void enforceTransition(DocumentExecution d, String target) {
+        String current = d.getStatus() == null ? "PENDING" : d.getStatus();
+        if (target.equals(current)) {
+            return;   // idempotent no-op
+        }
+        int ci = STATUS_ORDER.getOrDefault(current, 0);
+        int ti = STATUS_ORDER.getOrDefault(target, 0);
+        boolean deferredOrWaived = d.getDeferralTag() != null || d.getWaiverTag() != null;
+        if ("RECEIVED".equals(target)) {
+            if (ci == STATUS_ORDER.get("SIGNED") || deferredOrWaived) {
+                return;
+            }
+            throw ApiException.conflict(
+                    "Document " + d.getId() + " cannot be marked RECEIVED from " + current
+                    + " — it must be SIGNED first (or explicitly deferred/waived). The execution "
+                    + "gates (SENT → SIGNED → RECEIVED) must be passed before receipt.");
+        }
+        if (ti != ci + 1) {
+            throw ApiException.conflict(
+                    "Illegal execution transition " + current + " → " + target
+                    + " — the stepper advances one step at a time (PENDING → SENT → SIGNED → RECEIVED).");
+        }
+    }
+
+    /**
+     * A source {@link GeneratedDocument} referenced by a numeric id must be past its confirm-lock
+     * (CONFIRMED / ISSUED) before it may be enrolled for execution. A non-numeric / external ref
+     * cannot be verified and is allowed.
+     */
+    private void requireEnrollableSource(String docRef) {
+        try {
+            long genId = Long.parseLong(docRef);
+            GeneratedDocument gd = generatedDocs.findById(genId).orElse(null);
+            if (gd != null && !ENROLLABLE_SOURCE_STATUS.contains(gd.getStatus())) {
+                throw ApiException.conflict(
+                        "Document " + genId + " is " + gd.getStatus() + " — only a CONFIRMED/ISSUED "
+                        + "document may be enrolled for execution (its confirm-lock gate must be "
+                        + "passed first).");
+            }
+        } catch (NumberFormatException ignored) {
+            // external / non-numeric reference — cannot verify, allow.
+        }
+    }
 
     /**
      * Derives the package status from its documents. A document is "closed" when it is

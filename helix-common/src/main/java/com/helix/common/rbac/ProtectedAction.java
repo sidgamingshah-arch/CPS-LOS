@@ -51,7 +51,20 @@ public enum ProtectedAction {
             Set.of("RM", "CREDIT_OPS", "CREDIT_OFFICER", "CREDIT_HEAD", "RM_HEAD",
                    "TREASURY_OPS", "CAD_OPS", "COLLECTIONS_OPS", "CREDIT_COMMITTEE")),
     /** Force a utilisation past an available / exposure / country-cap breach — a credit-risk override, not a system action. */
-    LIMIT_OVERRIDE("limit-override", Set.of("CREDIT_OFFICER", "CREDIT_HEAD", "CREDIT_COMMITTEE"));
+    LIMIT_OVERRIDE("limit-override", Set.of("CREDIT_OFFICER", "CREDIT_HEAD", "CREDIT_COMMITTEE")),
+    /**
+     * Originate a prospect / loan application — a FIRST-LINE coverage act. Enforced with the SOFT
+     * {@link ActorDirectory#requireRecognised} gate: an actor positively recognised as holding only
+     * second/third-line roles (e.g. COMPLIANCE) is denied, while an unroled/unknown actor stays
+     * permissive (the directory narrows only for a role it recognises). This is the fix for
+     * "compliance can originate" — origination is coverage, not control.
+     */
+    ORIGINATE("originate", Set.of("RM", "RM_HEAD", "ANALYST", "CREDIT_OPS")),
+    /**
+     * Confirm/reject an advisory Client Planning Template. The relationship owner (or the credit
+     * officer over them) signs off the plan — NOT an analyst. Hard-gated: this is a named sign-off.
+     */
+    CPT_REVIEW("cpt-review", Set.of("RM", "RM_HEAD", "CREDIT_OFFICER"));
 
     private final String key;
     private final Set<String> allowedRoles;

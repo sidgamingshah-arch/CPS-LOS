@@ -74,6 +74,11 @@ check("catalogue exposes capabilities", st == 200 and len(caps) >= 5, f"{st}")
 st, res = call("GET", "/config/api/governance/ai/resolved")
 caps_map = res["capabilities"] if isinstance(res, dict) else {}
 check("default DOC_INTEL enabled", caps_map.get("doc-intel", {}).get("enabled") is True, str(caps_map.get("doc-intel")))
+# Financial-statement spreading extraction is now a first-class governed capability (was invisible).
+cap_keys = {c.get("key") if isinstance(c, dict) else c for c in caps}
+check("financial-extraction is in the AI-governance catalogue", "financial-extraction" in cap_keys, str(cap_keys))
+check("financial-extraction enabled by default",
+      caps_map.get("financial-extraction", {}).get("enabled") is True, str(caps_map.get("financial-extraction")))
 
 print("\n== 2. Seed a minimal deal we can run AI against ==")
 st, cp = call("POST", "/counterparty/api/counterparties", {

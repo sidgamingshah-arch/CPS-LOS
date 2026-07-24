@@ -1244,6 +1244,20 @@ check("commentary reject path -> REJECTED", st == 200 and rej["status"] == "REJE
 st, listall = call("GET", f"/decision/api/commentary/applications/{ref}")
 check("commentary list queryable", st == 200 and len(listall) >= 5, f"{st}")
 
+# 39b. CONFIRMED commentary now FLOWS INTO the credit proposal itself (no separate module).
+st, grade_before = call("GET", f"/risk/api/risk/{ref}")
+gb = grade_before["rating"]["finalGrade"]
+st, propc = call("POST", f"/decision/api/decisions/{ref}/credit-proposal/generate", actor="credit.ops")
+check("proposal regenerated after commentary confirm", st == 200 and "markdown" in (propc or {}), f"{st}")
+pmd = (propc or {}).get("markdown", "")
+snippet = fin["narrative"].strip()[:40]
+check("confirmed AI commentary is woven INTO the credit proposal (not a separate module)",
+      "AI commentary — human-confirmed" in pmd and snippet in pmd, snippet)
+# The authoritative rating is untouched by weaving in the advisory commentary.
+st, grade_after = call("GET", f"/risk/api/risk/{ref}")
+check("authoritative grade UNCHANGED after commentary woven into proposal",
+      grade_after["rating"]["finalGrade"] == gb, f"{gb} -> {grade_after['rating']['finalGrade']}")
+
 print("== 40. Pricing scenario optimiser (goal-seek · advisory · authoritative pricing unchanged) ==")
 st, before_pricing = call("POST", f"/risk/api/risk/{ref}/pricing", actor="pricing.analyst")
 baseline_rate = before_pricing["recommendedRate"]
