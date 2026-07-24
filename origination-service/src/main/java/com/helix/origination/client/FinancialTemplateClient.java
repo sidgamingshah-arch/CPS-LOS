@@ -8,7 +8,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -34,9 +36,14 @@ public class FinancialTemplateClient {
     public record Formula(String key, String label, String formula) { }
 
     public record FinancialTemplate(String templateKey, List<Line> extraInputs,
-                                    List<Formula> extraDerived, List<Formula> extraRatios) {
+                                    List<Formula> extraDerived, List<Formula> extraRatios,
+                                    /** Extraction-field-name (lower-cased) → canonical taxonomy key.
+                                     *  Drives the doc-intel → spread bridge so "extraction happens
+                                     *  against the template master". Empty → the consumer's built-in
+                                     *  default map applies (byte-identical to today). */
+                                    Map<String, String> extractionMap) {
         public static final FinancialTemplate EMPTY =
-                new FinancialTemplate("(none)", List.of(), List.of(), List.of());
+                new FinancialTemplate("(none)", List.of(), List.of(), List.of(), Map.of());
 
         public boolean hasExtras() {
             return !extraInputs.isEmpty() || !extraDerived.isEmpty() || !extraRatios.isEmpty();
@@ -73,7 +80,20 @@ public class FinancialTemplateClient {
             }
         }
         return new FinancialTemplate(key, inputs, formulas(p.get("extraDerivedLines")),
-                formulas(p.get("extraRatios")));
+                formulas(p.get("extraRatios")), extractionMap(p.get("extractionMap")));
+    }
+
+    /** Parses {@code payload.extractionMap} ({extractionFieldName → canonicalKey}); keys are
+     *  lower-cased to match the consumer's lookup. Non-map / null → an empty map (built-in default). */
+    private Map<String, String> extractionMap(Object raw) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (raw instanceof Map<?, ?> m) {
+            for (Map.Entry<?, ?> en : m.entrySet()) {
+                if (en.getKey() == null || en.getValue() == null) continue;
+                out.put(String.valueOf(en.getKey()).toLowerCase(Locale.ROOT), String.valueOf(en.getValue()));
+            }
+        }
+        return out;
     }
 
     @SuppressWarnings("unchecked")

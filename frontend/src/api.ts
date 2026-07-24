@@ -86,6 +86,16 @@ export const config = {
   ) => call<any>("/config/api/rulepacks", "POST", body, actor),
   signoff: (id: number, control: "policy" | "model-risk", actor: string) =>
     call<any>(`/config/api/rulepacks/${id}/signoff?control=${control}`, "POST", undefined, actor),
+  // Resolve the active FINANCIAL_TEMPLATE (chart-of-accounts augmentation + extraction map) for a
+  // deal's (jurisdiction, sector, segment). Returns the governed MasterRecord (payload carries
+  // templateKey / extraInputLines / extraDerivedLines / extraRatios / extractionMap).
+  resolveFinancialTemplate: (jurisdiction?: string, sector?: string, segment?: string) => {
+    const q = new URLSearchParams();
+    if (jurisdiction) q.set("jurisdiction", jurisdiction);
+    if (sector) q.set("sector", sector);
+    if (segment) q.set("segment", segment);
+    return call<any>(`/config/api/financial-templates/resolve?${q.toString()}`, "GET");
+  },
 };
 
 // ---- AI governance (capability on/off switch with per-jurisdiction override) ----

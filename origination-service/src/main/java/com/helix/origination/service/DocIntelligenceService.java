@@ -11,12 +11,16 @@ import com.helix.origination.dto.DocIntelDtos.DocCheckFinding;
 import com.helix.origination.dto.DocIntelDtos.DocCheckResponse;
 import com.helix.origination.dto.DocIntelDtos.NormaliseResponse;
 import com.helix.origination.dto.DocIntelDtos.TranslateResponse;
+import com.helix.origination.dto.Dtos.SpreadFromExtractionRequest;
 import com.helix.origination.entity.DocExtraction;
 import com.helix.origination.entity.Document;
 import com.helix.origination.entity.LoanApplication;
 import com.helix.origination.repo.DocExtractionRepository;
 import com.helix.origination.repo.DocumentRepository;
 import com.helix.origination.repo.LoanApplicationRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +40,7 @@ import java.util.Map;
 public class DocIntelligenceService {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Logger log = LoggerFactory.getLogger(DocIntelligenceService.class);
 
     private final DocumentRepository documents;
     private final DocExtractionRepository extractions;
@@ -43,16 +48,21 @@ public class DocIntelligenceService {
     private final AuditService audit;
     private final com.helix.common.governance.AiGovernanceClient governance;
     private final LlmClient llm;
+    /** Spread engine — used to AUTO-draft a spread from a confirmed FS extraction. {@code @Lazy}
+     *  keeps the wiring cycle-free and the draft is advisory (never confirms the spread). */
+    private final OriginationService origination;
 
     public DocIntelligenceService(DocumentRepository documents, DocExtractionRepository extractions,
                                   LoanApplicationRepository applications, AuditService audit,
-                                  com.helix.common.governance.AiGovernanceClient governance, LlmClient llm) {
+                                  com.helix.common.governance.AiGovernanceClient governance, LlmClient llm,
+                                  @Lazy OriginationService origination) {
         this.documents = documents;
         this.extractions = extractions;
         this.applications = applications;
         this.audit = audit;
         this.governance = governance;
         this.llm = llm;
+        this.origination = origination;
     }
 
     // --------------------------------------------------- extraction (suggest → confirm)
@@ -274,11 +284,44 @@ public class DocIntelligenceService {
         e.setReviewedAt(Instant.now());
         e.setReviewNote(note);
         DocExtraction saved = extractions.save(e);
-        // Human accountability for the AI suggestion — NOT pushed into the figure path.
+        // Human accountability for the AI suggestion — the confirm records review, it does NOT set
+        // an authoritative figure.
         audit.human(actor, "DOC_EXTRACTION_CONFIRMED", "Application", e.getApplicationReference(),
-                "Confirmed AI extraction #%d (review only — figures stay human-spread)".formatted(extractionId),
+                "Confirmed AI extraction #%d (review — figures stay a human-confirmed spread)".formatted(extractionId),
                 Map.of("extractionId", extractionId));
+        // AI LARGER ROLE: on confirming a FINANCIAL_STATEMENT extraction, AUTO-draft the spread from
+        // it so the analyst does not have to click "populate grid" separately. This is strictly
+        // ADVISORY: spreadFromExtraction rebuilds an UNCONFIRMED DRAFT (spreadConfirmed=false) — the
+        // authoritative confirmSpread gate is untouched. GUARD: never auto-draft when the deal already
+        // carries a CONFIRMED spread, so an existing authoritative figure is never clobbered by a
+        // review action (that would violate the advisory invariant; see e2e_doc_ocr / e2e_smoke §36).
+        maybeAutoDraftSpread(saved, actor);
         return saved;
+    }
+
+    /**
+     * Advisory auto-draft: a confirmed FINANCIAL_STATEMENT extraction lands as a DRAFT spread.
+     * Fail-soft (never fails the confirm) and guarded to never overwrite a CONFIRMED spread.
+     */
+    private void maybeAutoDraftSpread(DocExtraction ext, String actor) {
+        if (!"FINANCIAL_STATEMENT".equals(ext.getClassifiedType())) {
+            return;   // only financial statements carry mappable figure lines
+        }
+        String ref = ext.getApplicationReference();
+        LoanApplication app = ref == null ? null : applications.findByReference(ref).orElse(null);
+        if (app == null || app.isSpreadConfirmed()) {
+            return;   // no deal, or a confirmed authoritative spread already exists → do not touch it
+        }
+        try {
+            origination.spreadFromExtraction(ref,
+                    new SpreadFromExtractionRequest(ext.getId(), null, null, null,
+                            "Auto-drafted from confirmed extraction #" + ext.getId()),
+                    actor);
+        } catch (Exception e) {
+            // Advisory only: a mapping miss / no-figure-fields / any error must never fail the confirm.
+            log.warn("Auto-draft from confirmed extraction #{} skipped (non-fatal): {}",
+                    ext.getId(), e.getMessage());
+        }
     }
 
     @Transactional
