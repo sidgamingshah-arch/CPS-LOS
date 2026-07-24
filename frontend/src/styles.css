@@ -1792,3 +1792,124 @@ tr.dt-row-selected td {
    .btnrow; the wrapper carries the `title` so the tooltip still shows while the
    button is disabled (a disabled <button> does not surface its own title). */
 .authz-gate { display: inline-block; }
+
+/* ============================ Ad-hoc report builder (drag & drop) ==========
+   A "Fields" palette (drag source + drop-to-remove target) beside three drop
+   zones (Rows / Measures / Filters). Zones use the deterministic-ocean accent —
+   the whole surface builds a query whose figures are deterministic. */
+.rb-grid {
+  display: grid; grid-template-columns: 280px 1fr; gap: 16px; margin-top: 16px;
+}
+@media (max-width: 980px) { .rb-grid { grid-template-columns: 1fr; } }
+
+/* --- Fields palette --- */
+.rb-palette {
+  border: 1px solid var(--hairline); border-radius: var(--r-md); background: var(--surface-soft);
+  display: flex; flex-direction: column; overflow: hidden; align-self: start;
+}
+.rb-palette.removable {
+  border-color: var(--down); background: #fdf2f4; box-shadow: 0 0 0 3px #f8e0e4 inset;
+}
+.rb-palette-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid var(--hairline);
+  font-size: 12px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; color: var(--ocean-7);
+}
+.rb-palette-head .sub { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); font-size: 11.5px; }
+.rb-palette-list { display: flex; flex-direction: column; gap: 4px; padding: 8px; max-height: 420px; overflow-y: auto; }
+.rb-palette-foot {
+  padding: 8px 12px; border-top: 1px solid var(--hairline);
+  font-size: 11px; color: var(--muted); text-align: center;
+}
+.rb-palette.removable .rb-palette-foot { color: var(--down); font-weight: 600; }
+
+.rb-field {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--canvas);
+  cursor: grab; transition: border-color .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.rb-field:hover { border-color: var(--det); box-shadow: var(--shadow); }
+.rb-field:active { cursor: grabbing; }
+.rb-field-name { font-size: 12.5px; font-weight: 500; color: var(--ink); font-family: var(--font-mono); }
+.rb-field-add { display: inline-flex; gap: 3px; margin-left: auto; }
+.rb-add {
+  border: 1px solid var(--hairline); background: var(--surface-strong); color: var(--ocean-7);
+  border-radius: var(--r-pill); padding: 1px 7px; font-size: 10.5px; font-weight: 600; cursor: pointer;
+  width: auto; line-height: 1.6; white-space: nowrap;
+}
+.rb-add:hover { background: var(--light-blue-soft); border-color: var(--det); }
+.rb-add:focus-visible { outline: 2px solid var(--det); outline-offset: 1px; }
+
+.rb-grip { color: var(--muted-soft); font-size: 12px; cursor: grab; user-select: none; flex: 0 0 auto; }
+.rb-grip:active { cursor: grabbing; }
+
+.rb-type {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .04em; padding: 1px 5px;
+  border-radius: var(--r-pill); flex: 0 0 auto;
+}
+.rb-type.num { background: var(--det-soft); color: var(--ocean-7); }
+.rb-type.str { background: var(--surface-strong); color: var(--muted); }
+
+/* --- Drop zones --- */
+.rb-zones { display: flex; flex-direction: column; gap: 12px; }
+.rb-zone {
+  border: 1.5px dashed var(--hairline); border-radius: var(--r-md); background: var(--canvas);
+  padding: 12px; transition: border-color .12s ease, background .12s ease, box-shadow .12s ease;
+}
+.rb-zone.over {
+  border-color: var(--det); border-style: solid;
+  background: var(--det-soft); box-shadow: 0 0 0 3px var(--light-blue-soft);
+}
+.rb-zone-head {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+}
+.rb-zone-head strong { font-size: 13px; }
+.rb-zone-head .sub { color: var(--muted); font-size: 11.5px; }
+.rb-zone-head .badge { margin-left: auto; }
+.rb-zone-dot { width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; }
+.rb-zone-dot.dim { background: var(--det); }
+.rb-zone-dot.msr { background: var(--ocean-5); }
+.rb-zone-dot.flt { background: var(--muted-soft); }
+
+.rb-zone-body { min-height: 40px; }
+.rb-zone-body.dims { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rb-empty {
+  color: var(--muted); font-size: 12px; font-style: italic;
+  padding: 8px 4px; border: 1px dashed var(--hairline-soft); border-radius: var(--r-sm); text-align: center;
+}
+.rb-zone-actions { margin-top: 8px; }
+
+/* dimension pill */
+.rb-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 8px;
+  border: 1px solid var(--det); border-radius: var(--r-pill); background: var(--det-soft);
+  color: var(--ocean-7); cursor: grab; font-size: 12px;
+}
+.rb-chip:active { cursor: grabbing; }
+.rb-chip .rb-field-name { color: var(--ocean-7); font-size: 12px; }
+
+/* measure / filter row */
+.rb-row {
+  display: flex; gap: 6px; align-items: center; margin-bottom: 6px;
+  padding: 4px; border-radius: var(--r-sm);
+}
+.rb-row:hover { background: var(--surface-soft); }
+.rb-row .select, .rb-row select { width: auto; min-width: 90px; }
+.rb-row .input, .rb-row input { flex: 1 1 auto; min-width: 80px; }
+
+.rb-x {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 0 2px; width: auto; flex: 0 0 auto; border-radius: var(--r-sm);
+}
+.rb-x:hover { color: var(--down); }
+.rb-x:focus-visible { outline: 2px solid var(--down); outline-offset: 1px; }
+
+/* insertion caret shown while dragging */
+.rb-caret { background: var(--det); border-radius: 2px; }
+.rb-caret.v { width: 3px; align-self: stretch; min-height: 22px; }
+.rb-caret.h { height: 3px; width: 100%; margin: 2px 0; }
+
+@media (prefers-color-scheme: dark) {
+  .rb-palette.removable { background: rgba(178,0,35,.10); }
+  .rb-palette.removable .rb-palette-foot { color: #e79aa6; }
+}
