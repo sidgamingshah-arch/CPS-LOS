@@ -22,7 +22,11 @@ public enum AiCapability {
     GROUP_SUGGEST("group-suggest", "Group identification advisory match"),
     COPILOT("copilot", "Conversational read-only copilot"),
     MODEL_SCORING("model-scoring",
-            "Configurable scoring-model engine — advisory section/question suggestion, human-confirmed");
+            "Configurable scoring-model engine — advisory section/question suggestion, human-confirmed"),
+    CAD_DOC_AI("cad-doc-ai",
+            "CAD document verification — advisory signature-specimen match + title/property-document "
+            + "field extraction and completeness check over a checklist item. Never auto-complies an "
+            + "item: it produces an advisory finding a named human confirms and then sets the status");
 
     private final String key;
     private final String description;

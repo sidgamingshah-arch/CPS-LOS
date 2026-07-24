@@ -428,45 +428,161 @@ public class DocGenService {
         Object grade = vars.getOrDefault("grade", "—");
         Object rate = vars.getOrDefault("rate", null);
         Object raroc = vars.getOrDefault("raroc", null);
+        Object jur = vars.getOrDefault("jurisdiction", "India");
         return switch (key.toLowerCase()) {
             case "sanction_summary" -> "Helix Bank is pleased to advise the sanction of credit facilities to " +
                     "<b>" + borrower + "</b> aggregating " + ccy + " " + fmt(amount) + ", on the terms set out below " +
-                    "and subject to the conditions of sanction. Rating assigned: <b>" + grade + "</b>.";
+                    "and subject to the conditions of sanction. Rating assigned: <b>" + grade + "</b>. " +
+                    "This letter, once accepted, together with the executed facility documentation, constitutes the " +
+                    "agreement between the Borrower and the Lender in respect of the facilities and supersedes all " +
+                    "prior term sheets and indicative offers.";
             case "approved_facilities" -> renderFacilitiesTable(vars, ccy, amount, tenor);
-            case "pricing_terms" -> rate == null
+            case "pricing_terms" -> (rate == null
                     ? "Pricing shall be as advised by the Lender in accordance with its schedule of charges."
                     : "Indicative all-in rate: <b>" + percent(rate) + " per annum</b>" +
                     (raroc == null ? "" : " (risk-adjusted return " + percent(raroc) + ")") +
-                    ", reset in line with the applicable benchmark.";
+                    ", reset in line with the applicable benchmark.") +
+                    " Interest is computed on the daily outstanding on an actual/365 basis and is payable monthly in " +
+                    "arrears. Rate resets take effect on each benchmark reset date; the Lender's schedule of charges " +
+                    "governs processing, commitment, documentation and other fees.";
             case "conditions_precedent" -> renderConditions(vars);
             case "conditions_general" -> "The Borrower shall comply with the Lender's general covenants and " +
                     "reporting obligations, maintain the agreed security, and furnish periodic financials and " +
-                    "compliance certificates throughout the currency of the facilities.";
+                    "compliance certificates throughout the currency of the facilities. The Borrower shall utilise " +
+                    "the facilities solely for the sanctioned purpose, permit inspection of the charged assets and " +
+                    "books of account, and promptly notify the Lender of any event that could constitute an event of " +
+                    "default or a material adverse change.";
             case "validity" -> "This sanction is valid for 90 days from the date of this letter, within which the " +
                     "facility documentation must be executed and the conditions precedent satisfied, failing which " +
-                    "the sanction shall lapse unless extended in writing by the Lender.";
+                    "the sanction shall lapse unless extended in writing by the Lender. The Lender reserves the right " +
+                    "to review, modify or withdraw the sanction on the occurrence of any material adverse change in " +
+                    "the Borrower's financial position or the security prior to first drawdown.";
             case "acceptance" -> "Kindly signify acceptance of this sanction by returning a countersigned copy of " +
-                    "this letter together with the board resolution authorising acceptance of the facilities.";
+                    "this letter together with the board resolution authorising acceptance of the facilities. " +
+                    "Acceptance shall be unconditional; any qualification or counter-proposal shall be treated as a " +
+                    "fresh request and shall not bind the Lender until re-sanctioned.";
+            case "security_summary" -> "The facilities shall be secured by the security described in the facility " +
+                    "documentation, including the charge(s) over the assets offered as collateral, duly registered " +
+                    "with the applicable registries (ROC / CERSAI, or the relevant registry in " + jur + "), together " +
+                    "with the guarantee(s), if any, of the named guarantors. All security shall rank in favour of the " +
+                    "Lender and shall be perfected prior to first drawdown.";
+            case "covenants_summary" -> "The facilities are subject to the affirmative, negative, information and " +
+                    "financial covenants set out in the credit decision of even date, including the financial " +
+                    "covenants tested at the agreed frequency. Breach of a covenant, uncured within the applicable " +
+                    "cure period, entitles the Lender to exercise its rights under the events-of-default provisions.";
+            case "insurance_summary" -> "The Borrower shall keep the charged assets comprehensively insured for their " +
+                    "full reinstatement value against all usual risks, with the Lender named as loss payee / mortgagee, " +
+                    "and shall assign the policies to the Lender and produce evidence of renewal on each due date.";
+            case "fees_summary" -> "Processing, commitment, documentation and other fees are payable per the Lender's " +
+                    "schedule of charges as intimated separately, together with all applicable stamp duty, " +
+                    "registration charges and taxes, which shall be borne by the Borrower.";
             case "definitions" -> "In this Agreement, '<b>" + borrower + "</b>' means the Borrower, " +
                     "'<b>Facility</b>' means the credit facility of " + ccy + " " + fmt(amount) +
-                    " described herein, and '<b>Lender</b>' means Helix Bank.";
+                    " described herein, and '<b>Lender</b>' means Helix Bank. '<b>Business Day</b>' means a day on " +
+                    "which banks are open for general business in the jurisdiction of the Lender's head office; " +
+                    "'<b>Security</b>' means the security created or to be created under the Security Documents; and " +
+                    "'<b>Event of Default</b>' has the meaning given in the events-of-default clause. References to a " +
+                    "party include its permitted successors and assigns.";
             case "facility" -> "The Lender hereby agrees to make available to the Borrower a credit facility " +
                     "in the amount of " + ccy + " " + fmt(amount) + " for a tenor of " + tenor + " months, " +
-                    "on the terms and subject to the conditions of this Agreement.";
-            case "interest" -> rate == null
+                    "on the terms and subject to the conditions of this Agreement. The Facility shall be availed in " +
+                    "one or more drawdowns during the availability period and shall be repaid in accordance with the " +
+                    "agreed repayment schedule; amounts repaid on a term facility may not be redrawn unless expressly " +
+                    "agreed in writing.";
+            case "drawdown" -> "Each drawdown shall be made by an irrevocable drawdown request delivered to the Lender " +
+                    "not less than two Business Days before the proposed drawdown date, specifying the amount and the " +
+                    "value date. A drawdown is subject to the satisfaction (or waiver in writing) of all conditions " +
+                    "precedent, the accuracy of the representations and warranties on the drawdown date, and no Event " +
+                    "of Default having occurred and being continuing. The proceeds shall be applied solely towards the " +
+                    "sanctioned purpose.";
+            case "interest" -> (rate == null
                     ? "Interest shall accrue at the rate determined by the Lender from time to time and shall be payable monthly in arrears."
-                    : "Interest shall accrue at " + percent(rate) + " per annum and shall be payable monthly in arrears.";
+                    : "Interest shall accrue at " + percent(rate) + " per annum and shall be payable monthly in arrears.") +
+                    " Interest is calculated on the daily outstanding balance on an actual/365-day basis. Where the " +
+                    "rate is linked to a benchmark, it shall be reset on each reset date by reference to the then-" +
+                    "prevailing benchmark plus the agreed spread.";
+            case "default_interest" -> "Without prejudice to the Lender's other rights, default interest at 2.00% per " +
+                    "annum above the applicable rate shall accrue on any amount not paid when due, from the due date " +
+                    "until actual payment, and shall be compounded at monthly rests. The levy of default interest " +
+                    "shall not be construed as a waiver of any Event of Default arising from the non-payment.";
+            case "security_and_perfection" -> "As continuing security for the facilities the Borrower shall create and " +
+                    "perfect, prior to first drawdown, a first-ranking charge over the assets described in the Security " +
+                    "Documents, duly registered with the Registrar of Companies (Form CHG-1) and CERSAI where " +
+                    "applicable, or with the relevant registry in " + jur + ". The Borrower shall not create or permit " +
+                    "any further charge, lien or encumbrance over the secured assets without the Lender's prior " +
+                    "written consent.";
+            case "financial_covenants" -> "The Borrower shall maintain, and test at the agreed frequency, the financial " +
+                    "covenants specified in the credit decision of even date (including, without limitation, the debt-" +
+                    "service coverage, leverage and current-ratio covenants). Compliance shall be certified in each " +
+                    "compliance certificate; the Lender may recompute any covenant from the Borrower's audited or " +
+                    "management financials, and its computation shall prevail in the event of a discrepancy.";
+            case "information_covenants" -> "The Borrower shall furnish to the Lender: audited financial statements " +
+                    "within 180 days of each financial year-end; management accounts and a covenant compliance " +
+                    "certificate at the agreed frequency; the annual business plan; and such other information as the " +
+                    "Lender may reasonably require. The Borrower shall promptly notify the Lender of any litigation, " +
+                    "regulatory action or event that is or may become material to its ability to perform its " +
+                    "obligations.";
             case "covenants" -> "The Borrower shall observe and perform the affirmative, negative and financial " +
                     "covenants set out in the credit decision dated of even date, including (without limitation) " +
-                    "maintaining the financial covenants tested at quarterly frequency.";
+                    "maintaining the financial covenants tested at quarterly frequency. The Borrower shall preserve " +
+                    "its corporate existence and material authorisations, comply with all applicable laws, and refrain " +
+                    "from any change of control, merger, material disposal or dividend that breaches the negative " +
+                    "covenants without the Lender's prior written consent.";
+            case "prepayment" -> "The Borrower may prepay the Facility in whole or in part on giving not less than " +
+                    "seven Business Days' prior written notice, together with accrued interest and any applicable " +
+                    "prepayment premium and break costs. Amounts prepaid on a term facility may not be redrawn. The " +
+                    "Lender may require mandatory prepayment on the occurrence of specified events, including a change " +
+                    "of control or a material asset disposal.";
+            case "fees_and_charges" -> "The Borrower shall pay the processing, commitment, documentation, agency and " +
+                    "other fees set out in the Lender's schedule of charges, together with all stamp duty, " +
+                    "registration and other charges and all applicable taxes. All payments shall be made free and " +
+                    "clear of, and without deduction for, any taxes save as required by law, in which case the " +
+                    "Borrower shall gross up the payment.";
             case "events_of_default" -> "An Event of Default shall occur upon non-payment of any amount when due, " +
                     "breach of any covenant uncured beyond the cure period, insolvency, cross-default, or material " +
-                    "adverse change. On an Event of Default the Lender may declare the Facility immediately due and payable.";
+                    "adverse change. On an Event of Default the Lender may declare the Facility immediately due and payable. " +
+                    "Further Events of Default include a misrepresentation, the invalidity or unenforceability of any " +
+                    "Security Document, the levy of distress or attachment on the secured assets, and the cessation or " +
+                    "material change of the Borrower's business.";
+            case "cross_default" -> "An Event of Default shall be deemed to occur if any financial indebtedness of the " +
+                    "Borrower or any guarantor is not paid when due (after any applicable grace period) or becomes, or " +
+                    "becomes capable of being declared, due and payable prior to its stated maturity by reason of an " +
+                    "event of default (howsoever described), or any commitment for such indebtedness is cancelled or " +
+                    "suspended by a creditor by reason of a default.";
             case "representations" -> "The Borrower represents and warrants that it is duly incorporated, has full " +
                     "power to enter into this Agreement, that the obligations herein are legal, valid, binding and " +
-                    "enforceable, and that the rating assigned to it is '<b>" + grade + "</b>' on the Lender's scale.";
+                    "enforceable, and that the rating assigned to it is '<b>" + grade + "</b>' on the Lender's scale. " +
+                    "The Borrower further represents that its most recent financial statements fairly present its " +
+                    "financial position, that no Event of Default is continuing, and that no litigation is pending or " +
+                    "threatened that could have a material adverse effect.";
+            case "indemnity" -> "The Borrower shall indemnify the Lender on demand against any loss, cost, claim, " +
+                    "liability or expense (including legal fees) incurred by the Lender as a consequence of the " +
+                    "occurrence of any Event of Default, any drawdown not made by reason of the Borrower's default, " +
+                    "any funding break cost, or the enforcement or preservation of the Lender's rights under the " +
+                    "facility documentation.";
+            case "force_majeure" -> "Neither party shall be liable for any failure or delay in performing its " +
+                    "obligations (other than a payment obligation) to the extent caused by an event beyond its " +
+                    "reasonable control, provided that it notifies the other party and uses reasonable endeavours to " +
+                    "mitigate the effect. A payment obligation is never excused by force majeure.";
+            case "confidentiality" -> "Each party shall keep confidential all non-public information received from the " +
+                    "other in connection with the facilities and shall not disclose it save to its officers, advisers, " +
+                    "regulators and permitted assignees on a need-to-know basis, or as required by law or by a court " +
+                    "or regulator of competent jurisdiction.";
+            case "set_off" -> "The Lender may, without prior notice, combine or consolidate all or any of the " +
+                    "Borrower's accounts and set off any matured obligation owed by the Borrower against any obligation " +
+                    "of the Lender to the Borrower, applying for that purpose any applicable rate of exchange. The " +
+                    "Lender shall notify the Borrower promptly after any exercise of this right.";
+            case "assignment" -> "The Borrower shall not assign or transfer any of its rights or obligations under the " +
+                    "facility documentation without the Lender's prior written consent. The Lender may assign, transfer " +
+                    "or novate any of its rights and obligations, or grant a participation, to any bank, financial " +
+                    "institution or other person, and may disclose to a prospective assignee such information as is " +
+                    "reasonably required.";
+            case "governing_law_jurisdiction" -> "This Agreement and any non-contractual obligations arising out of or " +
+                    "in connection with it are governed by the laws of " + jur + ". The parties submit to the exclusive " +
+                    "jurisdiction of the courts at the Lender's head office, save that the Lender may bring proceedings " +
+                    "in any other court of competent jurisdiction to enforce its security.";
             case "governing_law" -> "This Agreement shall be governed by and construed in accordance with the laws of " +
-                    vars.getOrDefault("jurisdiction", "India") + ", and the parties submit to the exclusive " +
+                    jur + ", and the parties submit to the exclusive " +
                     "jurisdiction of the courts at the Lender's head office.";
             default -> "[Clause '" + key + "' — populate from template].";
         };
