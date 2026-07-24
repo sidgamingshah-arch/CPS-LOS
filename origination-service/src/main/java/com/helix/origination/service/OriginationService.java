@@ -20,6 +20,8 @@ import com.helix.origination.dto.Dtos.AddSublimitRequest;
 import com.helix.origination.dto.Dtos.CellView;
 import com.helix.origination.dto.Dtos.CollateralView;
 import com.helix.origination.dto.Dtos.CreateApplicationRequest;
+import com.helix.origination.dto.Dtos.CreditCollateral;
+import com.helix.origination.dto.Dtos.CreditFacility;
 import com.helix.origination.dto.Dtos.CreditInputs;
 import com.helix.origination.dto.Dtos.DealEnvelope;
 import com.helix.origination.dto.Dtos.FacilityView;
@@ -1082,12 +1084,26 @@ public class OriginationService {
             if (r.key() == null || r.formula() == null || ratios.containsKey(r.key())) continue;
             ratios.put(r.key(), com.helix.common.formula.FormulaEvaluator.evalRounded(r.formula(), latest));
         }
+        // Additive: the full facility list + collateral cover (the deal envelope's building blocks)
+        // so risk-service can capitalise & price PER FACILITY. Ordered by facility ordinal so index 0
+        // is the primary; every existing consumer that reads only the scalar fields is unaffected.
+        List<CreditFacility> facilityInputs = facilities.findByApplicationIdOrderByOrdinalAsc(app.getId())
+                .stream()
+                .map(f -> new CreditFacility(f.getId(), f.getReference(), f.getFacilityType(),
+                        f.getAmount(), f.getCurrency(), f.getTenorMonths(), f.isPrimary()))
+                .toList();
+        List<CreditCollateral> collateralInputs = collaterals.findByApplicationId(app.getId())
+                .stream()
+                .map(c -> new CreditCollateral(c.getFacilityId(), c.getCollateralType(), c.getMarketValue()))
+                .toList();
+
         return new CreditInputs(app.getReference(), app.getCounterpartyId(), app.getCounterpartyRef(),
                 app.getCounterpartyName(), app.getJurisdiction(), app.getSegment(), app.getSector(),
                 app.getFacilityType(),
                 app.getRequestedAmount(), app.getCurrency(), app.getTenorMonths(), app.getCollateralType(),
                 app.getCollateralValue(), app.isSecured(), app.isSpreadConfirmed(),
-                latest, ratios, trends(normalisedByOrdinal));
+                latest, ratios, trends(normalisedByOrdinal),
+                facilityInputs, collateralInputs);
     }
 
     private static java.time.LocalDate parsePeriodEnd(String iso) {

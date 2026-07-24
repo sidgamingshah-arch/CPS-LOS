@@ -2,6 +2,7 @@ package com.helix.risk.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+import java.util.List;
 import java.util.Map;
 
 /** Snapshot fetched from origination-service to rate, capitalise and price a deal. */
@@ -24,7 +25,14 @@ public record CreditInputsDto(
         boolean spreadConfirmed,
         Map<String, Double> latestFinancials,
         Map<String, Double> ratios,
-        Map<String, Double> trends) {
+        Map<String, Double> trends,
+        // ---- multi-facility / multi-collateral enrichment (additive, nullable) ----
+        // The full proposed-facility list and the full collateral cover the deal envelope already
+        // aggregates. When present with 2+ facilities, capital is computed PER FACILITY and
+        // aggregated; when null/empty/single these are ignored and the single requestedAmount path
+        // (byte-identical to the historical behaviour) is used.
+        List<FacilityInput> facilities,
+        List<CollateralInput> collaterals) {
 
     public double ratio(String key) {
         return ratios == null ? 0.0 : ratios.getOrDefault(key, 0.0);
@@ -32,5 +40,16 @@ public record CreditInputsDto(
 
     public double financial(String key) {
         return latestFinancials == null ? 0.0 : latestFinancials.getOrDefault(key, 0.0);
+    }
+
+    /** One proposed facility (ref/type/amount) from the deal envelope. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record FacilityInput(Long id, String reference, String facilityType, double amount,
+                                String currency, int tenorMonths, boolean primary) {
+    }
+
+    /** One collateral item; {@code facilityId} links it to a facility (else it pools to the deal). */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record CollateralInput(Long facilityId, String collateralType, double marketValue) {
     }
 }
