@@ -7,6 +7,7 @@ import com.helix.risk.client.ConfigClient;
 import com.helix.risk.client.ModelDefinitionClient;
 import com.helix.risk.client.ModelDefinitionClient.ResolvedModel;
 import com.helix.risk.client.OriginationClient;
+import com.helix.risk.client.RiskMasterClient;
 import com.helix.risk.client.ScoringApprovalPolicyClient;
 import com.helix.risk.client.ScoringApprovalPolicyClient.Params;
 import com.helix.risk.client.ScoringApprovalPolicyClient.Resolution;
@@ -38,9 +39,18 @@ import java.util.Set;
 @Service
 public class RiskService {
 
-    /** Override notch limits per role (PRD §5, US-5.2). */
+    /**
+     * Conservative built-in FALLBACK for the per-role override-notch limits (PRD §5, US-5.2).
+     * The authoritative limits are now admin-configurable in the {@code OVERRIDE_ROLE} CODE_VALUE
+     * master (config-service; the notch is the per-role {@code score}). These constants are used
+     * ONLY when config-service is unreachable / the domain is unscored, and are kept byte-identical
+     * to the seeded master values so notch behaviour is preserved during a config outage.
+     */
     private static final Map<String, Integer> NOTCH_LIMITS = Map.of(
             "ANALYST", 1, "CREDIT_OFFICER", 2, "CREDIT_COMMITTEE", 99, "CRO", 99);
+
+    /** The CODE_VALUE domain whose per-role {@code score} is the admin-configurable notch limit. */
+    private static final String OVERRIDE_ROLE_DOMAIN = "OVERRIDE_ROLE";
 
     /**
      * Rating-confirm authority ladder (ANALYST &lt; CREDIT_OFFICER &lt; CREDIT_COMMITTEE / CRO).
@@ -64,6 +74,7 @@ public class RiskService {
     private final FtpService ftpService;
     private final PeerPricingService peerPricing;
     private final ConfigClient config;
+    private final RiskMasterClient masters;
     private final OriginationClient origination;
     private final RatingRepository ratings;
     private final CapitalResultRepository capitalResults;
@@ -92,6 +103,7 @@ public class RiskService {
 
     public RiskService(RatingEngine ratingEngine, CapitalEngine capitalEngine, PricingEngine pricingEngine,
                        FtpService ftpService, PeerPricingService peerPricing, ConfigClient config,
+                       RiskMasterClient masters,
                        OriginationClient origination,
                        RatingRepository ratings, CapitalResultRepository capitalResults,
                        PricingResultRepository pricingResults, ActorDirectory roles, AuditService audit,
@@ -106,6 +118,7 @@ public class RiskService {
         this.ftpService = ftpService;
         this.peerPricing = peerPricing;
         this.config = config;
+        this.masters = masters;
         this.origination = origination;
         this.ratings = ratings;
         this.capitalResults = capitalResults;
@@ -406,14 +419,29 @@ public class RiskService {
     /**
      * The actor's maximum override-notch authority, resolved from the roles the ACTOR_ROLE
      * master grants them (G1) — never a request-body role. A cold-start directory outage
-     * fails open (99), consistent with ActorDirectory parity.
+     * fails open (99), consistent with ActorDirectory parity. The per-role notch ceilings
+     * themselves come from the admin-configurable {@code OVERRIDE_ROLE} master (see
+     * {@link #notchLimitsByRole()}); the built-in {@link #NOTCH_LIMITS} is the config-outage fallback.
      */
     private int resolveNotchLimit(String actor) {
         Set<String> actorRoles = roles.rolesFor(actor);
         if (actorRoles == null) return 99;   // directory outage — fail open
+        Map<String, Integer> limits = notchLimitsByRole();
         return actorRoles.stream()
-                .mapToInt(r -> NOTCH_LIMITS.getOrDefault(r.toUpperCase(), 0))
+                .mapToInt(r -> limits.getOrDefault(r.toUpperCase(), 0))
                 .max().orElse(0);
+    }
+
+    /**
+     * Per-role override-notch ceilings, resolved from the admin-configurable {@code OVERRIDE_ROLE}
+     * CODE_VALUE master (the notch is each role's {@code score}). Falls back to the conservative
+     * built-in {@link #NOTCH_LIMITS} — byte-identical to the seeded values — when config-service is
+     * unreachable or the domain carries no scored values, so notch enforcement never depends on a
+     * config outage. Editing the master's scores changes the enforced limits with no code change.
+     */
+    private Map<String, Integer> notchLimitsByRole() {
+        Map<String, Integer> configured = masters.codeValueScores(OVERRIDE_ROLE_DOMAIN);
+        return configured.isEmpty() ? NOTCH_LIMITS : configured;
     }
 
     @Transactional(readOnly = true)
