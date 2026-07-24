@@ -346,8 +346,11 @@ check("facility view returned", st == 200, f"{st}")
 wc_view = next((f for f in fv if f["id"] == wc["id"]), {})
 check("WC facility view has 3 sublimits", len(wc_view.get("sublimits", [])) == 3,
       str(len(wc_view.get("sublimits", []))))
-check("WC_FUNDED group has 2 members and combined cap 100m",
-      any(g["groupKey"] == "WC_FUNDED" and g["memberCount"] == 2 and abs(g["combinedCap"] - 100_000_000) < 1
+# Interchangeable-group combined cap is the SHARED cap (max member amount), NOT the sum of members
+# (members of a fungible pool share one cap; summing double-counts the same headroom). CC 60m + BD 40m
+# => shared cap 60m. (Runtime pooled-headroom enforcement in limit-service is unchanged.)
+check("WC_FUNDED group has 2 members and shared cap 60m (max member, not the 100m sum)",
+      any(g["groupKey"] == "WC_FUNDED" and g["memberCount"] == 2 and abs(g["combinedCap"] - 60_000_000) < 1
           for g in wc_view.get("interchangeabilityGroups", [])),
       str(wc_view.get("interchangeabilityGroups")))
 check("BG sublimit is non-fungible (hard cap)",

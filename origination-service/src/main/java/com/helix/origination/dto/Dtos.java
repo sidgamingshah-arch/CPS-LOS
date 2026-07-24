@@ -114,6 +114,55 @@ public final class Dtos {
             String interchangeableGroup) {
     }
 
+    /**
+     * Partial edit of a proposed facility (pre-sanction only). Every field is nullable —
+     * only non-null fields are applied. The auto-created PRIMARY facility cannot be edited
+     * (it mirrors the application's headline request); post-sanction changes must go through
+     * the governed amendment path ({@code applyAmendment}).
+     */
+    public record UpdateFacilityRequest(
+            String facilityType,
+            @Positive Double amount,
+            String currency,
+            @Positive Integer tenorMonths,
+            String purpose,
+            Double indicativeRate) {
+    }
+
+    /**
+     * Partial edit of a collateral (pre-sanction only). Descriptive fields only — {@code marketValue}
+     * is intentionally ABSENT so it can never be silently overwritten here: a valuation change must
+     * route through the collateral-intel revalue → human-review apply gate, which is the accountable
+     * path that stamps the LTV assessment. Only non-null fields are applied.
+     */
+    public record UpdateCollateralRequest(
+            String collateralType,
+            String description,
+            String valuationDate,
+            String valuationSource,
+            Double haircut,
+            String owner,
+            String location,
+            String perfectionStatus,
+            Long facilityId) {
+    }
+
+    /**
+     * Partial edit of a sublimit (pre-sanction only). Only non-null fields are applied. The parent
+     * facility cap is re-checked after the edit, counting each interchangeable group ONCE at its
+     * shared cap (fungible members are not summed). Pass a blank {@code interchangeableGroup} to
+     * convert a fungible sublimit back to a hard-cap sublimit.
+     */
+    public record UpdateSublimitRequest(
+            String code,
+            String productType,
+            @Positive Double amount,
+            String currency,
+            Integer tenorMonths,
+            String purpose,
+            String interchangeableGroup) {
+    }
+
     // ---- responses ----
 
     public record CellView(Long id, String taxonomyKey, String label, boolean derived, double value,

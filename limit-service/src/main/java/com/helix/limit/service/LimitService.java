@@ -242,9 +242,15 @@ public class LimitService {
                 groups.computeIfAbsent(n.getInterchangeableGroup(), k -> new ArrayList<>()).add(n);
             }
         }
+        // Interchangeable group members SHARE one cap (utilisation moves freely within the pool), so
+        // the DISPLAY combined cap is the shared cap — the MAX member base amount — NOT the sum of
+        // members (summing double-counts the same shared headroom). Combined OUTSTANDING stays a sum:
+        // that is real drawn usage across the members and is legitimately additive. NOTE: this changes
+        // only the display roll-up; the authoritative runtime enforcement in UtilisationService
+        // (pooled headroom = Σ member caps − Σ member usage) is deliberately left unchanged.
         List<RollupGroup> groupViews = groups.entrySet().stream().map(e -> new RollupGroup(
                 e.getKey(),
-                round(e.getValue().stream().map(LimitNode::getBaseAmount).reduce(Money.ZERO, Money::add).doubleValue()),
+                round(e.getValue().stream().mapToDouble(n -> n.getBaseAmount().doubleValue()).max().orElse(0.0)),
                 round(e.getValue().stream().map(LimitNode::getOutstanding).reduce(Money.ZERO, Money::add).doubleValue()),
                 e.getValue().stream().map(LimitNode::getCode).toList())).toList();
 
