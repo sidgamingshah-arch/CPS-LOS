@@ -48,8 +48,72 @@ const TYPES: { key: string; label: string }[] = [
   { key: "RAROC_PD_TERM_STRUCTURE", label: "RAROC · PD term structure" },
 ];
 
+/**
+ * Functional families for the master-type picker. Every TYPES key is mapped to a family so the
+ * flat list renders as <optgroup>s; anything unmapped falls back to "Reference / Generic".
+ */
+const FAMILY_ORDER = [
+  "Initiation & KYC",
+  "Facilities / Collateral / Covenants",
+  "Rating & Scoring models",
+  "Pricing & Funding",
+  "Documents & CAM",
+  "Monitoring & EWS",
+  "Workflow & RBAC",
+  "Notifications",
+  "Reference / Generic",
+];
+const TYPE_FAMILY: Record<string, string> = {
+  DEDUP_RULES: "Initiation & KYC",
+  NEGATIVE_LIST: "Initiation & KYC",
+  FACILITY_MASTER: "Facilities / Collateral / Covenants",
+  COLLATERAL_MASTER: "Facilities / Collateral / Covenants",
+  COVENANT_LIBRARY: "Facilities / Collateral / Covenants",
+  CHARGE_AGENCY: "Facilities / Collateral / Covenants",
+  VALUATION_AGENCY: "Facilities / Collateral / Covenants",
+  MODEL_DEFINITION: "Rating & Scoring models",
+  FINANCIAL_TEMPLATE: "Rating & Scoring models",
+  ESG_BAND: "Rating & Scoring models",
+  EXTERNAL_RATING_AGENCY: "Rating & Scoring models",
+  INDUSTRY_BENCHMARK: "Rating & Scoring models",
+  BENCHMARK: "Pricing & Funding",
+  RAROC_BENCHMARK: "Pricing & Funding",
+  RAROC_FTP: "Pricing & Funding",
+  RAROC_CCF: "Pricing & Funding",
+  RAROC_LIQUIDITY_PREMIUM: "Pricing & Funding",
+  RAROC_OPERATING_COST: "Pricing & Funding",
+  RAROC_PD_TERM_STRUCTURE: "Pricing & Funding",
+  CHECKLIST_MASTER: "Documents & CAM",
+  DOC_TEMPLATE_MASTER: "Documents & CAM",
+  TNC_MASTER: "Documents & CAM",
+  EWS_TRIGGER: "Monitoring & EWS",
+  INACTIVITY_THRESHOLD: "Monitoring & EWS",
+  DRAFT_CLEANUP: "Monitoring & EWS",
+  ACTOR_ROLE: "Workflow & RBAC",
+  EMAIL_TEMPLATE: "Notifications",
+};
+
+/** Build & download a schema-derived CSV template for a master type (recordKey,jurisdiction,<fields>
+ *  when a curated schema exists; a recordKey,payload fallback otherwise). */
+function downloadTemplate(type: string) {
+  const schema = schemaFor(type);
+  const headers = schema
+    ? ["recordKey", "jurisdiction", ...schema.fields.map((f) => f.name)]
+    : ["recordKey", "payload"];
+  const csv = headers.join(",") + "\n";
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${type}-template.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export default function Masters() {
-  const { actor, notify } = useApp();
+  const { actor, notify, nav } = useApp();
   const [type, setType] = useState(TYPES[0].key);
   const active = useAsync(() => masters.list(type), [type]);
   const pending = useAsync(() => masters.pending(), []);
@@ -87,7 +151,15 @@ export default function Masters() {
         <div className="grid cols-3" style={{ alignItems: "end" }}>
           <Field label="Master type" hint={hasSchema ? "Guided form available" : "Raw-JSON editing"}>
             <select value={type} onChange={(e) => { setType(e.target.value); setCloneSeed(null); }}>
-              {TYPES.map((t) => <option key={t.key} value={t.key}>{t.label} · {t.key}</option>)}
+              {FAMILY_ORDER.map((fam) => {
+                const opts = TYPES.filter((t) => (TYPE_FAMILY[t.key] || "Reference / Generic") === fam);
+                if (opts.length === 0) return null;
+                return (
+                  <optgroup key={fam} label={fam}>
+                    {opts.map((t) => <option key={t.key} value={t.key}>{t.label} · {t.key}</option>)}
+                  </optgroup>
+                );
+              })}
             </select>
           </Field>
           <div style={{ gridColumn: "span 2" }} className="btnrow">
@@ -97,9 +169,20 @@ export default function Masters() {
             <Button kind="subtle" onClick={() => setBulking((o) => !o)}>
               {bulking ? "Cancel bulk" : "⇪ Bulk upload"}
             </Button>
+            <span title={hasSchema ? "Download a schema-derived CSV template for this master type" : "Download a recordKey,payload CSV template for this master type"}>
+              <Button kind="subtle" onClick={() => downloadTemplate(type)}>⬇ Download template</Button>
+            </span>
             {hasSchema && <Badge kind="info">schema</Badge>}
           </div>
         </div>
+        {type === "MODEL_DEFINITION" && (
+          <div className="prov" style={{ marginTop: 8 }}>
+            Scoring models edit as raw JSON here. For a guided experience (sections · typed questions ·
+            visibility rules · master-driven options), use the dedicated{" "}
+            <button className="btn subtle" style={{ fontSize: 11, padding: "2px 8px" }}
+              onClick={() => nav("modelbuilder")}>Model Builder</button> page.
+          </div>
+        )}
       </Card>
 
       {bulking && (

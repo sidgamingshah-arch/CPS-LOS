@@ -15,6 +15,7 @@ import { useApp } from "../app-context";
 import {
   Badge, Button, Card, DeterministicBadge, EmptyState, Field, GovFlow, Unchanged, useAsync,
 } from "../ui";
+import { CommentaryPanel } from "./Commentary";
 
 // The segment-specific section builders — rendered from already-computed figures only (no new math).
 const SEGMENT_SECTION_KEYS = new Set(["dscr_waterfall", "rent_roll", "scf_program"]);
@@ -201,6 +202,13 @@ export default function CreditProposal() {
 
       {selectedRef && (
         <>
+          {/* ── AI commentary (advisory → human-confirmed) ── */}
+          <Card title="AI commentary (advisory → human-confirmed)"
+            sub="Draft grounded narrative per section and confirm it as a named human. Confirmed commentary is woven into the generated proposal below."
+            right={<GovFlow ai="AI DRAFTS" human="HUMAN APPROVES" note="figures untouched — deterministic" />}>
+            <CommentaryPanel selectedRef={selectedRef} />
+          </Card>
+
           {/* ── generate (persisting) ── */}
           <Card title="Generate proposal · persisting"
             sub="Generate assembles a NEW, versioned proposal under the chosen CAM format and records it (the real action). Compare below uses a non-persisting preview instead."

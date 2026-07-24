@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { origination, risk, models, fmt } from "../api";
 import { useApp } from "../app-context";
-import { AiBadge, Badge, Button, Card, DeterministicBadge, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, DeterministicBadge, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Tabs, Unchanged, useAsync } from "../ui";
 import { ExplainCard, type XaiFactor } from "../xai";
 import { useCodes } from "../code-values";
 import { authorityLabel, canRole } from "../authz";
@@ -97,6 +97,8 @@ export default function RiskLab() {
   const apps = useAsync(() => origination.list(), []);
   const sectorOutlooks = useCodes("SECTOR_OUTLOOK");
   const [ref, setRef] = useState<string>(ctxRef ?? "");
+  // Which workflow tab is showing (Item: Risk Lab is a tabbed workspace, not one long scroll).
+  const [tab, setTab] = useState<string>("rating");
 
   // Authoritative rating summary
   const ratingAsync = useAsync(
@@ -208,6 +210,11 @@ export default function RiskLab() {
     setMacroForm((f) => ({ ...f, ...preset }));
   };
 
+  // The obligor name for the selected deal (from the applications list) so headers read
+  // "Acme Ltd · APP-123" rather than a bare reference.
+  const selectedApp = (apps.data ?? []).find((a: any) => a.reference === ref) ?? null;
+  const dealTitle = ref ? [selectedApp?.counterpartyName, ref].filter(Boolean).join(" · ") : "";
+
   const sum = ratingAsync.data;
   const rating = sum?.rating ?? null;
   const capital = sum?.capital ?? null;
@@ -294,139 +301,15 @@ export default function RiskLab() {
           <Button kind="subtle" onClick={reloadAll} disabled={!ref}>Refresh</Button>
         </div>
 
-        {/* Authoritative rating summary */}
+        {/* Selected-deal context — the obligor name concatenated with the reference. */}
         {ref && (
-          <div style={{ marginTop: 14 }}>
-            {ratingAsync.loading && <div className="loading">Loading rating…</div>}
-            {!ratingAsync.loading && ratingAsync.error && (
-              <div className="muted">Rate the deal first to see the authoritative rating here.</div>
-            )}
-            {!ratingAsync.loading && rating && (
-              <>
-                <div className="grid cols-3">
-                  <Stat label="Final grade" value={<GradeBadge grade={rating.finalGrade} />} />
-                  <Stat label="Model grade" value={<GradeBadge grade={rating.modelGrade} />} />
-                  <Stat label="PD" value={fmt.pct(rating.pd, 2)} />
-                </div>
-                <ScoringApproval
-                  approval={approvalAsync.data}
-                  confirmed={!!rating.confirmed}
-                  busy={approveBusy}
-                  actor={actor}
-                  onApprove={handleApproveScore}
-                />
-
-                {/* Quantitative rating basis — the deterministic scorecard, auto from the spread. */}
-                {scorecardFactors.length > 0 && (
-                  <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }}>
-                    <div className="inline" style={{ gap: 10, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <DeterministicBadge label="QUANTITATIVE · AUTO FROM SPREAD" />
-                      <span className="muted" style={{ fontSize: 12 }}>
-                        The default scorecard is 100% quantitative — computed from ratios in the analyst-confirmed
-                        spread. Deterministic and AI-free; qualitative parameters live in the scoring model below.
-                        {gradeSource === "MODEL_OF_RECORD" &&
-                          " (This deal's grade of record is the qualitative model composite; the scorecard is the quantitative reference.)"}
-                      </span>
-                    </div>
-                    <ExplainCard
-                      title="Quantitative scorecard — auto from spread"
-                      subtitle="Each factor is a ratio derived from the analyst-confirmed financial spread; the weighted roll-up is the deterministic scorecard score. Deliberately AI-free."
-                      compact
-                      explanation={{
-                        factors: scorecardFactors,
-                        factorHeaders: { factor: "Factor", value: "Ratio", subScore: "Score / 100", weight: "Weight", contribution: "Contribution" },
-                        method: `Deterministic scorecard · source ${scorecardSource ?? "built-in"}`,
-                      }}
-                    />
-                  </div>
-                )}
-              </>
-            )}
+          <div className="inline" style={{ marginTop: 12, gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span className="muted" style={{ fontSize: 12 }}>Selected deal</span>
+            <b>{dealTitle}</b>
+            {rating && <GradeBadge grade={rating.finalGrade} />}
           </div>
         )}
       </Card>
-
-      {/* Signature governance frame: AI advisory ↔ authoritative rating UNCHANGED */}
-      {ref && rating && (
-        <Card title="Governance view" sub="One glance: the AI overlay on the left, the figure of record on the right — untouched.">
-          <GovSplit
-            advisoryLabel="Statistical RAG (advisory)"
-            advisory={
-              latestRag ? (
-                <div className="inline" style={{ gap: 14 }}>
-                  <Badge kind={ragBandKind(latestRag.band)}>{latestRag.band}</Badge>
-                  <span style={{ fontSize: 22, fontWeight: 750 }}>{latestRag.score}<span className="muted" style={{ fontSize: 13, fontWeight: 500 }}> / 100</span></span>
-                </div>
-              ) : <span className="muted">Run “Assess RAG” to generate the advisory band.</span>
-            }
-            authLabel="Authoritative rating"
-            auth={
-              <div className="inline" style={{ gap: 12 }}>
-                <GradeBadge grade={rating.finalGrade} />
-                <span className="muted" style={{ fontSize: 13 }}>PD {fmt.pct(rating.pd, 2)}</span>
-              </div>
-            }
-          />
-        </Card>
-      )}
-
-      {/* Deterministic capital — deal aggregate + per-facility RWA (when multiple facilities). */}
-      {ref && capital && (
-        <Card
-          title="Capital — deterministic RWA"
-          sub="Standardised-approach RWA & capital. Multi-facility deals aggregate a per-facility RWA (each facility's CCF + its linked/apportioned collateral); a single facility is the historical single-figure computation."
-          right={<DeterministicBadge label="CAPITAL · DETERMINISTIC" />}
-        >
-          <div className="grid cols-3">
-            <Stat label="Exposure class" value={capital.exposureClass} />
-            <Stat label="EAD (post-CCF)" value={<span className="num">{fmt.money(capital.ead)}</span>} />
-            <Stat label="Applied risk weight" value={fmt.pct(capital.appliedRiskWeight, 0)} />
-            <Stat label="Secured portion" value={<span className="num">{fmt.money(capital.securedPortion)}</span>} />
-            <Stat label="RWA" value={<span className="num">{fmt.money(capital.rwa)}</span>} />
-            <Stat label="Capital required" value={<span className="num">{fmt.money(capital.capitalRequired)}</span>} />
-          </div>
-
-          {perFacilityCapital.length > 0 ? (
-            <div style={{ marginTop: 12 }}>
-              <div className="prov" style={{ marginBottom: 6 }}>
-                Per-facility RWA (aggregates to the deal RWA above):
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Facility</th>
-                    <th>Type</th>
-                    <th className="num">Amount</th>
-                    <th className="num">CCF</th>
-                    <th className="num">Exposure</th>
-                    <th className="num">Collateral cover</th>
-                    <th className="num">RWA</th>
-                    <th className="num">Capital</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {perFacilityCapital.map((f: any) => (
-                    <tr key={f.facilityReference}>
-                      <td className="mono">{f.facilityReference}</td>
-                      <td>{f.facilityType}</td>
-                      <td className="num">{fmt.money(f.nominalAmount)}</td>
-                      <td className="num">{fmt.num(f.ccf, 2)}</td>
-                      <td className="num">{fmt.money(f.exposureAfterCcf)}</td>
-                      <td className="num">{fmt.money(f.collateralCover)}</td>
-                      <td className="num">{fmt.money(f.rwa)}</td>
-                      <td className="num">{fmt.money(f.capitalRequired)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="muted" style={{ marginTop: 10 }}>
-              Single-facility deal — RWA is the historical single-figure computation (no per-facility split).
-            </div>
-          )}
-        </Card>
-      )}
 
       {!ref && (
         <Card>
@@ -440,226 +323,402 @@ export default function RiskLab() {
 
       {ref && (
       <>
-      {/* RAG card */}
-      <Card
-        title="RAG Assessment"
-        sub="Statistical scoring of deal-level risk indicators into RED / AMBER / GREEN bands. Advisory overlay — does not modify the authoritative rating."
-        right={<Badge kind="ai">AI · advisory</Badge>}
-      >
-        <div className="btnrow">
-          <Button onClick={handleAssessRag} disabled={!ref || ragBusy} busy={ragBusy}>
-            Assess RAG
-          </Button>
-          <span className="muted">Acting as {actor}</span>
-        </div>
+        {/* Tabbed workspace — the sections that used to stack in one long scroll. */}
+        <Tabs
+          tabs={[
+            { key: "rating", label: "Rating & scorecard" },
+            { key: "rag", label: "Governance (RAG)" },
+            { key: "capital", label: "Capital" },
+            { key: "macro", label: "Macro" },
+            { key: "model", label: "Model" },
+            { key: "override", label: "Override" },
+          ]}
+          active={tab}
+          onChange={setTab}
+        />
 
-        {ragAsync.loading && ref && <div className="loading">Loading RAG history…</div>}
+        {/* ── Rating & scorecard ── */}
+        {tab === "rating" && (
+          <div role="tabpanel" id="tabpanel-rating" aria-labelledby="tab-rating" className="grid">
+            <Card title="Rating & scorecard" sub={dealTitle}>
+              {ratingAsync.loading && <div className="loading">Loading rating…</div>}
+              {!ratingAsync.loading && ratingAsync.error && (
+                <div className="muted">Rate the deal first to see the authoritative rating here.</div>
+              )}
+              {!ratingAsync.loading && rating && (
+                <>
+                  <div className="grid cols-3">
+                    <Stat label="Final grade" value={<GradeBadge grade={rating.finalGrade} />} />
+                    <Stat label="Model grade" value={<GradeBadge grade={rating.modelGrade} />} />
+                    <Stat label="PD" value={fmt.pct(rating.pd, 2)} />
+                  </div>
+                  <ScoringApproval
+                    approval={approvalAsync.data}
+                    confirmed={!!rating.confirmed}
+                    busy={approveBusy}
+                    actor={actor}
+                    onApprove={handleApproveScore}
+                  />
 
-        {latestRag && (
-          <>
-            <div className="grid cols-3" style={{ marginTop: 12 }}>
-              <Stat
-                label="Band"
-                value={
-                  <Badge kind={ragBandKind(latestRag.band)}>
-                    {latestRag.band}
-                  </Badge>
-                }
-              />
-              <Stat label="Score" value={`${latestRag.score} / 100`} />
-              <Stat label="Grade snapshot" value={<GradeBadge grade={latestRag.gradeSnapshot} />} />
-            </div>
+                  {/* Quantitative rating basis — the deterministic scorecard, auto from the spread. */}
+                  {scorecardFactors.length > 0 && (
+                    <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }}>
+                      <div className="inline" style={{ gap: 10, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <DeterministicBadge label="QUANTITATIVE · AUTO FROM SPREAD" />
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          The default scorecard is 100% quantitative — computed from ratios in the analyst-confirmed
+                          spread. Deterministic and AI-free; qualitative parameters live in the scoring model below.
+                          {gradeSource === "MODEL_OF_RECORD" &&
+                            " (This deal's grade of record is the qualitative model composite; the scorecard is the quantitative reference.)"}
+                        </span>
+                      </div>
+                      <ExplainCard
+                        title="Quantitative scorecard — auto from spread"
+                        subtitle="Each factor is a ratio derived from the analyst-confirmed financial spread; the weighted roll-up is the deterministic scorecard score. Deliberately AI-free."
+                        compact
+                        explanation={{
+                          factors: scorecardFactors,
+                          factorHeaders: { factor: "Factor", value: "Ratio", subScore: "Score / 100", weight: "Weight", contribution: "Contribution" },
+                          method: `Deterministic scorecard · source ${scorecardSource ?? "built-in"}`,
+                        }}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </Card>
+          </div>
+        )}
 
-            {latestRag.advisory && (
-              <div className="prov" style={{ marginTop: 10 }}>{latestRag.advisory}</div>
-            )}
-
-            {latestRag && (
-              <div style={{ marginTop: 14 }}>
-                <ExplainCard
-                  title="Why this RAG band"
-                  subtitle="Statistical roll-up of deal-level risk indicators into the advisory band."
-                  compact
-                  explanation={{
-                    factors: ragFactors,
-                    factorHeaders: { factor: "Factor", value: "Value", subScore: "Sub-score", weight: "Weight", contribution: "Contribution" },
-                    method: `Assessed ${new Date(latestRag.createdAt).toLocaleString()} · method: ${latestRag.method}`,
-                  }}
+        {/* ── Governance (RAG) — the signature AI-advisory ↔ authoritative-unchanged split + RAG assessment ── */}
+        {tab === "rag" && (
+          <div role="tabpanel" id="tabpanel-rag" aria-labelledby="tab-rag" className="grid">
+            {rating && (
+              <Card title="Governance view" sub="One glance: the AI overlay on the left, the figure of record on the right — untouched.">
+                <GovSplit
+                  advisoryLabel="Statistical RAG (advisory)"
+                  advisory={
+                    latestRag ? (
+                      <div className="inline" style={{ gap: 14 }}>
+                        <Badge kind={ragBandKind(latestRag.band)}>{latestRag.band}</Badge>
+                        <span style={{ fontSize: 22, fontWeight: 750 }}>{latestRag.score}<span className="muted" style={{ fontSize: 13, fontWeight: 500 }}> / 100</span></span>
+                      </div>
+                    ) : <span className="muted">Run “Assess RAG” to generate the advisory band.</span>
+                  }
+                  authLabel="Authoritative rating"
+                  auth={
+                    <div className="inline" style={{ gap: 12 }}>
+                      <GradeBadge grade={rating.finalGrade} />
+                      <span className="muted" style={{ fontSize: 13 }}>PD {fmt.pct(rating.pd, 2)}</span>
+                    </div>
+                  }
                 />
-              </div>
+              </Card>
             )}
-          </>
-        )}
 
-        {!ragAsync.loading && !latestRag && ref && (
-          <div className="muted" style={{ marginTop: 8 }}>No RAG assessments yet — click Assess RAG.</div>
-        )}
-      </Card>
-
-      {/* Macro card */}
-      <Card
-        title="Macro Impact Assessment"
-        sub="Directional overlay estimating PD impact under macro scenario assumptions. Non-binding; never overwrites the authoritative rating."
-        right={<Badge kind="ai">AI · advisory</Badge>}
-      >
-        <div className="btnrow" style={{ marginBottom: 10 }}>
-          <Button
-            kind="ghost"
-            onClick={() =>
-              applyPreset({
-                scenarioName: "Stagflation",
-                interestRateBps: "200",
-                gdpGrowthDeltaPct: "-2",
-                sectorOutlook: "DETERIORATING",
-              })
-            }
-          >
-            Stagflation
-          </Button>
-          <Button
-            kind="ghost"
-            onClick={() =>
-              applyPreset({
-                scenarioName: "Soft landing",
-                interestRateBps: "-100",
-                gdpGrowthDeltaPct: "2",
-                sectorOutlook: "IMPROVING",
-              })
-            }
-          >
-            Soft landing
-          </Button>
-        </div>
-
-        <div className="grid cols-2">
-          <Field label="Scenario name">
-            <input
-              value={macroForm.scenarioName}
-              onChange={(e) => setMacroForm((f) => ({ ...f, scenarioName: e.target.value }))}
-              placeholder="e.g. Stagflation"
-            />
-          </Field>
-          <Field label="Sector outlook">
-            <select
-              value={macroForm.sectorOutlook}
-              onChange={(e) =>
-                setMacroForm((f) => ({ ...f, sectorOutlook: e.target.value as SectorOutlook }))
-              }
+            <Card
+              title="RAG Assessment"
+              sub="Statistical scoring of deal-level risk indicators into RED / AMBER / GREEN bands. Advisory overlay — does not modify the authoritative rating."
+              right={<Badge kind="ai">AI · advisory</Badge>}
             >
-              {sectorOutlooks.map((o) => (
-                <option key={o.code} value={o.code}>{o.label}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Interest rate shift (bps)">
-            <input
-              type="number"
-              value={macroForm.interestRateBps}
-              onChange={(e) => setMacroForm((f) => ({ ...f, interestRateBps: e.target.value }))}
-            />
-          </Field>
-          <Field label="GDP growth delta (%)">
-            <input
-              type="number"
-              value={macroForm.gdpGrowthDeltaPct}
-              onChange={(e) => setMacroForm((f) => ({ ...f, gdpGrowthDeltaPct: e.target.value }))}
-            />
-          </Field>
-          <Field label="FX depreciation (%)">
-            <input
-              type="number"
-              value={macroForm.fxDepreciationPct}
-              onChange={(e) => setMacroForm((f) => ({ ...f, fxDepreciationPct: e.target.value }))}
-            />
-          </Field>
-          <Field label="Commodity shock (%)">
-            <input
-              type="number"
-              value={macroForm.commodityShockPct}
-              onChange={(e) => setMacroForm((f) => ({ ...f, commodityShockPct: e.target.value }))}
-            />
-          </Field>
-        </div>
-
-        <div className="btnrow" style={{ marginTop: 8 }}>
-          <Button onClick={handleMacroSubmit} disabled={!ref || macroBusy} busy={macroBusy}>
-            Run macro impact
-          </Button>
-        </div>
-
-        {macroAsync.loading && ref && <div className="loading">Loading macro history…</div>}
-
-        {latestMacro && (
-          <>
-            <div className="grid cols-3" style={{ marginTop: 14 }}>
-              <Stat
-                label="Direction"
-                value={
-                  <Badge kind={directionKind(latestMacro.direction)}>
-                    {latestMacro.direction}
-                  </Badge>
-                }
-              />
-              <Stat
-                label="PD delta (bps)"
-                value={<span className="num">{latestMacro.pdDeltaBps}</span>}
-                tone={latestMacro.pdDeltaBps > 0 ? "var(--bad)" : undefined}
-              />
-              <Stat label="Notch estimate" value={latestMacro.notchEstimate ?? "—"} />
-            </div>
-
-            <div className="grid cols-2" style={{ marginTop: 10 }}>
-              <Stat label="Baseline PD" value={fmt.pct(latestMacro.baselinePd, 2)} />
-              <Stat label="Stressed PD" value={fmt.pct(latestMacro.stressedPd, 2)} />
-            </div>
-
-            {latestMacro.rationale && (
-              <div className="prov" style={{ marginTop: 10 }}>{latestMacro.rationale}</div>
-            )}
-
-            {latestMacro.advisory && (
-              <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>{latestMacro.advisory}</div>
-            )}
-
-            {latestMacro && (
-              <div style={{ marginTop: 14 }}>
-                <ExplainCard
-                  title="Why this macro impact"
-                  subtitle="Each driver's directional PD-multiplier contribution, and the net multiplier applied to the baseline PD."
-                  compact
-                  explanation={{
-                    factors: macroFactors,
-                    factorHeaders: { factor: "Driver", contribution: "PD multiplier Δ", note: "Basis" },
-                    whatIf: `Under "${latestMacro.scenarioName}", modelled PD moves ${fmt.pct(latestMacro.baselinePd, 2)} → ${fmt.pct(latestMacro.stressedPd, 2)} (${latestMacro.pdDeltaBps >= 0 ? "+" : ""}${latestMacro.pdDeltaBps} bps). Directional overlay only — the authoritative rating is unchanged.`,
-                    method: `Scenario: ${latestMacro.scenarioName} · assessed ${new Date(latestMacro.createdAt).toLocaleString()}`,
-                  }}
-                />
+              <div className="btnrow">
+                <Button onClick={handleAssessRag} disabled={!ref || ragBusy} busy={ragBusy}>
+                  Assess RAG
+                </Button>
+                <span className="muted">Acting as {actor}</span>
               </div>
+
+              {ragAsync.loading && ref && <div className="loading">Loading RAG history…</div>}
+
+              {latestRag && (
+                <>
+                  <div className="grid cols-3" style={{ marginTop: 12 }}>
+                    <Stat
+                      label="Band"
+                      value={
+                        <Badge kind={ragBandKind(latestRag.band)}>
+                          {latestRag.band}
+                        </Badge>
+                      }
+                    />
+                    <Stat label="Score" value={`${latestRag.score} / 100`} />
+                    <Stat label="Grade snapshot" value={<GradeBadge grade={latestRag.gradeSnapshot} />} />
+                  </div>
+
+                  {latestRag.advisory && (
+                    <div className="prov" style={{ marginTop: 10 }}>{latestRag.advisory}</div>
+                  )}
+
+                  {latestRag && (
+                    <div style={{ marginTop: 14 }}>
+                      <ExplainCard
+                        title="Why this RAG band"
+                        subtitle="Statistical roll-up of deal-level risk indicators into the advisory band."
+                        compact
+                        explanation={{
+                          factors: ragFactors,
+                          factorHeaders: { factor: "Factor", value: "Value", subScore: "Sub-score", weight: "Weight", contribution: "Contribution" },
+                          method: `Assessed ${new Date(latestRag.createdAt).toLocaleString()} · method: ${latestRag.method}`,
+                        }}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!ragAsync.loading && !latestRag && ref && (
+                <div className="muted" style={{ marginTop: 8 }}>No RAG assessments yet — click Assess RAG.</div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* ── Capital ── */}
+        {tab === "capital" && (
+          <div role="tabpanel" id="tabpanel-capital" aria-labelledby="tab-capital" className="grid">
+            {capital ? (
+              <Card
+                title="Capital — deterministic RWA"
+                sub="Standardised-approach RWA & capital. Multi-facility deals aggregate a per-facility RWA (each facility's CCF + its linked/apportioned collateral); a single facility is the historical single-figure computation."
+                right={<DeterministicBadge label="CAPITAL · DETERMINISTIC" />}
+              >
+                <div className="grid cols-3">
+                  <Stat label="Exposure class" value={capital.exposureClass} />
+                  <Stat label="EAD (post-CCF)" value={<span className="num">{fmt.money(capital.ead)}</span>} />
+                  <Stat label="Applied risk weight" value={fmt.pct(capital.appliedRiskWeight, 0)} />
+                  <Stat label="Secured portion" value={<span className="num">{fmt.money(capital.securedPortion)}</span>} />
+                  <Stat label="RWA" value={<span className="num">{fmt.money(capital.rwa)}</span>} />
+                  <Stat label="Capital required" value={<span className="num">{fmt.money(capital.capitalRequired)}</span>} />
+                </div>
+
+                {perFacilityCapital.length > 0 ? (
+                  <div style={{ marginTop: 12 }}>
+                    <div className="prov" style={{ marginBottom: 6 }}>
+                      Per-facility RWA (aggregates to the deal RWA above):
+                    </div>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Facility</th>
+                          <th>Type</th>
+                          <th className="num">Amount</th>
+                          <th className="num">CCF</th>
+                          <th className="num">Exposure</th>
+                          <th className="num">Collateral cover</th>
+                          <th className="num">RWA</th>
+                          <th className="num">Capital</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {perFacilityCapital.map((f: any) => (
+                          <tr key={f.facilityReference}>
+                            <td className="mono">{f.facilityReference}</td>
+                            <td>{f.facilityType}</td>
+                            <td className="num">{fmt.money(f.nominalAmount)}</td>
+                            <td className="num">{fmt.num(f.ccf, 2)}</td>
+                            <td className="num">{fmt.money(f.exposureAfterCcf)}</td>
+                            <td className="num">{fmt.money(f.collateralCover)}</td>
+                            <td className="num">{fmt.money(f.rwa)}</td>
+                            <td className="num">{fmt.money(f.capitalRequired)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="muted" style={{ marginTop: 10 }}>
+                    Single-facility deal — RWA is the historical single-figure computation (no per-facility split).
+                  </div>
+                )}
+              </Card>
+            ) : (
+              <Card title="Capital — deterministic RWA" right={<DeterministicBadge label="CAPITAL · DETERMINISTIC" />}>
+                <div className="muted">No capital projection yet — rate the deal and compute capital on the deal workspace to see RWA here.</div>
+              </Card>
             )}
-          </>
+          </div>
         )}
 
-        {!macroAsync.loading && !latestMacro && ref && (
-          <div className="muted" style={{ marginTop: 8 }}>No macro assessments yet — configure a scenario and run.</div>
+        {/* ── Macro ── */}
+        {tab === "macro" && (
+          <div role="tabpanel" id="tabpanel-macro" aria-labelledby="tab-macro" className="grid">
+            <Card
+              title="Macro Impact Assessment"
+              sub="Directional overlay estimating PD impact under macro scenario assumptions. Non-binding; never overwrites the authoritative rating."
+              right={<Badge kind="ai">AI · advisory</Badge>}
+            >
+              <div className="btnrow" style={{ marginBottom: 10 }}>
+                <Button
+                  kind="ghost"
+                  onClick={() =>
+                    applyPreset({
+                      scenarioName: "Stagflation",
+                      interestRateBps: "200",
+                      gdpGrowthDeltaPct: "-2",
+                      sectorOutlook: "DETERIORATING",
+                    })
+                  }
+                >
+                  Stagflation
+                </Button>
+                <Button
+                  kind="ghost"
+                  onClick={() =>
+                    applyPreset({
+                      scenarioName: "Soft landing",
+                      interestRateBps: "-100",
+                      gdpGrowthDeltaPct: "2",
+                      sectorOutlook: "IMPROVING",
+                    })
+                  }
+                >
+                  Soft landing
+                </Button>
+              </div>
+
+              <div className="grid cols-2">
+                <Field label="Scenario name">
+                  <input
+                    value={macroForm.scenarioName}
+                    onChange={(e) => setMacroForm((f) => ({ ...f, scenarioName: e.target.value }))}
+                    placeholder="e.g. Stagflation"
+                  />
+                </Field>
+                <Field label="Sector outlook">
+                  <select
+                    value={macroForm.sectorOutlook}
+                    onChange={(e) =>
+                      setMacroForm((f) => ({ ...f, sectorOutlook: e.target.value as SectorOutlook }))
+                    }
+                  >
+                    {sectorOutlooks.map((o) => (
+                      <option key={o.code} value={o.code}>{o.label}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Interest rate shift (bps)">
+                  <input
+                    type="number"
+                    value={macroForm.interestRateBps}
+                    onChange={(e) => setMacroForm((f) => ({ ...f, interestRateBps: e.target.value }))}
+                  />
+                </Field>
+                <Field label="GDP growth delta (%)">
+                  <input
+                    type="number"
+                    value={macroForm.gdpGrowthDeltaPct}
+                    onChange={(e) => setMacroForm((f) => ({ ...f, gdpGrowthDeltaPct: e.target.value }))}
+                  />
+                </Field>
+                <Field label="FX depreciation (%)">
+                  <input
+                    type="number"
+                    value={macroForm.fxDepreciationPct}
+                    onChange={(e) => setMacroForm((f) => ({ ...f, fxDepreciationPct: e.target.value }))}
+                  />
+                </Field>
+                <Field label="Commodity shock (%)">
+                  <input
+                    type="number"
+                    value={macroForm.commodityShockPct}
+                    onChange={(e) => setMacroForm((f) => ({ ...f, commodityShockPct: e.target.value }))}
+                  />
+                </Field>
+              </div>
+
+              <div className="btnrow" style={{ marginTop: 8 }}>
+                <Button onClick={handleMacroSubmit} disabled={!ref || macroBusy} busy={macroBusy}>
+                  Run macro impact
+                </Button>
+              </div>
+
+              {macroAsync.loading && ref && <div className="loading">Loading macro history…</div>}
+
+              {latestMacro && (
+                <>
+                  <div className="grid cols-3" style={{ marginTop: 14 }}>
+                    <Stat
+                      label="Direction"
+                      value={
+                        <Badge kind={directionKind(latestMacro.direction)}>
+                          {latestMacro.direction}
+                        </Badge>
+                      }
+                    />
+                    <Stat
+                      label="PD delta (bps)"
+                      value={<span className="num">{latestMacro.pdDeltaBps}</span>}
+                      tone={latestMacro.pdDeltaBps > 0 ? "var(--bad)" : undefined}
+                    />
+                    <Stat label="Notch estimate" value={latestMacro.notchEstimate ?? "—"} />
+                  </div>
+
+                  <div className="grid cols-2" style={{ marginTop: 10 }}>
+                    <Stat label="Baseline PD" value={fmt.pct(latestMacro.baselinePd, 2)} />
+                    <Stat label="Stressed PD" value={fmt.pct(latestMacro.stressedPd, 2)} />
+                  </div>
+
+                  {latestMacro.rationale && (
+                    <div className="prov" style={{ marginTop: 10 }}>{latestMacro.rationale}</div>
+                  )}
+
+                  {latestMacro.advisory && (
+                    <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>{latestMacro.advisory}</div>
+                  )}
+
+                  {latestMacro && (
+                    <div style={{ marginTop: 14 }}>
+                      <ExplainCard
+                        title="Why this macro impact"
+                        subtitle="Each driver's directional PD-multiplier contribution, and the net multiplier applied to the baseline PD."
+                        compact
+                        explanation={{
+                          factors: macroFactors,
+                          factorHeaders: { factor: "Driver", contribution: "PD multiplier Δ", note: "Basis" },
+                          whatIf: `Under "${latestMacro.scenarioName}", modelled PD moves ${fmt.pct(latestMacro.baselinePd, 2)} → ${fmt.pct(latestMacro.stressedPd, 2)} (${latestMacro.pdDeltaBps >= 0 ? "+" : ""}${latestMacro.pdDeltaBps} bps). Directional overlay only — the authoritative rating is unchanged.`,
+                          method: `Scenario: ${latestMacro.scenarioName} · assessed ${new Date(latestMacro.createdAt).toLocaleString()}`,
+                        }}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!macroAsync.loading && !latestMacro && ref && (
+                <div className="muted" style={{ marginTop: 8 }}>No macro assessments yet — configure a scenario and run.</div>
+              )}
+            </Card>
+          </div>
         )}
-      </Card>
 
-      {ref && (
-        <ModelCard
-          refValue={ref}
-          grade={ratingAsync.data?.rating?.finalGrade}
-          model={modelAsync}
-        />
-      )}
+        {/* ── Model ── */}
+        {tab === "model" && (
+          <div role="tabpanel" id="tabpanel-model" aria-labelledby="tab-model" className="grid">
+            <ModelCard
+              refValue={ref}
+              grade={ratingAsync.data?.rating?.finalGrade}
+              model={modelAsync}
+            />
+          </div>
+        )}
 
-      {ref && rating && (
-        <ManualOverrideCard
-          refValue={ref}
-          rating={rating}
-          model={modelAsync.data}
-          onChanged={reloadAll}
-        />
-      )}
+        {/* ── Override ── */}
+        {tab === "override" && (
+          <div role="tabpanel" id="tabpanel-override" aria-labelledby="tab-override" className="grid">
+            {rating ? (
+              <ManualOverrideCard
+                refValue={ref}
+                rating={rating}
+                model={modelAsync.data}
+                onChanged={reloadAll}
+              />
+            ) : (
+              <Card title="Manual rating override" right={<HumanBadge label="HUMAN · MANUAL" />}>
+                <div className="muted">Rate the deal first — a manual override changes the authoritative grade of record.</div>
+              </Card>
+            )}
+          </div>
+        )}
       </>
       )}
     </div>

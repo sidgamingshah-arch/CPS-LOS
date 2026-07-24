@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { config, counterparty, fmt, initiation, sourceIngest } from "../api";
+import { config, counterparty, fmt, initiation, masters, sourceIngest } from "../api";
 import { useApp } from "../app-context";
 import {
   AiBadge, Badge, Button, Card, type Col, DataTable, EmptyState, Field, GovFlow,
@@ -185,9 +185,22 @@ export default function Counterparties() {
     // own `order` so the checkboxes render in the intended sequence (matches ScreeningService).
     const flagDefs = [...(catalogue.data && catalogue.data.length ? catalogue.data : FALLBACK_FLAGS)]
       .sort((a: any, b: any) => (a?.payload?.order ?? 999) - (b?.payload?.order ?? 999));
+    // RM directory — sourced from the ACTOR_ROLE master (users granted an RM / RM_HEAD role),
+    // degrading gracefully to the seeded RMs when the master is empty/unreachable.
+    const rmDirectory = useAsync<any[]>(() => masters.list("ACTOR_ROLE").catch(() => []), []);
+    const rmFromMaster = (rmDirectory.data || [])
+      .filter((r: any) => {
+        const p = r?.payload || {};
+        const roles: string[] = Array.isArray(p.roles) ? p.roles.map(String) : (p.role ? [String(p.role)] : []);
+        return roles.some((x) => /RM/i.test(x));
+      })
+      .map((r: any) => String(r.recordKey))
+      .filter(Boolean);
+    const rmOptions = Array.from(new Set(rmFromMaster.length ? rmFromMaster : ["rm.user", "rm.head"]));
     const [f, setF] = useState<any>({
       legalName: "", legalForm: "PRIVATE_LTD", registrationNo: "", cin: "", gstin: "",
       jurisdiction: "IN-RBI", segment: "MID_CORPORATE", sector: "MANUFACTURING", country: "IN",
+      rmId: "", groupTag: "",
     });
     const [flags, setFlags] = useState<Record<string, boolean>>({});
     const [busy, setBusy] = useState(false);
@@ -243,7 +256,7 @@ export default function Counterparties() {
         title="New counterparty" wide onClose={onClose}
         sub="Onboard an obligor — segment, jurisdiction, sector/country and the risk flags that drive CDD intensity + screening."
         footer={<><Button kind="subtle" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} busy={busy} disabled={!f.legalName}>Onboard</Button></>}
+          <Button onClick={submit} busy={busy} disabled={!f.legalName || !f.rmId}>Onboard</Button></>}
       >
         {/* AI EXTRACTS → HUMAN CONFIRMS: optional doc upload that pre-fills the identity fields.
             Advisory only — nothing is committed until the human reviews and clicks Onboard. */}
@@ -312,6 +325,16 @@ export default function Counterparties() {
             <select value={f.country} onChange={(e) => setF({ ...f, country: e.target.value })}>
               {countries.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
             </select>
+          </Field>
+          <Field label="Relationship Manager (RM)" required
+            hint="Owning RM — drives coverage & segregation-of-duties. Defaults server-side to the creator if unset.">
+            <select value={f.rmId} onChange={(e) => setF({ ...f, rmId: e.target.value })}>
+              <option value="">— select RM —</option>
+              {rmOptions.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </Field>
+          <Field label="Group (optional)" hint="Borrower-group tag for combined exposure / group decisioning">
+            <input value={f.groupTag} onChange={(e) => setF({ ...f, groupTag: e.target.value })} placeholder="e.g. MERIDIAN_GROUP" />
           </Field>
         </div>
         <div className="sub" style={{ marginTop: 6 }}>

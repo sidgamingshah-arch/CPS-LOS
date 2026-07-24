@@ -1208,8 +1208,39 @@ export const codeValues = {
 };
 
 // ---- audit (any service exposes /api/audit) ----
+// The recent-window endpoint now accepts optional server-side filters. `actor` matches on the
+// user-name (contains); `q` is a free-text search over summary / subjectId / actor (so a
+// counterparty NAME — which appears in the summary — filters here); the rest narrow by
+// eventType / actorType / subject / date window / row cap. Blank params are omitted so a bare
+// `audit.recent(svc)` stays byte-identical to before.
+export type AuditQuery = {
+  actor?: string;
+  q?: string;
+  eventType?: string;
+  actorType?: string;
+  subjectType?: string;
+  subjectId?: string;
+  from?: string;   // ISO date yyyy-MM-dd
+  to?: string;     // ISO date yyyy-MM-dd
+  limit?: number;
+};
 export const audit = {
-  recent: (svc: string) => call<any[]>(`/${svc}/api/audit`, "GET"),
+  recent: (svc: string, query?: AuditQuery) => {
+    const p = new URLSearchParams();
+    if (query) {
+      if (query.actor?.trim()) p.set("actor", query.actor.trim());
+      if (query.q?.trim()) p.set("q", query.q.trim());
+      if (query.eventType?.trim()) p.set("eventType", query.eventType.trim());
+      if (query.actorType?.trim()) p.set("actorType", query.actorType.trim());
+      if (query.subjectType?.trim()) p.set("subjectType", query.subjectType.trim());
+      if (query.subjectId?.trim()) p.set("subjectId", query.subjectId.trim());
+      if (query.from?.trim()) p.set("from", query.from.trim());
+      if (query.to?.trim()) p.set("to", query.to.trim());
+      if (query.limit != null) p.set("limit", String(query.limit));
+    }
+    const qs = p.toString();
+    return call<any[]>(`/${svc}/api/audit${qs ? `?${qs}` : ""}`, "GET");
+  },
   subject: (svc: string, type: string, id: string) =>
     call<any[]>(`/${svc}/api/audit/subject?type=${type}&id=${id}`, "GET"),
 };

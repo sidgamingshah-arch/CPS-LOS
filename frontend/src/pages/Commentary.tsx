@@ -166,14 +166,12 @@ function CommentaryCard({
   );
 }
 
-// ── main page ──────────────────────────────────────────────────────────────
-
-export default function Commentary() {
-  const { actor, notify, ref: ctxRef } = useApp();
-
-  // Deal selector
-  const deals = useAsync(() => origination.list(), []);
-  const [selectedRef, setSelectedRef] = useState<string>(ctxRef ?? "");
+// ── reusable commentary panel (deal-scoped) ─────────────────────────────────
+// Extracted so the Credit Proposal screen can host commentary drafting/review inline
+// (the standalone nav destination was folded into the proposal workspace). Takes the
+// selected deal reference; renders the draft form + grouped, human-gated review list.
+export function CommentaryPanel({ selectedRef }: { selectedRef: string }) {
+  const { actor, notify } = useApp();
 
   // Commentary list — reloaded whenever selectedRef changes or reload() called
   const entries = useAsync<ProposalCommentary[]>(
@@ -215,9 +213,98 @@ export default function Commentary() {
   }
   const sectionKeysWithEntries = SECTIONS.filter((s) => (grouped[s] ?? []).length > 0);
 
+  if (!selectedRef) {
+    return (
+      <EmptyState
+        glyph="✎"
+        title="Select a deal to draft AI commentary"
+        sub="Commentary is grounded in the deal's data; every draft is advisory and must be reviewed by a named human before it appears on the proposal."
+      />
+    );
+  }
+
   return (
     <div className="grid">
+      {/* ── Draft section ── */}
+      <Card
+        title="Draft section"
+        sub="Choose a section, add an optional hint, and the AI will draft commentary grounded on deal data."
+      >
+        <div className="grid cols-2">
+          <Field label="Section">
+            <select
+              value={draftSection}
+              onChange={(e) => setDraftSection(e.target.value as SectionKey)}
+            >
+              {SECTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {humaniseSection(s)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Hint (optional)" hint="Rich text — stored as markdown; no HTML is ever rendered.">
+            <RichText
+              rows={3}
+              value={draftHint}
+              onChange={setDraftHint}
+              ariaLabel="Drafting hint"
+              placeholder="E.g. focus on leverage trend and covenant headroom…"
+            />
+          </Field>
+        </div>
+        <div className="btnrow" style={{ marginTop: 8 }}>
+          <Button onClick={handleDraft} busy={drafting}>
+            Draft commentary
+          </Button>
+          <small className="prov">Acting as {actor}</small>
+        </div>
+      </Card>
 
+      {/* ── Commentary list grouped by section ── */}
+      {entries.loading && (
+        <div className="loading">Loading commentary…</div>
+      )}
+      {!entries.loading && (entries.data ?? []).length === 0 && (
+        <Card>
+          <EmptyState
+            glyph="✎"
+            title="No commentary on this deal yet"
+            sub="Use the “Draft section” card above to generate the first piece. Drafts stay advisory until a named human approves them."
+          />
+        </Card>
+      )}
+
+      {sectionKeysWithEntries.map((section) => (
+        <Card key={section} title={humaniseSection(section)}>
+          <div className="grid cols-2">
+            {(grouped[section] ?? []).map((entry) => (
+              <CommentaryCard
+                key={entry.id}
+                entry={entry}
+                actor={actor}
+                notify={notify}
+                onReload={entries.reload}
+              />
+            ))}
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ── main page (standalone) ──────────────────────────────────────────────────
+// The AI-Commentary nav item was folded into the Credit Proposal screen; this page
+// remains for deep-links / the command palette, sharing the same CommentaryPanel.
+
+export default function Commentary() {
+  const { ref: ctxRef } = useApp();
+  const deals = useAsync(() => origination.list(), []);
+  const [selectedRef, setSelectedRef] = useState<string>(ctxRef ?? "");
+
+  return (
+    <div className="grid">
       {/* ── AI advisory banner ── */}
       <Card
         title="AI Narrative Commentary"
@@ -238,9 +325,7 @@ export default function Commentary() {
         <Field label="Deal">
           <select
             value={selectedRef}
-            onChange={(e) => {
-              setSelectedRef(e.target.value);
-            }}
+            onChange={(e) => { setSelectedRef(e.target.value); }}
           >
             <option value="">— select deal —</option>
             {(deals.data ?? []).map((d: any) => (
@@ -252,90 +337,7 @@ export default function Commentary() {
         </Field>
       </Card>
 
-      {!selectedRef && (
-        <Card>
-          <EmptyState
-            glyph="✎"
-            title="Select a deal to draft AI commentary"
-            sub="Pick an application above. Commentary is grounded in the deal's data; every draft is advisory and must be reviewed by a named human before it appears on the proposal."
-          />
-        </Card>
-      )}
-
-      {/* ── Draft section ── */}
-      {selectedRef && (
-        <Card
-          title="Draft section"
-          sub="Choose a section, add an optional hint, and the AI will draft commentary grounded on deal data."
-        >
-          <div className="grid cols-2">
-            <Field label="Section">
-              <select
-                value={draftSection}
-                onChange={(e) => setDraftSection(e.target.value as SectionKey)}
-              >
-                {SECTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {humaniseSection(s)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Hint (optional)" hint="Rich text — stored as markdown; no HTML is ever rendered.">
-              <RichText
-                rows={3}
-                value={draftHint}
-                onChange={setDraftHint}
-                ariaLabel="Drafting hint"
-                placeholder="E.g. focus on leverage trend and covenant headroom…"
-              />
-            </Field>
-          </div>
-          <div className="btnrow" style={{ marginTop: 8 }}>
-            <Button onClick={handleDraft} busy={drafting}>
-              Draft commentary
-            </Button>
-            <small className="prov">Acting as {actor}</small>
-          </div>
-        </Card>
-      )}
-
-      {/* ── Commentary list grouped by section ── */}
-      {selectedRef && (
-        <>
-          {entries.loading && (
-            <div className="loading">Loading commentary…</div>
-          )}
-          {!entries.loading && (entries.data ?? []).length === 0 && (
-            <Card>
-              <EmptyState
-                glyph="✎"
-                title="No commentary on this deal yet"
-                sub="Use the “Draft section” card above to generate the first piece. Drafts stay advisory until a named human approves them."
-              />
-            </Card>
-          )}
-
-          {sectionKeysWithEntries.map((section) => (
-            <Card
-              key={section}
-              title={humaniseSection(section)}
-            >
-              <div className="grid cols-2">
-                {(grouped[section] ?? []).map((entry) => (
-                  <CommentaryCard
-                    key={entry.id}
-                    entry={entry}
-                    actor={actor}
-                    notify={notify}
-                    onReload={entries.reload}
-                  />
-                ))}
-              </div>
-            </Card>
-          ))}
-        </>
-      )}
+      <CommentaryPanel selectedRef={selectedRef} />
     </div>
   );
 }

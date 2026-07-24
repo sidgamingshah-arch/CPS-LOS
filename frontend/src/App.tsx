@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppContext, AI_BY_NAV, isNavEnabled } from "./app-context";
-import { governance, masters, setAuthToken } from "./api";
+import { governance, masters, origination, setAuthToken } from "./api";
 import {
   resolveWorkspace, parseRoleWorkspaceMaster, isNavItemInScope,
   type RoleWorkspaceMap,
@@ -46,6 +46,7 @@ import ApprovalRules from "./pages/ApprovalRules";
 import DocGen from "./pages/DocGen";
 import Execution from "./pages/Execution";
 import Commentary from "./pages/Commentary";
+import Covenants from "./pages/Covenants";
 import PricingLab from "./pages/PricingLab";
 import Spreading from "./pages/Spreading";
 import Exports from "./pages/Exports";
@@ -117,8 +118,8 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "perfection", label: "MOE Perfection" },
       { key: "docgen", label: "Doc Generation" },
       { key: "execution", label: "Document Execution" },
-      { key: "commentary", label: "AI Commentary" },
       { key: "creditproposal", label: "Credit Proposal" },
+      { key: "covenants", label: "Covenants" },
       { key: "annexures", label: "CAM Annexures" },
       { key: "doccompare", label: "Document Compare" },
       { key: "committee", label: "Committee Room" },
@@ -192,7 +193,8 @@ const CRUMB: Record<string, string> = {
   docgen: "Template-driven document generation · clause add/remove/edit · human-confirm gate",
   execution: "Document execution workflow · signatory matrix (INTERNAL/CUSTOMER) · e-sign facade · status stepper · deferral/waiver tags · source document unchanged",
   commentary: "AI narrative commentary · grounded · advisory · human-confirm gate",
-  creditproposal: "CAM authoring · format picker · generate (versioned) · side-by-side format compare (non-persisting preview) · figures identical across formats",
+  creditproposal: "CAM authoring · format picker · generate (versioned) · side-by-side format compare (non-persisting preview) · figures identical across formats · AI commentary (advisory → human-confirmed)",
+  covenants: "Covenants of record · scheduled testing · tracking state machine · AI covenant intelligence (extract from CP text → human confirm) · deterministic recompute is the arbiter",
   annexures: "CAM annexures · ANNEXURE_TYPE-master-driven · sections materialised + version-pinned · optional advisory AI draft · DRAFT→SUBMITTED→REVIEWED→APPROVED (SoD reviewer/approver≠author) · deal grade/PD/spread untouched",
   doccompare: "Deterministic incremental-change diff · two proposal or document versions · ADDED/REMOVED/CHANGED/UNCHANGED change table · side-by-side · read-only over sources",
   approvalrules: "Scoring-approval policy · visual matrix · first-match-wins routing · simulate · maker-checker save · never touches a figure",
@@ -259,6 +261,9 @@ export default function App() {
   const [navOpen, setNavOpen] = useState(false);   // mobile drawer
   const [cmdkOpen, setCmdkOpen] = useState(false); // ⌘K palette
   const [aiEnabled, setAiEnabled] = useState<Record<string, boolean>>({});
+  // Obligor name for the active deal — so the topbar chip reads "Acme Ltd · APP-123"
+  // rather than a bare reference. Best-effort; falls back to just the reference.
+  const [dealName, setDealName] = useState<string | null>(null);
   // Config-driven role→workspace overrides from the ROLE_WORKSPACE master (generic
   // master engine). Empty until fetched; role-scope.ts falls back to its baked-in
   // conservative map when this is empty, so the nav works even if the master is absent.
@@ -326,6 +331,16 @@ export default function App() {
   // Persist UI state so a reload lands you where you left off.
   useEffect(() => { lsSet("helix.view", view); }, [view]);
   useEffect(() => { lsSet("helix.ref", ref ?? ""); }, [ref]);
+  // Resolve the active deal's obligor name for the topbar chip (best-effort; clears + reloads on
+  // ref change, degrades to the bare reference on any error).
+  useEffect(() => {
+    let alive = true;
+    setDealName(null);
+    if (ref) {
+      origination.get(ref).then((d: any) => { if (alive) setDealName(d?.counterpartyName ?? null); }).catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [ref]);
   useEffect(() => { lsSet("helix.actor", actor); }, [actor]);
   useEffect(() => { lsSet("helix.roles", JSON.stringify(roles)); }, [roles]);
   useEffect(() => { if (token) lsSet("helix.token", token); }, [token]);
@@ -455,7 +470,7 @@ export default function App() {
               {showDealChip && (
                 <button className="cmdk-btn" title="Open the deal workspace" onClick={() => nav("workspace", ref)}>
                   <span className="ci-dot" style={{ background: "var(--ocean-6)" }} />
-                  Deal <b style={{ fontFamily: "var(--font-mono)" }}>{ref}</b> →
+                  Deal {dealName && <span>{dealName} · </span>}<b style={{ fontFamily: "var(--font-mono)" }}>{ref}</b> →
                 </button>
               )}
             </div>
@@ -510,6 +525,7 @@ export default function App() {
             {view === "execution" && <Execution />}
             {view === "commentary" && <Commentary />}
             {view === "creditproposal" && <CreditProposal />}
+            {view === "covenants" && <Covenants />}
             {view === "annexures" && <Annexures />}
             {view === "doccompare" && <DocCompare />}
             {view === "committee" && <Committee />}
