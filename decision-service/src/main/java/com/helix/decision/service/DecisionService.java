@@ -100,6 +100,9 @@ public class DecisionService {
         decision.setRoutedBy(actor);
         decision.setCommitteeMode(routing.committee());
         decision.setQuorumRequired(routing.committee() ? Math.max(1, routing.quorum()) : 1);
+        // Named Stage-4 committee tier (additive; from the DOA_MATRIX committee ladder).
+        decision.setCommitteeLabel(routing.committeeLabel());
+        decision.setCommitteeComposition(routing.composition());
         // Additive, default-OFF COI gate: capture the pack's require_coi_attestation flag at
         // routing time. Absent key (every existing pack) -> false -> behaviour unchanged.
         decision.setRequireCoiAttestation(coiRequired(doaPack));
@@ -107,12 +110,37 @@ public class DecisionService {
         CreditDecision saved = decisions.save(decision);
 
         audit.engine("APPROVAL_ROUTED", "Application", reference,
-                "Routed to %s (%s)%s".formatted(routing.requiredAuthority(), routing.ruleApplied(),
+                "Routed to %s%s (%s)%s".formatted(routing.requiredAuthority(),
+                        routing.committeeLabel() == null ? "" : " · " + routing.committeeLabel(),
+                        routing.ruleApplied(),
                         routing.committee() ? " — COMMITTEE, quorum " + saved.getQuorumRequired() : ""),
                 Map.of("requiredAuthority", routing.requiredAuthority(), "ruleApplied", routing.ruleApplied(),
                         "deviations", deviations, "committeeMode", routing.committee(),
                         "quorumRequired", saved.getQuorumRequired()));
         return saved;
+    }
+
+    /**
+     * The governed Stage-4 DoP / committee ladder for a jurisdiction (config-as-data view): the active
+     * quantum×grade tiers (with their named committee + composition), the full PSB committee ladder
+     * reference, the cross-cutting escalation matrix and the three lines of defence — all read straight
+     * from the DOA_MATRIX pack. Read-only; drives the governance view of "who sanctions what".
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> doaLadder(String jurisdiction) {
+        RulePackDto doa = upstream.doaMatrix(jurisdiction);
+        Map<String, Object> payload = doa == null ? Map.of() : doa.payload();
+        java.util.LinkedHashMap<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("jurisdiction", jurisdiction);
+        out.put("pack", doa == null ? null : (doa.code() + " v" + doa.version()));
+        out.put("tiers", payload.getOrDefault("levels", List.of()));
+        out.put("committeeLadder", payload.getOrDefault("committee_ladder", List.of()));
+        out.put("escalationMatrix", payload.getOrDefault("escalation_matrix", List.of()));
+        out.put("linesOfDefence", payload.getOrDefault("lines_of_defence", Map.of()));
+        out.put("hurdleGrade", payload.get("hurdle_grade"));
+        out.put("deviationEscalatesOneLevel", payload.getOrDefault("deviation_escalates_one_level", false));
+        out.put("belowHurdleRequiresEscalation", payload.getOrDefault("below_hurdle_requires_escalation", false));
+        return out;
     }
 
     @Transactional

@@ -112,12 +112,13 @@ public class ActorDirectory {
                     actor, action.key());
             return;
         }
-        boolean allowed = roles.stream().anyMatch(action.allowedRoles()::contains);
+        Set<String> permitted = allowedRolesFor(action);
+        boolean allowed = roles.stream().anyMatch(permitted::contains);
         if (!allowed) {
             throw ApiException.forbiddenAutonomy(
                     "Actor '" + actor + "' does not hold a role permitted to perform " + action.key()
-                    + " (needs one of " + action.allowedRoles() + ", has " + roles
-                    + ") — see the ACTOR_ROLE master");
+                    + " (needs one of " + permitted + ", has " + roles
+                    + ") — see the ACTOR_ROLE + ACTION_ROLE masters");
         }
     }
 
@@ -137,12 +138,95 @@ public class ActorDirectory {
             // role the directory positively recognises. Name-equality SoD still applies elsewhere.
             return;
         }
-        boolean allowed = roles.stream().anyMatch(action.allowedRoles()::contains);
+        Set<String> permitted = allowedRolesFor(action);
+        boolean allowed = roles.stream().anyMatch(permitted::contains);
         if (!allowed) {
             throw ApiException.forbiddenAutonomy(
                     "Actor '" + actor + "' holds only roles outside those permitted to " + action.key()
-                    + " (needs one of " + action.allowedRoles() + ", has " + roles
-                    + ") — origination is a first-line act; see the ACTOR_ROLE master");
+                    + " (needs one of " + permitted + ", has " + roles
+                    + ") — origination is a first-line act; see the ACTOR_ROLE + ACTION_ROLE masters");
+        }
+    }
+
+    // ---- action->role catalogue (admin-configurable ProtectedAction overrides) ---------------
+
+    private volatile Snapshot actionRoleSnapshot;   // null until the first ACTION_ROLE fetch
+
+    /**
+     * Roles permitted to perform an action: the {@code ACTION_ROLE} master override (recordKey ==
+     * {@link ProtectedAction#key()}, payload {@code roles:[..]}) when present and non-empty, else the
+     * compile-time enum fallback ({@link ProtectedAction#allowedRoles()}). This makes "who may do
+     * what" admin-editable as DATA (maker-checker) while the enum stays the safe default — behaviour
+     * is byte-identical when the master mirrors the enum (as seeded) or is unavailable.
+     */
+    public Set<String> allowedRolesFor(ProtectedAction action) {
+        List<Map<String, Object>> recs = actionRoleRecords();
+        if (recs != null) {
+            for (Map<String, Object> r : recs) {
+                if (!action.key().equals(r.get("recordKey"))) continue;
+                if (r.get("payload") instanceof Map<?, ?> p && p.get("roles") instanceof List<?> list
+                        && !list.isEmpty()) {
+                    Set<String> out = new TreeSet<>();
+                    for (Object o : list) out.add(String.valueOf(o));
+                    return out;
+                }
+            }
+        }
+        return action.allowedRoles();
+    }
+
+    /** Effective action → allowed-roles catalogue (master override where present, else enum), for the admin/governance view. */
+    public Map<String, Object> catalogue() {
+        List<Map<String, Object>> recs = actionRoleRecords();
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (ProtectedAction a : ProtectedAction.values()) {
+            boolean overridden = false;
+            if (recs != null) {
+                for (Map<String, Object> r : recs) {
+                    if (a.key().equals(r.get("recordKey")) && r.get("payload") instanceof Map<?, ?> p
+                            && p.get("roles") instanceof List<?> l && !l.isEmpty()) {
+                        overridden = true;
+                        break;
+                    }
+                }
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("action", a.key());
+            row.put("roles", new java.util.ArrayList<>(allowedRolesFor(a)));
+            row.put("source", overridden ? "ACTION_ROLE_MASTER" : "ENUM_FALLBACK");
+            out.put(a.name(), row);
+        }
+        return out;
+    }
+
+    private List<Map<String, Object>> actionRoleRecords() {
+        Snapshot s = actionRoleSnapshot;
+        if (s != null && s.until.isAfter(Instant.now())) {
+            return s.records;
+        }
+        synchronized (refreshLock) {
+            s = actionRoleSnapshot;
+            if (s != null && s.until.isAfter(Instant.now())) {
+                return s.records;
+            }
+            try {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> recs = client.get()
+                        .uri("/api/masters/ACTION_ROLE")
+                        .retrieve()
+                        .body(List.class);
+                Snapshot fresh = new Snapshot(recs == null ? List.of() : recs,
+                        Instant.now().plusSeconds(ttlSeconds));
+                actionRoleSnapshot = fresh;
+                return fresh.records;
+            } catch (Exception e) {
+                if (s != null) {
+                    log.warn("ACTION_ROLE refresh failed ({}); serving stale snapshot", e.getMessage());
+                    return s.records;
+                }
+                log.warn("ACTION_ROLE fetch failed and no snapshot cached ({}) — using enum fallback", e.getMessage());
+                return null;   // fall back to the compile-time enum
+            }
         }
     }
 
@@ -150,6 +234,7 @@ public class ActorDirectory {
     public void invalidate() {
         snapshot = null;
         postureSnapshot = null;
+        actionRoleSnapshot = null;
     }
 
     // ---- governance posture (G7) --------------------------------------------------------------

@@ -68,6 +68,13 @@ public class CreditDecision {
     @Column(length = 80)
     private String routedBy;
 
+    /** Named Stage-4 committee tier this deal routed to (from the DOA_MATRIX committee ladder). */
+    @Column(length = 120)
+    private String committeeLabel;
+    /** Composition of the routed committee tier (chair + members), for the decision + sanction record. */
+    @Column(length = 200)
+    private String committeeComposition;
+
     /**
      * COI gate flag captured at routing time from the DOA_MATRIX pack key
      * {@code require_coi_attestation}. Default {@code false} — when the key is absent

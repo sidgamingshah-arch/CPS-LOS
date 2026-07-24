@@ -241,6 +241,9 @@ st, dec = call("POST", f"/decision/api/decisions/{ref}/route", actor="credit.ops
 check("routed for approval", st == 200, f"{st} {dec}")
 required = dec["requiredAuthority"]
 check("required authority resolved", required in ("RM_HEAD", "CREDIT_OFFICER", "CREDIT_COMMITTEE", "BOARD_COMMITTEE"), required)
+# Stage-4 committee ladder: the routed decision now names its committee tier + composition (additive).
+check("routed decision names its Stage-4 committee tier", bool(dec.get("committeeLabel")), dec.get("committeeLabel"))
+check("routed decision carries committee composition", bool(dec.get("committeeComposition")), dec.get("committeeComposition"))
 
 # negative (G1): authority is resolved from ACTOR_ROLE, never the request body. An
 # analyst self-attesting BOARD_COMMITTEE in the body is STILL blocked.

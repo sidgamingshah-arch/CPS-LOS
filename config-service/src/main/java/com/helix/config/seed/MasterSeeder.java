@@ -479,6 +479,17 @@ public class MasterSeeder implements CommandLineRunner {
         seedActor("credit.officer.bot", "Credit Officer Bot", "CREDIT_OFFICER", "CREDIT_COMMITTEE", "BOARD_COMMITTEE");
         seedActor("portfolio.bot", "Portfolio Bot", "PORTFOLIO");
 
+        // ---- ACTION_ROLE master — admin-configurable action→role catalogue (R3-2B) ----
+        // Seeded BYTE-IDENTICAL to the compile-time ProtectedAction enum, so default authorization is
+        // unchanged. Editing a record (maker-checker) remaps who-may-perform-an-action as DATA; the enum
+        // stays the safe fallback when a record is absent. ActorDirectory.allowedRolesFor() overlays this
+        // master over the enum, so "RBAC configuration at admin level" is real without a code change.
+        for (com.helix.common.rbac.ProtectedAction pa : com.helix.common.rbac.ProtectedAction.values()) {
+            masters.seedActive("ACTION_ROLE", pa.key(), null,
+                    map("roles", new java.util.ArrayList<>(pa.allowedRoles()),
+                            "description", "Roles permitted to perform " + pa.key()));
+        }
+
         // ---- PROPOSAL_FORMAT master — CAM formats that shape the credit-proposal layout ----
         // Appended LAST to minimise merge surface. One record per CAM format keyed by a format code;
         // payload = { label, segment (for defaulting from the deal's segment), sections:[{key,title}] }.

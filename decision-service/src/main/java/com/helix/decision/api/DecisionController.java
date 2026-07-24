@@ -76,6 +76,16 @@ public class DecisionController {
         return decisions.votes(reference);
     }
 
+    /**
+     * The governed Stage-4 DoP / committee ladder for a jurisdiction: active quantum×grade tiers with
+     * their named committee + composition, the full PSB committee ladder reference, the cross-cutting
+     * escalation matrix, and the three lines of defence — all config-as-data from the DOA_MATRIX pack.
+     */
+    @GetMapping("/doa/ladder")
+    public Map<String, Object> doaLadder(@RequestParam(defaultValue = "IN-RBI") String jurisdiction) {
+        return decisions.doaLadder(jurisdiction);
+    }
+
     /** Generate the sanction letter for an approved deal (DRAFT + advisory; human-confirm via /api/docs). */
     @PostMapping("/{reference}/sanction-letter")
     public GeneratedDocument sanctionLetter(@PathVariable String reference,

@@ -37,4 +37,15 @@ public class ActorRbacCacheController {
     public Map<String, Object> posture() {
         return directory.postureStatus();
     }
+
+    /**
+     * The effective action → allowed-roles catalogue on this service: each {@link ProtectedAction}
+     * with the roles permitted to perform it and whether that came from the admin-editable
+     * {@code ACTION_ROLE} master or the compile-time enum fallback. This is the read side of
+     * "RBAC configuration at admin level".
+     */
+    @GetMapping("/api/governance/rbac/actions")
+    public Map<String, Object> actions() {
+        return directory.catalogue();
+    }
 }

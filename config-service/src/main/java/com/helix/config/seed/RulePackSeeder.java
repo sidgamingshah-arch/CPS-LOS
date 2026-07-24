@@ -300,17 +300,71 @@ public class RulePackSeeder implements CommandLineRunner {
         );
     }
 
-    /** Delegated authority: amount × rating → approver level. */
+    /**
+     * Delegated authority: amount × rating → approver level, now carrying the NAMED committee ladder
+     * (Stage-4 sanctioning ladder). The {@code (max_amount, min_grade, authority)} routing keys and
+     * the committee/quorum flags are UNCHANGED (behaviour-preserving); {@code committee_label} +
+     * {@code composition} are additive display metadata surfaced on the decision + sanction letter.
+     * The full PSB committee ladder (Regional/Zonal → Circle/FGM → HOCAC-I/II/III → MCB → Board) is
+     * documented in {@code committee_ladder} for the governance view; the cross-cutting escalation
+     * matrix and the three lines of defence ride alongside as config-as-data.
+     */
     private Map<String, Object> doaMatrix(double l1, double l2, double l3) {
         return map(
                 "levels", List.of(
-                        map("max_amount", l1, "min_grade", "BBB", "authority", "RM_HEAD"),
-                        map("max_amount", l2, "min_grade", "BB", "authority", "CREDIT_OFFICER"),
-                        map("max_amount", l3, "min_grade", "B", "authority", "CREDIT_COMMITTEE"),
-                        map("max_amount", Double.MAX_VALUE, "min_grade", "D", "authority", "BOARD_COMMITTEE")
+                        map("max_amount", l1, "min_grade", "BBB", "authority", "RM_HEAD",
+                                "committee_label", "Regional/Zonal Office Credit Committee",
+                                "composition", "DGM/GM-chaired — smaller wholesale limits, renewals"),
+                        map("max_amount", l2, "min_grade", "BB", "authority", "CREDIT_OFFICER",
+                                "committee_label", "Circle / FGM-level Credit Committee",
+                                "composition", "GM/CGM-chaired — mid-corporate range"),
+                        map("max_amount", l3, "min_grade", "B", "authority", "CREDIT_COMMITTEE",
+                                "committee_label", "Head-Office Credit Approval Committee (HOCAC-I/II)",
+                                "composition", "CGM/ED-chaired, with risk & finance — large corporate"),
+                        map("max_amount", Double.MAX_VALUE, "min_grade", "D", "authority", "BOARD_COMMITTEE",
+                                "committee_label", "HOCAC-III / Management Committee of the Board / Board",
+                                "composition", "MD & CEO-chaired, escalating to the Board — largest exposures")
                 ),
                 "deviation_escalates_one_level", true,
-                "below_hurdle_requires_escalation", true
+                "below_hurdle_requires_escalation", true,
+                // New-to-bank obligors weaker than this grade escalate one authority tier with CRO
+                // concurrence (Stage-4 hurdle-rating norm). Config-driven; the router honours it.
+                "hurdle_grade", "BB",
+                // Full PSB committee ladder (reference for the governance view; monetary spans are
+                // bank-internal and set via the tiers above). Private banks run the joint
+                // business-risk equivalent escalating to a Senior Credit Committee + Committee of Directors.
+                "committee_ladder", List.of(
+                        map("tier", "Regional/Zonal Office Credit Committee", "chair", "DGM/GM",
+                                "span", "Smaller wholesale limits, renewals"),
+                        map("tier", "Circle / FGM-level Credit Committee", "chair", "GM/CGM",
+                                "span", "Mid-corporate range"),
+                        map("tier", "HOCAC-I", "chair", "CGM, with risk & finance", "span", "Large corporate, lower band"),
+                        map("tier", "HOCAC-II", "chair", "ED", "span", "Large corporate, upper band"),
+                        map("tier", "HOCAC-III", "chair", "MD & CEO", "span", "Largest within MD's delegated powers"),
+                        map("tier", "Management Committee of the Board (MCB)", "chair", "MD, EDs, directors",
+                                "span", "Beyond MD's powers"),
+                        map("tier", "Board / Board Credit Committee", "chair", "Full board",
+                                "span", "Policy, ratification, review of sanctions")
+                ),
+                // Cross-cutting escalation matrix (Stage-4 / cross-cutting): trigger -> escalates_to.
+                "escalation_matrix", List.of(
+                        map("trigger", "Quantum exceeds tier's DoP", "escalates_to", "Next committee tier (the ladder above)"),
+                        map("trigger", "Rating below hurdle / rating override", "escalates_to",
+                                "One level above normal sanctioning tier + CRO concurrence"),
+                        map("trigger", "Policy deviation (LTV, tenor, unsecured, pricing concession)",
+                                "escalates_to", "Deviation grid — typically one tier up"),
+                        map("trigger", "Group exposure nearing internal / LEF cap", "escalates_to",
+                                "HOCAC-III / MCB with risk vetting"),
+                        map("trigger", "Any sanction exercised", "escalates_to",
+                                "Post-facto review by the next higher authority / MCB / Board")
+                ),
+                // Three lines of defence (role -> line) — coverage originates, credit/risk concurs, audit reviews.
+                "lines_of_defence", map(
+                        "RM", "FIRST", "RM_HEAD", "FIRST", "ANALYST", "FIRST",
+                        "CREDIT_OPS", "SECOND", "CREDIT_OFFICER", "SECOND", "CREDIT_COMMITTEE", "SECOND",
+                        "CRO", "SECOND", "COMPLIANCE", "SECOND", "PORTFOLIO", "SECOND",
+                        "LEGAL", "SECOND", "CAD_OPS", "SECOND",
+                        "BOARD_COMMITTEE", "OVERSIGHT")
         );
     }
 
