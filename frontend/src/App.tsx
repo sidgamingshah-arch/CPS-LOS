@@ -84,7 +84,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "home", label: "My Workspace" },
       { key: "dashboard", label: "Portfolio Dashboard" },
-      { key: "copilot", label: "Copilot" },
+      { key: "copilot", label: "Credit Intel" },
       { key: "portal", label: "Customer Portal" },
     ],
   },

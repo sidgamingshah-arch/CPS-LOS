@@ -75,12 +75,20 @@ const OPEN_IN: { view: string; label: string }[] = [
 const scrollToSection = (id: string) =>
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
+// The deal STRUCTURE (facilities / collaterals / sublimits) may only be edited pre-sanction —
+// mirrors OriginationService.STRUCTURE_EDITABLE_STATUSES. Past this, edits are rejected server-side
+// (409) and must go through the amendment path, so we hide the edit/delete affordances too.
+const STRUCTURE_EDITABLE_STATUSES = new Set([
+  "DRAFT", "INTAKE", "SPREADING", "RATING", "CAPITAL", "PRICING",
+]);
+const isStructureEditable = (status?: string) =>
+  STRUCTURE_EDITABLE_STATUSES.has((status || "").toUpperCase());
+
 export default function DealWorkspace({ reference }: { reference: string }) {
   const { actor, notify, nav, aiEnabled } = useApp();
   // CODE_VALUE dropdowns shared across the nested forms below.
   const grades = useCodes("GRADE_SCALE");
   const overrideReasons = useCodes("OVERRIDE_REASON");
-  const overrideRoles = useCodes("OVERRIDE_ROLE");
   const decisionOutcomes = useCodes("DECISION_OUTCOME");
   const facilityTypes = useCodes("FACILITY_TYPE");
   const collateralTypes = useCodes("COLLATERAL_TYPE");
@@ -461,7 +469,7 @@ export default function DealWorkspace({ reference }: { reference: string }) {
       </section>
 
       {/* Copilot, scoped to this deal */}
-      <Card title="Ask the copilot about this deal" sub="Scoped to your role, grounded in this deal's data, non-binding (PRD §6.6).">
+      <Card title="Ask Credit Intel about this deal" sub="Scoped to your role, grounded in this deal's data, non-binding (PRD §6.6).">
         <CopilotPanel reference={reference} compact />
       </Card>
     </div>
@@ -469,21 +477,24 @@ export default function DealWorkspace({ reference }: { reference: string }) {
 
   function OverrideForm({ reference, onDone }: { reference: string; onDone: () => void }) {
     const [open, setOpen] = useState(false);
-    const [g, setG] = useState("BBB"); const [rc, setRc] = useState(FALLBACK_REASON); const [role, setRole] = useState("CREDIT_OFFICER"); const [note, setNote] = useState("");
+    const [g, setG] = useState("BBB"); const [rc, setRc] = useState(FALLBACK_REASON); const [note, setNote] = useState("");
     if (!open) return <Button kind="subtle" onClick={() => setOpen(true)}>Override rating…</Button>;
+    // No "acting as role" picker — the server resolves the notch authority from the acting
+    // identity's OWN ACTOR_ROLE roles (a request-body role is never a grant), and the OVERRIDE_ROLE
+    // master (not a hardcoded list) defines each role's ceiling. Deep-link to Risk Lab for the
+    // full override surface (read-only authority display + notch-limit preview).
     return (
       <div className="card" style={{ marginTop: 10, background: "#fbfaff" }}>
         <div className="grid cols-2">
           <Field label="Proposed grade"><select value={g} onChange={(e) => setG(e.target.value)}>{grades.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}</select></Field>
-          <Field label="Role"><select value={role} onChange={(e) => setRole(e.target.value)}>{overrideRoles.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}</select></Field>
           <Field label="Reason code"><select value={rc} onChange={(e) => setRc(e.target.value)}>{overrideReasons.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}</select></Field>
           <Field label="Note"><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         </div>
         <div className="btnrow">
-          <Button onClick={() => run(() => risk.overrideRating(reference, { proposedGrade: g, reasonCode: rc, role, note }, actor), "Override applied").then(() => { setOpen(false); onDone(); })}>Apply override</Button>
+          <Button onClick={() => run(() => risk.overrideRating(reference, { proposedGrade: g, reasonCode: rc, note }, actor), "Override applied").then(() => { setOpen(false); onDone(); })}>Apply override</Button>
           <Button kind="subtle" onClick={() => setOpen(false)}>Cancel</Button>
         </div>
-        <small className="prov">Notch limits: ANALYST 1 · CREDIT_OFFICER 2 · COMMITTEE unlimited.</small>
+        <small className="prov">Notch authority is resolved from your role (OVERRIDE_ROLE master) and enforced server-side; an over-limit override is rejected and must be escalated.</small>
       </div>
     );
   }
@@ -672,7 +683,10 @@ export default function DealWorkspace({ reference }: { reference: string }) {
 
   function FacilityCard({ f, onChange }: { f: any; onChange: () => void }) {
     const [addingSublimit, setAddingSublimit] = useState(false);
+    const [editingFacility, setEditingFacility] = useState(false);
+    const [editingSublimit, setEditingSublimit] = useState<any>(null);
     const hasSublimits = (f.sublimits || []).length > 0;
+    const editable = isStructureEditable(a?.status);
     return (
       <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 12, marginBottom: 10, background: "#fcfcff" }}>
         <div className="flexbetween">
@@ -684,9 +698,15 @@ export default function DealWorkspace({ reference }: { reference: string }) {
             <Badge>{fmt.money(f.amount, f.currency)}</Badge>
             <Badge kind="info">{f.tenorMonths}m</Badge>
             {f.indicativeRate != null && <Badge>{fmt.pct(f.indicativeRate, 2)}</Badge>}
-            <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
-              onClick={() => setAddingSublimit((s) => !s)}>{addingSublimit ? "Close" : "+ Sublimit"}</button>
-            {!f.primary && (
+            {editable && (
+              <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                onClick={() => setAddingSublimit((s) => !s)}>{addingSublimit ? "Close" : "+ Sublimit"}</button>
+            )}
+            {editable && !f.primary && (
+              <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                onClick={() => setEditingFacility((e) => !e)}>{editingFacility ? "Close" : "Edit"}</button>
+            )}
+            {editable && !f.primary && (
               <button className="btn danger" style={{ fontSize: 11, padding: "3px 8px" }}
                 onClick={() => {
                   if (!window.confirm(`Remove facility #${f.ordinal} ${f.facilityType} (${f.reference})?`)) return;
@@ -696,6 +716,10 @@ export default function DealWorkspace({ reference }: { reference: string }) {
           </div>
         </div>
         {f.purpose && <small className="prov">{f.purpose}</small>}
+
+        {editingFacility && !f.primary && (
+          <EditFacilityForm f={f} onDone={() => { setEditingFacility(false); onChange(); }} />
+        )}
 
         {(hasSublimits || addingSublimit) && (
           <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px dashed var(--line)" }}>
@@ -718,14 +742,26 @@ export default function DealWorkspace({ reference }: { reference: string }) {
                       ? <Badge kind="ai">{s.interchangeableGroup}</Badge>
                       : <Badge>fixed (hard cap)</Badge>}</td>
                     <td>{s.purpose || "—"}</td>
-                    <td><button className="btn danger" style={{ fontSize: 11, padding: "2px 6px" }} title={`Remove sublimit ${s.code}`}
-                      onClick={() => {
-                        if (!window.confirm(`Remove sublimit ${s.code} (${s.productType})?`)) return;
-                        run(() => origination.removeSublimit(s.id, actor), "Sublimit removed").then(onChange);
-                      }}>×</button></td>
+                    <td className="btnrow">
+                      {editable && (
+                        <button className="btn subtle" style={{ fontSize: 11, padding: "2px 6px" }} title={`Edit sublimit ${s.code}`}
+                          onClick={() => { setEditingSublimit(s); setAddingSublimit(false); }}>Edit</button>
+                      )}
+                      {editable && (
+                        <button className="btn danger" style={{ fontSize: 11, padding: "2px 6px" }} title={`Remove sublimit ${s.code}`}
+                          onClick={() => {
+                            if (!window.confirm(`Remove sublimit ${s.code} (${s.productType})?`)) return;
+                            run(() => origination.removeSublimit(s.id, actor), "Sublimit removed").then(onChange);
+                          }}>×</button>
+                      )}
+                    </td>
                   </tr>))}</tbody>
               </table>
               </div>
+            )}
+            {editingSublimit && (
+              <AddSublimitForm facility={f} existing={editingSublimit}
+                onDone={() => { setEditingSublimit(null); onChange(); }} />
             )}
             {(f.interchangeabilityGroups || []).length > 0 && (
               <div style={{ marginBottom: 8 }}>
@@ -748,14 +784,21 @@ export default function DealWorkspace({ reference }: { reference: string }) {
     );
   }
 
-  function AddSublimitForm({ facility, onDone }: { facility: any; onDone: () => void }) {
+  // Add OR edit a sublimit — pass `existing` to edit in place (reuses the same form). The parent
+  // facility cap is enforced server-side, counting each interchangeable group once at its shared cap.
+  function AddSublimitForm({ facility, existing, onDone }: { facility: any; existing?: any; onDone: () => void }) {
     const PRODUCTS: Record<string, string> = {
       "CC": "CASH_CREDIT", "OD": "OVERDRAFT", "BD": "BILL_DISCOUNTING",
       "PCFC": "PACKING_CREDIT", "LC_INLAND": "LETTER_OF_CREDIT",
       "LC_FOREIGN": "LETTER_OF_CREDIT", "BG_PERF": "BANK_GUARANTEE",
       "BG_FIN": "BANK_GUARANTEE",
     };
-    const [s, setS] = useState<any>({
+    const editMode = !!existing;
+    const [s, setS] = useState<any>(existing ? {
+      code: existing.code, productType: existing.productType, amount: existing.amount,
+      tenorMonths: existing.tenorMonths, purpose: existing.purpose || "",
+      interchangeableGroup: existing.interchangeableGroup || "",
+    } : {
       code: "CC", productType: "CASH_CREDIT", amount: 50_000_000,
       tenorMonths: facility.tenorMonths, purpose: "", interchangeableGroup: "WC_FUNDED",
     });
@@ -774,10 +817,42 @@ export default function DealWorkspace({ reference }: { reference: string }) {
           </Field>
         </div>
         <div className="btnrow">
-          <Button onClick={() => run(() => origination.addSublimit(facility.id,
-            { ...s, currency: facility.currency }, actor), "Sublimit added").then(onDone)}>Add sublimit</Button>
+          {editMode ? (
+            <Button onClick={() => run(() => origination.updateSublimit(existing.id,
+              { ...s, currency: facility.currency }, actor), "Sublimit updated").then(onDone)}>Save sublimit</Button>
+          ) : (
+            <Button onClick={() => run(() => origination.addSublimit(facility.id,
+              { ...s, currency: facility.currency }, actor), "Sublimit added").then(onDone)}>Add sublimit</Button>
+          )}
           <Button kind="subtle" onClick={onDone}>Cancel</Button>
-          <small className="prov">Facility cap is enforced — overflow is rejected.</small>
+          <small className="prov">Facility cap is enforced — overflow is rejected. Interchangeable groups count once (shared cap).</small>
+        </div>
+      </div>
+    );
+  }
+
+  // Edit a proposed facility in place (non-primary, pre-sanction). Amount cannot fall below what the
+  // sublimits already allocate (server-enforced). Descriptive + headline fields only.
+  function EditFacilityForm({ f, onDone }: { f: any; onDone: () => void }) {
+    const [v, setV] = useState<any>({
+      facilityType: f.facilityType, amount: f.amount, tenorMonths: f.tenorMonths,
+      purpose: f.purpose || "", indicativeRate: f.indicativeRate ?? null,
+    });
+    return (
+      <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: 10, marginTop: 8 }}>
+        <div className="grid cols-4" style={{ gap: 8 }}>
+          <Field label="Facility type">
+            <select value={v.facilityType} onChange={(e) => setV({ ...v, facilityType: e.target.value })}>
+              {facilityTypes.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Amount"><input type="number" value={v.amount} onChange={(e) => setV({ ...v, amount: +e.target.value })} /></Field>
+          <Field label="Tenor (months)"><input type="number" value={v.tenorMonths} onChange={(e) => setV({ ...v, tenorMonths: +e.target.value })} /></Field>
+          <Field label="Purpose"><input value={v.purpose} onChange={(e) => setV({ ...v, purpose: e.target.value })} /></Field>
+        </div>
+        <div className="btnrow">
+          <Button onClick={() => run(() => origination.updateFacility(f.id, v, actor), "Facility updated").then(onDone)}>Save facility</Button>
+          <Button kind="subtle" onClick={onDone}>Cancel</Button>
         </div>
       </div>
     );
@@ -808,14 +883,17 @@ export default function DealWorkspace({ reference }: { reference: string }) {
   }
 
   function CollateralsTable({ cols, onChange }: { cols: any[]; onChange: () => void }) {
+    const [editingId, setEditingId] = useState<number | null>(null);
     if (cols.length === 0) return <div className="muted">No collateral recorded.</div>;
     const totalCover = cols.reduce((s, c) => s + (c.marketValue * (1 - c.haircut)), 0);
+    const editable = isStructureEditable(a?.status);
     return (
       <>
         <div className="table-scroll">
         <table><thead><tr><th>Type</th><th>Description</th><th className="num">Market value</th><th>Haircut</th><th className="num">Effective</th><th>Perfection</th><th>Facility</th><th></th></tr></thead>
           <tbody>{cols.map((c: any) => (
-            <tr key={c.id}>
+            <Fragment key={c.id}>
+            <tr>
               <td><span className="mono">{c.collateralType}</span></td>
               <td>{c.description || "—"}</td>
               <td className="num">{fmt.money(c.marketValue, "")}</td>
@@ -823,13 +901,72 @@ export default function DealWorkspace({ reference }: { reference: string }) {
               <td className="num">{fmt.money(c.marketValue * (1 - c.haircut), "")}</td>
               <td><Badge kind={c.perfectionStatus === "PERFECTED" ? "ok" : c.perfectionStatus === "IN_PROGRESS" ? "warn" : "info"}>{c.perfectionStatus}</Badge></td>
               <td>{c.facilityId ? <span className="mono">F#{c.facilityId}</span> : <span className="muted">pooled</span>}</td>
-              <td>{c.perfectionStatus !== "PERFECTED" &&
-                <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
-                  onClick={() => run(() => origination.perfectCollateral(c.id, actor), "Charge perfected").then(onChange)}>Perfect</button>}</td>
-            </tr>))}</tbody></table>
+              <td className="btnrow">
+                {c.perfectionStatus !== "PERFECTED" &&
+                  <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                    onClick={() => run(() => origination.perfectCollateral(c.id, actor), "Charge perfected").then(onChange)}>Perfect</button>}
+                {editable &&
+                  <button className="btn subtle" style={{ fontSize: 11, padding: "3px 8px" }}
+                    onClick={() => setEditingId(editingId === c.id ? null : c.id)}>{editingId === c.id ? "Close" : "Edit"}</button>}
+                {editable &&
+                  <button className="btn danger" style={{ fontSize: 11, padding: "3px 8px" }} title={`Delete ${c.collateralType} collateral`}
+                    onClick={() => {
+                      if (!window.confirm(`Delete ${c.collateralType} collateral (${c.description || "—"})?`)) return;
+                      run(() => origination.removeCollateral(c.id, actor), "Collateral deleted").then(() => { setEditingId(null); onChange(); });
+                    }}>Delete</button>}
+              </td>
+            </tr>
+            {editingId === c.id && (
+              <tr><td colSpan={8} style={{ background: "#fcfcff" }}>
+                <EditCollateralForm c={c} onDone={() => { setEditingId(null); onChange(); }} />
+              </td></tr>
+            )}
+            </Fragment>))}</tbody></table>
         </div>
         <div style={{ marginTop: 8 }}><b>Total effective coverage:</b> {fmt.money(totalCover, "")}</div>
       </>
+    );
+  }
+
+  // Edit a collateral's DESCRIPTIVE fields (pre-sanction). Market value is intentionally NOT editable
+  // here — a revaluation routes through the collateral-intel revalue → human-review apply gate.
+  function EditCollateralForm({ c, onDone }: { c: any; onDone: () => void }) {
+    const [v, setV] = useState<any>({
+      collateralType: c.collateralType, description: c.description || "", haircut: c.haircut,
+      owner: c.owner || "", location: c.location || "", perfectionStatus: c.perfectionStatus,
+      facilityId: c.facilityId ?? null,
+    });
+    const facList = (facs.data || []) as any[];
+    return (
+      <div style={{ padding: 8 }}>
+        <div className="grid cols-4" style={{ gap: 8 }}>
+          <Field label="Type">
+            <select value={v.collateralType} onChange={(e) => setV({ ...v, collateralType: e.target.value })}>
+              {collateralTypes.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Description"><input value={v.description} onChange={(e) => setV({ ...v, description: e.target.value })} /></Field>
+          <Field label="Haircut (0–1)"><input type="number" step="0.01" value={v.haircut} onChange={(e) => setV({ ...v, haircut: +e.target.value })} /></Field>
+          <Field label="Perfection">
+            <select value={v.perfectionStatus} onChange={(e) => setV({ ...v, perfectionStatus: e.target.value })}>
+              {["NOT_PERFECTED", "IN_PROGRESS", "PERFECTED"].map((x) => <option key={x}>{x}</option>)}
+            </select>
+          </Field>
+          <Field label="Owner"><input value={v.owner} onChange={(e) => setV({ ...v, owner: e.target.value })} /></Field>
+          <Field label="Location"><input value={v.location} onChange={(e) => setV({ ...v, location: e.target.value })} /></Field>
+          <Field label="Facility">
+            <select value={v.facilityId || ""} onChange={(e) => setV({ ...v, facilityId: e.target.value ? +e.target.value : null })}>
+              <option value="">(pooled to deal)</option>
+              {facList.map((f) => <option key={f.id} value={f.id}>#{f.ordinal} {f.facilityType}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div className="btnrow" style={{ marginTop: 6 }}>
+          <Button onClick={() => run(() => origination.updateCollateral(c.id, v, actor), "Collateral updated").then(onDone)}>Save collateral</Button>
+          <Button kind="subtle" onClick={onDone}>Cancel</Button>
+          <small className="prov">Market value {fmt.money(c.marketValue, "")} is unchanged here — route a revaluation through Collateral Intelligence.</small>
+        </div>
+      </div>
     );
   }
 
@@ -1050,6 +1187,9 @@ function CollateralIntelBlock({ reference, cols, onChange }: { reference: string
   const [docText, setDocText] = useState(
     "VALUATION REPORT\nProperty type: Industrial warehouse\nAddress: Plot 14, Phase 2, Pune\nMarket value: INR 4,80,00,000\nValuation date: 2026-03-15\nValuer: Knight & Co Surveyors\n",
   );
+  const [file, setFile] = useState<File | null>(null);
+  // Bump to reset the native file <input> after a successful upload (uncontrolled element).
+  const [fileKey, setFileKey] = useState(0);
 
   const [revalCollateralId, setRevalCollateralId] = useState<number | "">("");
   const [revalNewMV, setRevalNewMV] = useState<string>("");
@@ -1067,7 +1207,7 @@ function CollateralIntelBlock({ reference, cols, onChange }: { reference: string
 
   return (
     <Card title="Collateral intelligence"
-      sub="Type-aware extraction over an uploaded collateral document, LTV-driven revaluation alerts, and the charge-Excel export. Advisory; live collateral values move only on human confirm."
+      sub="Type-aware extraction over a collateral document — upload a file (real DMS store + OCR/PDF text) or paste text — plus LTV-driven revaluation alerts and the charge-Excel export. Advisory; live collateral values move only on human confirm."
       right={<GovFlow ai="AI EXTRACTS / FLAGS" human="HUMAN CONFIRMS" note="capital projection untouched" />}>
 
       {/* Type-aware extraction */}
@@ -1078,12 +1218,27 @@ function CollateralIntelBlock({ reference, cols, onChange }: { reference: string
               {KINDS.map((k) => <option key={k} value={k}>{k.replace(/_/g, " ")}</option>)}
             </select>
           </Field>
+          <Field label="Upload collateral document" hint="PDF / image / text — stored in the DMS; the document's real text is extracted (PDFBox / UTF-8 / OCR) and fed to the same extractor. The file also appears in the deal's document list.">
+            <input key={fileKey} type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </Field>
+          <Button busy={busy} disabled={!file}
+            onClick={() => go(async () => {
+              // Advisory-only: this creates a SUGGESTED extraction, not a Collateral, so — like the
+              // "Extract from text" button below — it does NOT call onChange() (the collateral list
+              // only changes on confirm).
+              await origination.colUploadAndExtract(reference, file!, docKind, actor);
+              setFile(null); setFileKey((k) => k + 1);
+              extractions.reload();
+            }, "Document uploaded — collateral extracted, review below")}>
+            Upload &amp; extract
+          </Button>
+          <div className="muted" style={{ fontSize: 12, margin: "8px 0" }}>— or paste the document text —</div>
           <Field label="Document text">
             <textarea rows={6} value={docText} onChange={(e) => setDocText(e.target.value)} />
           </Field>
           <Button busy={busy} disabled={!docText.trim()}
             onClick={() => go(async () => { await origination.colExtract(reference, { documentKind: docKind, text: docText }, actor); extractions.reload(); }, "Collateral extracted — review below")}>
-            Extract collateral
+            Extract from text
           </Button>
         </div>
         <div>

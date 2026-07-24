@@ -490,6 +490,43 @@ public class MasterSeeder implements CommandLineRunner {
         seedProposalFormats();
         seedScoringApprovalPolicy();
         seedAnnexureTypes();
+        seedPeerPricing();
+    }
+
+    // ---------------------------------------------------------------- peer / benchmark pricing
+
+    /**
+     * PEER_PRICING master — the benchmark leg of the dual-approach price. risk-service presents this
+     * deterministic market rate ALONGSIDE the RAROC-based price (never blends them silently); the
+     * human sees both. recordKey degrades most-specific → broadest:
+     * {@code {SEGMENT}:{GRADE}:{PRODUCT}} → {@code {SEGMENT}:{GRADE}} → {@code {SEGMENT}:{PRODUCT}} →
+     * {@code {SEGMENT}} → {@code DEFAULT}. Payload carries an {@code allInRateBps} (absolute all-in
+     * benchmark rate) or a {@code spreadBps} (over the deal's cost of funds), plus a {@code source}.
+     * Purely advisory presentation — no authoritative figure reads this.
+     */
+    private void seedPeerPricing() {
+        // Broadest fallback: a spread over the deal's own cost of funds.
+        masters.seedActive("PEER_PRICING", "DEFAULT", null, map(
+                "spreadBps", 250, "source", "Wholesale syndicated-loan survey 2026 (blended)"));
+        // Segment-level benchmarks (all-in market rates).
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE", null, map(
+                "allInRateBps", 1030, "source", "Mid-corporate primary-loan benchmark 2026"));
+        masters.seedActive("PEER_PRICING", "LARGE_CORPORATE", null, map(
+                "allInRateBps", 920, "source", "Large-corporate primary-loan benchmark 2026"));
+        masters.seedActive("PEER_PRICING", "SME", null, map(
+                "allInRateBps", 1180, "source", "SME primary-loan benchmark 2026"));
+        // Rating-refined mid-corporate benchmarks.
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE:A", null, map(
+                "allInRateBps", 965, "source", "Mid-corporate A-grade benchmark 2026"));
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE:BBB", null, map(
+                "allInRateBps", 1045, "source", "Mid-corporate BBB-grade benchmark 2026"));
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE:BB", null, map(
+                "allInRateBps", 1210, "source", "Mid-corporate BB-grade benchmark 2026"));
+        // Product-refined cells (rating + product) — the most specific keys.
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE:BBB:TERM_LOAN", null, map(
+                "allInRateBps", 1055, "source", "Mid-corporate BBB term-loan benchmark 2026"));
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE:BBB:WORKING_CAPITAL", null, map(
+                "allInRateBps", 995, "source", "Mid-corporate BBB working-capital benchmark 2026"));
     }
 
     // ---------------------------------------------------------------- annexure types
@@ -647,6 +684,41 @@ public class MasterSeeder implements CommandLineRunner {
                         sec("pricing", "Pricing"),
                         sec("covenants", "Covenants"),
                         sec("routing", "Approval Routing"),
+                        sec("provenance", "Provenance"))));
+
+        // FULL_CAM — the comprehensive bank-grade CAM: every core section PLUS the richer sections a
+        // real committee memo carries (borrower/management overview, industry outlook, multi-year
+        // financial trend, key risks & mitigants, security-perfection detail, account conduct,
+        // deviations & justifications, RAROC/profitability, ESG, conditions, RM recommendation and
+        // regulatory/exposure-norm compliance). No default segment — it is an explicit-pick format so
+        // it never changes any segment's default layout. Every section is a rendering; figures are
+        // quoted verbatim, and the advisory prose is fail-soft (deterministic content when no provider).
+        masters.seedActive("PROPOSAL_FORMAT", "FULL_CAM", null, map(
+                "label", "Full bank CAM (comprehensive)", "segment", "",
+                "sections", java.util.List.of(
+                        sec("executive_summary", "Executive Summary"),
+                        sec("borrower_background", "Borrower Background & Management"),
+                        sec("industry_outlook", "Industry Outlook"),
+                        sec("facilities", "Facilities Proposed"),
+                        sec("sublimits", "Sublimits & Interchangeability"),
+                        sec("collateral", "Collateral & Security"),
+                        sec("security_perfection", "Security & Perfection Status"),
+                        sec("financials", "Financial Position (latest)"),
+                        sec("financial_trend", "Financial Trend (multi-year)"),
+                        sec("ratios", "Key Ratios"),
+                        sec("rating", "Risk Rating"),
+                        sec("key_risks_mitigants", "Key Risks & Mitigants"),
+                        sec("capital", "Capital Projection"),
+                        sec("pricing", "Risk-Adjusted Pricing"),
+                        sec("raroc_profitability", "RAROC & Profitability"),
+                        sec("covenants", "Covenants"),
+                        sec("conditions", "Conditions Precedent & Subsequent"),
+                        sec("deviations", "Deviations & Justifications"),
+                        sec("esg", "ESG Assessment"),
+                        sec("account_conduct", "Account Conduct"),
+                        sec("regulatory_compliance", "Regulatory & Exposure-Norm Compliance"),
+                        sec("routing", "Approval Routing"),
+                        sec("recommendation", "Recommendation"),
                         sec("provenance", "Provenance"))));
     }
 
@@ -868,13 +940,16 @@ public class MasterSeeder implements CommandLineRunner {
     }
 
     private void seedFinancialTemplates() {
-        // Default — matches everything, adds nothing: the canonical chart is unchanged.
+        // Default — matches everything, adds nothing to the chart: the canonical chart is unchanged.
+        // It DOES carry the default extractionMap (extraction-field → canonical key), so the doc-intel
+        // → spread bridge maps against the governed master rather than a hard-coded table.
         masters.seedActive("FINANCIAL_TEMPLATE", "fin-default", null, map(
                 "templateKey", "fin-default", "displayName", "Standard chart of accounts",
                 "selector", map(),
                 "extraInputLines", java.util.List.of(),
                 "extraDerivedLines", java.util.List.of(),
-                "extraRatios", java.util.List.of()));
+                "extraRatios", java.util.List.of(),
+                "extractionMap", defaultExtractionMap()));
 
         // SME — adds promoter net worth (extra input) + asset-turnover & promoter-cover ratios.
         masters.seedActive("FINANCIAL_TEMPLATE", "fin-sme", null, map(
@@ -885,7 +960,8 @@ public class MasterSeeder implements CommandLineRunner {
                 "extraDerivedLines", java.util.List.of(),
                 "extraRatios", java.util.List.of(
                         finRatio("ASSET_TURNOVER", "Asset turnover (x)", "REVENUE / TOTAL_ASSETS"),
-                        finRatio("PROMOTER_COVERAGE", "Promoter cover (x)", "PROMOTER_NET_WORTH / TOTAL_DEBT"))));
+                        finRatio("PROMOTER_COVERAGE", "Promoter cover (x)", "PROMOTER_NET_WORTH / TOTAL_DEBT")),
+                "extractionMap", defaultExtractionMap()));
 
         // MANUFACTURING — adds inventory + capacity-utilisation inputs, an inventory-days
         // derived line, and an asset-turnover ratio (resolved by sector).
@@ -898,7 +974,40 @@ public class MasterSeeder implements CommandLineRunner {
                 "extraDerivedLines", java.util.List.of(
                         finDerived("INVENTORY_DAYS", "Inventory days", "INVENTORY / COGS * 365")),
                 "extraRatios", java.util.List.of(
-                        finRatio("ASSET_TURNOVER", "Asset turnover (x)", "REVENUE / TOTAL_ASSETS"))));
+                        finRatio("ASSET_TURNOVER", "Asset turnover (x)", "REVENUE / TOTAL_ASSETS")),
+                "extractionMap", defaultExtractionMap()));
+    }
+
+    /**
+     * Default extraction-field-name → canonical INPUT taxonomy key mapping — seeded onto every
+     * FINANCIAL_TEMPLATE so the doc-intel → spread bridge resolves the mapping FROM the governed
+     * master. Mirrors origination-service's built-in fallback verbatim (parity: existing spreads
+     * are unchanged). Derived lines (EBITDA, TOTAL_DEBT, …) are intentionally absent — the engine
+     * computes them; {@code total_debt} seeds LONG_TERM_DEBT so the analyst splits before confirming.
+     */
+    private Map<String, Object> defaultExtractionMap() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("revenue", "REVENUE"); m.put("sales", "REVENUE"); m.put("turnover", "REVENUE");
+        m.put("total_revenue", "REVENUE"); m.put("annual_turnover", "REVENUE");
+        m.put("cogs", "COGS"); m.put("cost_of_goods_sold", "COGS"); m.put("cost_of_sales", "COGS");
+        m.put("operating_expenses", "OPERATING_EXPENSES"); m.put("opex", "OPERATING_EXPENSES");
+        m.put("depreciation", "DEPRECIATION"); m.put("depreciation_amortisation", "DEPRECIATION");
+        m.put("interest_expense", "INTEREST_EXPENSE"); m.put("finance_cost", "INTEREST_EXPENSE");
+        m.put("interest", "INTEREST_EXPENSE");
+        m.put("tax", "TAX"); m.put("tax_expense", "TAX");
+        m.put("total_assets", "TOTAL_ASSETS");
+        m.put("current_assets", "CURRENT_ASSETS");
+        m.put("cash", "CASH"); m.put("cash_equivalents", "CASH");
+        m.put("current_liabilities", "CURRENT_LIABILITIES");
+        m.put("short_term_debt", "SHORT_TERM_DEBT"); m.put("st_debt", "SHORT_TERM_DEBT");
+        m.put("long_term_debt", "LONG_TERM_DEBT"); m.put("lt_debt", "LONG_TERM_DEBT");
+        m.put("term_debt", "LONG_TERM_DEBT");
+        m.put("total_debt", "LONG_TERM_DEBT");
+        m.put("current_portion_ltd", "CURRENT_PORTION_LTD");
+        m.put("net_worth", "NET_WORTH"); m.put("networth", "NET_WORTH"); m.put("equity", "NET_WORTH");
+        m.put("shareholders_equity", "NET_WORTH");
+        m.put("cfo", "CFO"); m.put("cash_flow_operations", "CFO"); m.put("operating_cash_flow", "CFO");
+        return m;
     }
 
     private void seedProjectionTemplates() {

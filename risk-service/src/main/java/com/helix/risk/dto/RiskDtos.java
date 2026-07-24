@@ -21,7 +21,10 @@ public final class RiskDtos {
             @NotBlank String proposedGrade,
             @NotBlank String reasonCode,
             String note,
-            @NotBlank String role) {
+            // Legacy advisory field — retained only for payload back-compat. The server resolves the
+            // override-notch authority from the AUTHENTICATED actor's ACTOR_ROLE roles (never this body
+            // claim), so this value is IGNORED. Optional; may be omitted by new callers.
+            String role) {
     }
 
     public record OverrideStats(String segment, long total, long overridden, double overrideRate,

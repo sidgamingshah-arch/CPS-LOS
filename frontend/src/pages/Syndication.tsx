@@ -10,13 +10,14 @@
  * Deterministic figures throughout — fees and allocations are computed, not drafted.
  */
 import { useState } from "react";
-import { fmt, origination, syndication } from "../api";
+import { fmt, syndication } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, DeterministicBadge, EmptyState, Field, Stat, useAsync } from "../ui";
 
 export default function Syndication() {
   const { actor, notify, ref: ctxRef } = useApp();
-  const apps = useAsync(() => origination.list(), []);
+  // Only SYNDICATION-structured deals — a non-syndicated pick would just yield an empty book.
+  const deals = useAsync(() => syndication.deals().catch(() => []), []);
   const [ref, setRef] = useState<string>(ctxRef ?? "");
 
   const book = useAsync(() => (ref ? safe(syndication.book(ref)) : Promise.resolve(null)), [ref]);
@@ -58,14 +59,44 @@ export default function Syndication() {
         <Field label="Syndicated deal">
           <select value={ref} onChange={(e) => setRef(e.target.value)}>
             <option value="">— select —</option>
-            {(apps.data || []).map((a: any) => (
-              <option key={a.reference} value={a.reference}>{a.counterpartyName} · {a.reference}</option>
+            {(deals.data || []).map((d: any) => (
+              <option key={d.reference} value={d.reference}>{d.borrower} · {d.reference}</option>
             ))}
           </select>
         </Field>
+        <div className="scf-note">
+          Only <b>SYNDICATION</b>-structured deals are listed. Participants and commitments are
+          user-entered in Deal Structuring; shares and the fee waterfall are <b>derived</b>
+          {" "}deterministically from them.
+        </div>
+
+        {(deals.data || []).length > 0 ? (
+          <table>
+            <thead>
+              <tr><th>Reference</th><th>Borrower</th><th className="num">Total commitment</th><th className="num">Lenders</th></tr>
+            </thead>
+            <tbody>
+              {(deals.data || []).map((d: any) => (
+                <tr key={d.reference}
+                  className={d.reference === ref ? "dt-row-selected" : undefined}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => setRef(d.reference)}>
+                  <td className="mono">{d.reference}</td>
+                  <td>{d.borrower}</td>
+                  <td className="num">{fmt.money(d.totalCommitment, d.currency)}</td>
+                  <td className="num">{d.lenderCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <EmptyState glyph="◌" title="No syndicated deals yet"
+            sub="Set a deal's structure to SYNDICATION and add LEAD_BANK + PARTICIPANT_LENDER participants in Deal Structuring." />
+        )}
+
         {ref && !b && (
-          <EmptyState glyph="◌" title="Not a syndicated deal (or no lenders captured)"
-            sub="Set the deal structure to SYNDICATION and add LEAD_BANK + PARTICIPANT_LENDER participants in Deal Structuring." />
+          <EmptyState glyph="◌" title="Not a syndicated deal, or no lenders captured yet"
+            sub="Pick a syndicated deal above, or set the deal's structure to SYNDICATION and add LEAD_BANK + PARTICIPANT_LENDER participants in Deal Structuring — then the syndicate book, fee waterfall and reconciliation appear here." />
         )}
       </Card>
 

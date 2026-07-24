@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { fmt, origination } from "../api";
+import { config, fmt, origination } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, EmptyState, Field, GovFlow, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, DeterministicBadge, EmptyState, Field, GovFlow, useAsync } from "../ui";
 
 /**
  * SpreadJS-style financial spreading grid (PRD spreading UI). Rows are taxonomy line
@@ -41,6 +41,17 @@ export default function Spreading() {
   // restated into the borrower's presentation currency (analyst edits stay native).
   const [ccyView, setCcyView] = useState<"native" | "presentation">("native");
   const analysis = useAsync(() => (ref ? origination.analysis(ref) : Promise.resolve(null)), [ref]);
+  // Resolve the governed FINANCIAL_TEMPLATE (chart augmentation + extraction map) for this deal, so
+  // the analyst can see the extra lines/ratios and the extraction→canonical mapping the doc-intel
+  // bridge maps against. Fail-soft: an outage just hides the card, spreading still works.
+  const template = useAsync(async () => {
+    if (!ref) return null;
+    try {
+      const app = await origination.get(ref);
+      const rec = await config.resolveFinancialTemplate(app?.jurisdiction, app?.sector, app?.segment);
+      return rec?.payload ?? null;
+    } catch { return null; }
+  }, [ref]);
 
   const reload = () => analysis.reload();
   const run = async (fn: () => Promise<any>, ok: string) => {
@@ -137,6 +148,8 @@ export default function Spreading() {
           </div>
         )}
       </Card>
+
+      {ref && template.data && <TemplateCard t={template.data} /> }
 
       {analysis.loading && <div className="loading">Loading spread…</div>}
 
@@ -276,6 +289,65 @@ export default function Spreading() {
         </Card>
       )}
     </div>
+  );
+}
+
+function TemplateCard({ t }: { t: any }) {
+  const extraInputs: any[] = t.extraInputLines || [];
+  const extraDerived: any[] = t.extraDerivedLines || [];
+  const extraRatios: any[] = t.extraRatios || [];
+  const extractionMap: Record<string, string> = t.extractionMap || {};
+  const mapEntries = Object.entries(extractionMap);
+  return (
+    <Card title="Resolved chart-of-accounts template"
+      sub="The governed FINANCIAL_TEMPLATE master resolved for this deal. It augments the canonical chart with the extra lines/ratios below, and drives the doc-intel → spread mapping (extraction field → canonical key)."
+      right={<Badge kind="info">{t.templateKey || t.displayName || "template"}</Badge>}>
+      <div className="grid cols-2">
+        <div>
+          <h4 style={{ margin: "4px 0" }}>Extra lines &amp; ratios <DeterministicBadge /></h4>
+          {extraInputs.length === 0 && extraDerived.length === 0 && extraRatios.length === 0 ? (
+            <div className="muted" style={{ fontSize: 12 }}>No augmentation — the canonical chart applies unchanged.</div>
+          ) : (
+            <table>
+              <thead><tr><th>Kind</th><th>Key</th><th>Formula</th></tr></thead>
+              <tbody>
+                {extraInputs.map((l) => (
+                  <tr key={`i-${l.key}`}><td>input</td><td className="mono">{l.key}</td><td className="muted">{l.label || "—"}</td></tr>
+                ))}
+                {extraDerived.map((d) => (
+                  <tr key={`d-${d.key}`}><td>derived</td><td className="mono">{d.key}</td><td className="mono">{d.formula}</td></tr>
+                ))}
+                {extraRatios.map((r) => (
+                  <tr key={`r-${r.key}`}><td>ratio</td><td className="mono">{r.key}</td><td className="mono">{r.formula}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div>
+          <h4 style={{ margin: "4px 0" }}>Extraction mapping <AiBadge label="AI EXTRACTS" /></h4>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+            Doc-intel field name → canonical taxonomy key. A confirmed extraction is mapped against
+            this master to pre-fill a DRAFT spread; the built-in default applies for any field the
+            template omits.
+          </div>
+          {mapEntries.length === 0 ? (
+            <div className="muted" style={{ fontSize: 12 }}>No template mapping — built-in default applies.</div>
+          ) : (
+            <div style={{ maxHeight: 220, overflow: "auto" }}>
+              <table>
+                <thead><tr><th>Extraction field</th><th>Canonical key</th></tr></thead>
+                <tbody>
+                  {mapEntries.map(([k, v]) => (
+                    <tr key={k}><td className="mono">{k}</td><td className="mono">{v}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }
 

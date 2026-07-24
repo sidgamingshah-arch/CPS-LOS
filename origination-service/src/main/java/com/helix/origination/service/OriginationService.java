@@ -20,11 +20,14 @@ import com.helix.origination.dto.Dtos.AddSublimitRequest;
 import com.helix.origination.dto.Dtos.CellView;
 import com.helix.origination.dto.Dtos.CollateralView;
 import com.helix.origination.dto.Dtos.CreateApplicationRequest;
+import com.helix.origination.dto.Dtos.CreditCollateral;
+import com.helix.origination.dto.Dtos.CreditFacility;
 import com.helix.origination.dto.Dtos.CreditInputs;
 import com.helix.origination.dto.Dtos.DealEnvelope;
 import com.helix.origination.dto.Dtos.FacilityView;
 import com.helix.origination.dto.Dtos.InterchangeabilityGroupView;
 import com.helix.origination.dto.Dtos.OverrideRequest;
+import com.helix.origination.dto.Dtos.PeriodFinancials;
 import com.helix.origination.dto.Dtos.SublimitView;
 import com.helix.origination.dto.Dtos.PeriodAnalysis;
 import com.helix.origination.dto.Dtos.SpreadAnalysis;
@@ -32,6 +35,9 @@ import com.helix.origination.dto.Dtos.SpreadFromExtractionRequest;
 import com.helix.origination.dto.Dtos.SpreadRequest;
 import com.helix.origination.dto.Dtos.SpreadVersionDetail;
 import com.helix.origination.dto.Dtos.SpreadVersionView;
+import com.helix.origination.dto.Dtos.UpdateCollateralRequest;
+import com.helix.origination.dto.Dtos.UpdateFacilityRequest;
+import com.helix.origination.dto.Dtos.UpdateSublimitRequest;
 import com.helix.origination.dto.Dtos.UploadDocumentRequest;
 import com.helix.origination.entity.Collateral;
 import com.helix.origination.entity.DocExtraction;
@@ -83,6 +89,18 @@ public class OriginationService {
 
     /** Allowed origin markers on the spread version timeline. */
     private static final Set<String> SPREAD_VERSION_SOURCES = Set.of("MANUAL", "DOC_INTEL", "RESUBMISSION");
+
+    /**
+     * The deal STRUCTURE (facilities / collaterals / sublimits) may be freely edited or deleted only
+     * during the pre-sanction structuring phase. Once the proposal is submitted for approval or
+     * sanctioned, the structure of record is frozen and any change must go through the governed
+     * post-sanction amendment path ({@link #applyAmendment}) — so edits are rejected past these
+     * statuses with a 409. (PENDING_APPROVAL and everything after is out of bounds.)
+     */
+    private static final Set<String> STRUCTURE_EDITABLE_STATUSES = Set.of(
+            ApplicationStatus.DRAFT.name(), ApplicationStatus.INTAKE.name(),
+            ApplicationStatus.SPREADING.name(), ApplicationStatus.RATING.name(),
+            ApplicationStatus.CAPITAL.name(), ApplicationStatus.PRICING.name());
 
     private final LoanApplicationRepository applications;
     private final DocumentRepository documents;
@@ -629,6 +647,17 @@ public class OriginationService {
         return result;
     }
 
+    /**
+     * True if the deal already carries ANY financial-spread periods (confirmed OR a work-in-progress
+     * draft). The confirm-time auto-draft uses this to only ever populate an EMPTY grid — it must
+     * never replace an analyst's existing manual draft or a confirmed spread.
+     */
+    @Transactional(readOnly = true)
+    public boolean hasSpread(String reference) {
+        LoanApplication app = applications.findByReference(reference).orElse(null);
+        return app != null && !periods.findByApplicationIdOrderByOrdinalAsc(app.getId()).isEmpty();
+    }
+
     // ------------------------------------------------- AI-extract -> grid -> human-confirm
 
     /**
@@ -667,6 +696,16 @@ public class OriginationService {
                     + " — only a CONFIRMED extraction may pre-fill the spread");
         }
 
+        // Resolve the extraction field → canonical taxonomy MAPPING from the deal's FINANCIAL_TEMPLATE
+        // master (so "extraction happens against the template master"). Template entries OVERRIDE /
+        // AUGMENT the built-in default; when the template omits the map the built-in applies verbatim,
+        // so behaviour is byte-identical for existing seeds.
+        com.helix.origination.client.FinancialTemplateClient.FinancialTemplate tmpl =
+                financialTemplates.resolve(app.getJurisdiction(), app.getSector(), app.getSegment());
+        Map<String, String> mapping = new LinkedHashMap<>(EXTRACTION_TO_TAXONOMY);
+        mapping.putAll(tmpl.extractionMap());   // keys already lower-cased by the client
+        boolean templateMapped = !tmpl.extractionMap().isEmpty();
+
         Map<String, Object> exFields = ext.getFields() == null ? Map.of() : ext.getFields();
         Map<String, SpreadRequest.LineInput> lines = new LinkedHashMap<>();
         List<String> unmapped = new ArrayList<>();
@@ -681,7 +720,7 @@ public class OriginationService {
                 }
                 continue;
             }
-            String canonical = EXTRACTION_TO_TAXONOMY.get(e.getKey().toLowerCase(Locale.ROOT));
+            String canonical = mapping.get(e.getKey().toLowerCase(Locale.ROOT));
             Double value = extractNumber(e.getValue());
             if (canonical == null || value == null) {
                 if (value != null || isFigureLike(e.getKey())) {
@@ -720,6 +759,8 @@ public class OriginationService {
         detail.put("mappedLines", lines.size());
         detail.put("unmappedFields", unmapped);
         detail.put("advisory", true);
+        detail.put("financialTemplate", tmpl.templateKey());
+        detail.put("mappingSource", templateMapped ? "TEMPLATE_MASTER" : "BUILT_IN");
         detail.put("spreadConfirmed", result.spreadConfirmed());   // false — human confirm still required
         audit.ai("financial-spreading", "SPREAD_DRAFTED_FROM_EXTRACTION", "Application", reference,
                 "Pre-filled a DRAFT spread from confirmed extraction #%d (%d line(s) mapped) — analyst confirm still required"
@@ -727,8 +768,11 @@ public class OriginationService {
         return result;
     }
 
-    /** Recognised extraction field names -> canonical INPUT taxonomy keys. Derived lines
-     *  (EBITDA, TOTAL_DEBT, …) are intentionally absent — the engine computes them, we never seed them. */
+    /** BUILT-IN default extraction field names -> canonical INPUT taxonomy keys — the fallback used
+     *  when the resolved FINANCIAL_TEMPLATE master omits (or does not override) a mapping entry, so
+     *  spreading stays byte-identical for existing seeds. The authoritative, governed mapping lives in
+     *  the FINANCIAL_TEMPLATE master payload ({@code extractionMap}); see {@link #spreadFromExtraction}.
+     *  Derived lines (EBITDA, TOTAL_DEBT, …) are intentionally absent — the engine computes them. */
     private static final Map<String, String> EXTRACTION_TO_TAXONOMY = extractionMap();
 
     private static Map<String, String> extractionMap() {
@@ -1052,12 +1096,26 @@ public class OriginationService {
             if (r.key() == null || r.formula() == null || ratios.containsKey(r.key())) continue;
             ratios.put(r.key(), com.helix.common.formula.FormulaEvaluator.evalRounded(r.formula(), latest));
         }
+        // Additive: the full facility list + collateral cover (the deal envelope's building blocks)
+        // so risk-service can capitalise & price PER FACILITY. Ordered by facility ordinal so index 0
+        // is the primary; every existing consumer that reads only the scalar fields is unaffected.
+        List<CreditFacility> facilityInputs = facilities.findByApplicationIdOrderByOrdinalAsc(app.getId())
+                .stream()
+                .map(f -> new CreditFacility(f.getId(), f.getReference(), f.getFacilityType(),
+                        f.getAmount(), f.getCurrency(), f.getTenorMonths(), f.isPrimary()))
+                .toList();
+        List<CreditCollateral> collateralInputs = collaterals.findByApplicationId(app.getId())
+                .stream()
+                .map(c -> new CreditCollateral(c.getFacilityId(), c.getCollateralType(), c.getMarketValue()))
+                .toList();
+
         return new CreditInputs(app.getReference(), app.getCounterpartyId(), app.getCounterpartyRef(),
                 app.getCounterpartyName(), app.getJurisdiction(), app.getSegment(), app.getSector(),
                 app.getFacilityType(),
                 app.getRequestedAmount(), app.getCurrency(), app.getTenorMonths(), app.getCollateralType(),
                 app.getCollateralValue(), app.isSecured(), app.isSpreadConfirmed(),
-                latest, ratios, trends(normalisedByOrdinal));
+                latest, ratios, trends(normalisedByOrdinal),
+                facilityInputs, collateralInputs);
     }
 
     private static java.time.LocalDate parsePeriodEnd(String iso) {
@@ -1127,6 +1185,28 @@ public class OriginationService {
     }
 
     // ------------------------------------------------------- facilities (multi)
+
+    /**
+     * Guards a pre-sanction structure edit: throws 409 CONFLICT unless the owning application is
+     * still in the structuring phase (see {@link #STRUCTURE_EDITABLE_STATUSES}). Post-sanction the
+     * facility/collateral/sublimit of record is frozen and changes must go through the amendment path.
+     */
+    private LoanApplication assertStructureEditable(LoanApplication app) {
+        if (!STRUCTURE_EDITABLE_STATUSES.contains(app.getStatus())) {
+            throw ApiException.conflict(
+                    ("Deal %s is %s — the facility / collateral / sublimit structure is frozen after "
+                     + "the structuring phase; a post-sanction change must go through the approved "
+                     + "amendment path (applyAmendment), not a direct edit")
+                            .formatted(app.getReference(), app.getStatus()));
+        }
+        return app;
+    }
+
+    private LoanApplication assertStructureEditable(Long applicationId) {
+        LoanApplication app = applications.findById(applicationId)
+                .orElseThrow(() -> ApiException.notFound("No application: " + applicationId));
+        return assertStructureEditable(app);
+    }
 
     @Transactional
     public ProposedFacility addFacility(String reference, AddFacilityRequest req, String actor) {
@@ -1236,12 +1316,55 @@ public class OriginationService {
     public void removeFacility(Long facilityId, String actor) {
         ProposedFacility f = facilities.findById(facilityId)
                 .orElseThrow(() -> ApiException.notFound("No facility: " + facilityId));
+        assertStructureEditable(f.getApplicationId());
         if (f.isPrimary()) {
             throw ApiException.badRequest("Cannot remove the primary facility");
         }
         facilities.delete(f);
         audit.human(actor, "FACILITY_REMOVED", "ProposedFacility", String.valueOf(facilityId),
                 "Removed " + f.getFacilityType(), Map.of("facilityType", f.getFacilityType()));
+    }
+
+    /**
+     * Edit a proposed facility in place (pre-sanction only). Partial update — only non-null fields
+     * are applied. The auto-created PRIMARY facility is not editable here (it mirrors the
+     * application's headline request); post-sanction changes route through {@link #applyAmendment}.
+     * A downward amount change may not fall below what the sublimits already allocate (counting each
+     * interchangeable group once at its shared cap), so the structuring cap invariant is preserved.
+     */
+    @Transactional
+    public ProposedFacility updateFacility(Long facilityId, UpdateFacilityRequest req, String actor) {
+        ProposedFacility f = facilities.findById(facilityId)
+                .orElseThrow(() -> ApiException.notFound("No facility: " + facilityId));
+        assertStructureEditable(f.getApplicationId());
+        if (f.isPrimary()) {
+            throw ApiException.badRequest(
+                    "Cannot edit the primary facility — it mirrors the application's headline request");
+        }
+        String oldType = f.getFacilityType();
+        double oldAmount = f.getAmount();
+        if (req.facilityType() != null && !req.facilityType().isBlank()) f.setFacilityType(req.facilityType());
+        if (req.currency() != null && !req.currency().isBlank()) f.setCurrency(req.currency());
+        if (req.tenorMonths() != null) f.setTenorMonths(req.tenorMonths());
+        if (req.purpose() != null) f.setPurpose(req.purpose());
+        if (req.indicativeRate() != null) f.setIndicativeRate(req.indicativeRate());
+        if (req.amount() != null) {
+            double allocated = effectiveSublimitAllocation(sublimits.findByFacilityIdOrderByOrdinalAsc(facilityId));
+            if (req.amount() + 1e-6 < allocated) {
+                throw ApiException.badRequest(
+                        ("New facility amount %.0f is below the %.0f already allocated to its sublimits "
+                         + "(interchangeable groups counted once at their shared cap) — reduce the sublimits first")
+                                .formatted(req.amount(), allocated));
+            }
+            f.setAmount(req.amount());
+        }
+        ProposedFacility saved = facilities.save(f);
+        audit.human(actor, "FACILITY_UPDATED", "ProposedFacility", String.valueOf(facilityId),
+                "Updated %s: type %s -> %s, amount %.0f -> %.0f".formatted(saved.getReference(),
+                        oldType, saved.getFacilityType(), oldAmount, saved.getAmount()),
+                Map.of("facilityType", saved.getFacilityType(), "amount", saved.getAmount(),
+                        "oldAmount", oldAmount));
+        return saved;
     }
 
     // ----------------------------------------------------------- collaterals
@@ -1287,6 +1410,60 @@ public class OriginationService {
         return collaterals.save(c);
     }
 
+    /**
+     * Edit a collateral's DESCRIPTIVE fields in place (pre-sanction only). Partial update — only
+     * non-null fields are applied. CRITICAL GOVERNANCE: {@code marketValue} is NOT editable here
+     * (the request record has no such field), so a valuation can never be silently overwritten from
+     * this path — a market-value change must route through the collateral-intel revalue → human
+     * apply gate ({@code CollateralIntelligenceService.revalue/review}), which is where the LTV
+     * assessment and accountability audit are stamped.
+     */
+    @Transactional
+    public Collateral updateCollateral(Long collateralId, UpdateCollateralRequest req, String actor) {
+        Collateral c = collaterals.findById(collateralId)
+                .orElseThrow(() -> ApiException.notFound("No collateral: " + collateralId));
+        assertStructureEditable(c.getApplicationId());
+        if (req.collateralType() != null && !req.collateralType().isBlank()) {
+            c.setCollateralType(req.collateralType().toUpperCase());
+        }
+        if (req.description() != null && !req.description().isBlank()) c.setDescription(req.description());
+        if (req.valuationDate() != null && !req.valuationDate().isBlank()) {
+            c.setValuationDate(LocalDate.parse(req.valuationDate()));
+        }
+        if (req.valuationSource() != null) c.setValuationSource(req.valuationSource());
+        if (req.haircut() != null) {
+            if (req.haircut() < 0 || req.haircut() > 1) {
+                throw ApiException.badRequest("haircut must be a fraction between 0 and 1");
+            }
+            c.setHaircut(req.haircut());
+        }
+        if (req.owner() != null) c.setOwner(req.owner());
+        if (req.location() != null) c.setLocation(req.location());
+        if (req.perfectionStatus() != null && !req.perfectionStatus().isBlank()) {
+            c.setPerfectionStatus(req.perfectionStatus());
+        }
+        if (req.facilityId() != null) c.setFacilityId(req.facilityId() <= 0 ? null : req.facilityId());
+        Collateral saved = collaterals.save(c);
+        audit.human(actor, "COLLATERAL_UPDATED", "Collateral", String.valueOf(collateralId),
+                "Updated %s collateral (haircut %.0f%%, %s) — market value unchanged (route revaluation via collateral-intel)"
+                        .formatted(saved.getCollateralType(), saved.getHaircut() * 100, saved.getPerfectionStatus()),
+                Map.of("type", saved.getCollateralType(), "haircut", saved.getHaircut(),
+                        "marketValue", saved.getMarketValue()));
+        return saved;
+    }
+
+    /** Delete a collateral (pre-sanction only) — parity with facility / sublimit delete. */
+    @Transactional
+    public void removeCollateral(Long collateralId, String actor) {
+        Collateral c = collaterals.findById(collateralId)
+                .orElseThrow(() -> ApiException.notFound("No collateral: " + collateralId));
+        assertStructureEditable(c.getApplicationId());
+        collaterals.delete(c);
+        audit.human(actor, "COLLATERAL_REMOVED", "Collateral", String.valueOf(collateralId),
+                "Removed %s collateral".formatted(c.getCollateralType()),
+                Map.of("type", c.getCollateralType(), "marketValue", c.getMarketValue()));
+    }
+
     // --------------------------------------------------- aggregated deal view
 
     @Transactional(readOnly = true)
@@ -1308,32 +1485,42 @@ public class OriginationService {
         Map<String, Double> latest = creditInputs(reference).latestFinancials();
         Map<String, Double> ratios = creditInputs(reference).ratios();
 
+        // Multi-period trend feed (latest first, ordinal-ascending == most-recent-first, matching the
+        // authoritative latest-period selection). Native line values quoted verbatim — no recomputation;
+        // a CAM's financial-trend section renders these, the figure path is untouched.
+        List<PeriodFinancials> periodFin = new ArrayList<>();
+        for (FinancialPeriod p : periods.findByApplicationIdOrderByOrdinalAsc(app.getId())) {
+            Map<String, Double> values = new LinkedHashMap<>();
+            for (SpreadCell c : cells.findByPeriodId(p.getId())) {
+                values.put(c.getTaxonomyKey(), c.getValue());
+            }
+            periodFin.add(new PeriodFinancials(p.getLabel(), p.getCurrency(), values));
+        }
+
         return new DealEnvelope(reference, app.getCounterpartyName(), app.getJurisdiction(), app.getSegment(),
                 totalProposed, app.getCurrency(), app.getTenorMonths(),
-                facViews, colViews, totalCover, latest, ratios);
+                facViews, colViews, totalCover, latest, ratios, periodFin);
     }
 
     // ----------------------------------------------------- sublimits (multi)
 
     /**
-     * Adds a sublimit to a facility. Enforces the rule that the sum of sublimits
-     * cannot exceed the parent facility amount — protects the structuring cap.
+     * Adds a sublimit to a facility. Enforces that the sublimits cannot exceed the parent facility
+     * amount — protects the structuring cap. The cap is computed with each interchangeable
+     * (fungible) group counted ONCE at its shared cap (see {@link #effectiveSublimitAllocation});
+     * members of a fungible pool share one cap, so summing them would double-count the same headroom.
      */
     @Transactional
     public Sublimit addSublimit(Long facilityId, AddSublimitRequest req, String actor) {
         ProposedFacility f = facilities.findById(facilityId)
                 .orElseThrow(() -> ApiException.notFound("No facility: " + facilityId));
-        List<Sublimit> existing = sublimits.findByFacilityIdOrderByOrdinalAsc(facilityId);
-        double allocated = existing.stream().mapToDouble(Sublimit::getAmount).sum();
-        if (allocated + req.amount() > f.getAmount() + 1e-6) {
-            throw ApiException.badRequest(
-                    "Sublimit would breach facility cap: allocated %.0f + new %.0f > facility cap %.0f"
-                            .formatted(allocated, req.amount(), f.getAmount()));
-        }
+        // NB: ADD stays permissive at any status (legacy behaviour — the lifecycle can still bolt on a
+        // sublimit post-sanction). Only in-place EDITS and DELETES are pre-sanction-gated below.
         if (req.currency() != null && !req.currency().equalsIgnoreCase(f.getCurrency())) {
             // We could support multi-currency sublimits in future; flag rather than allow silent drift.
             throw ApiException.badRequest("Sublimit currency must match the parent facility (" + f.getCurrency() + ")");
         }
+        List<Sublimit> existing = sublimits.findByFacilityIdOrderByOrdinalAsc(facilityId);
         Sublimit s = new Sublimit();
         s.setFacilityId(facilityId);
         s.setOrdinal(existing.size());
@@ -1343,8 +1530,17 @@ public class OriginationService {
         s.setCurrency(req.currency());
         s.setTenorMonths(req.tenorMonths());
         s.setPurpose(req.purpose());
-        s.setInterchangeableGroup(req.interchangeableGroup() == null || req.interchangeableGroup().isBlank()
-                ? null : req.interchangeableGroup().toUpperCase());
+        s.setInterchangeableGroup(normaliseGroup(req.interchangeableGroup()));
+        // Cap check on (existing + candidate) with fungible groups counted once at their shared cap.
+        List<Sublimit> combined = new ArrayList<>(existing);
+        combined.add(s);
+        double allocated = effectiveSublimitAllocation(combined);
+        if (allocated > f.getAmount() + 1e-6) {
+            throw ApiException.badRequest(
+                    ("Sublimit would breach facility cap: effective allocation %.0f > facility cap %.0f "
+                     + "(interchangeable groups counted once at their shared cap, not summed)")
+                            .formatted(allocated, f.getAmount()));
+        }
         Sublimit saved = sublimits.save(s);
         audit.human(actor, "SUBLIMIT_ADDED", "ProposedFacility", String.valueOf(facilityId),
                 "Added %s sublimit %.0f%s".formatted(s.getCode(), s.getAmount(),
@@ -1352,6 +1548,33 @@ public class OriginationService {
                 Map.of("code", s.getCode(), "amount", s.getAmount(),
                         "interchangeableGroup", String.valueOf(s.getInterchangeableGroup())));
         return saved;
+    }
+
+    /** Normalise an interchangeable-group key: blank → null (hard cap), else trimmed upper-case. */
+    private static String normaliseGroup(String g) {
+        return g == null || g.isBlank() ? null : g.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * Effective allocation of a facility's cap by its sublimits, counting each interchangeable
+     * (fungible) group ONCE at its shared cap — NOT summing the members. Members of a fungible group
+     * share a single pool (utilisation moves freely within it), so summing their {@code amount}s
+     * double-counts the same headroom. The model carries no explicit group-cap field, so the shared
+     * cap is taken as the MAX member amount (members of one pool are set to the pool size). Hard
+     * (non-fungible) sublimits are summed individually. This is the ORIGINATION cap/display view; the
+     * limit-service UtilisationService owns the authoritative runtime pooled-headroom enforcement.
+     */
+    private double effectiveSublimitAllocation(List<Sublimit> subs) {
+        double hard = subs.stream().filter(s -> !s.isFungible())
+                .mapToDouble(Sublimit::getAmount).sum();
+        Map<String, Double> groupCap = new LinkedHashMap<>();
+        for (Sublimit s : subs) {
+            if (s.isFungible()) {
+                groupCap.merge(s.getInterchangeableGroup(), s.getAmount(), Math::max);
+            }
+        }
+        double pooled = groupCap.values().stream().mapToDouble(Double::doubleValue).sum();
+        return hard + pooled;
     }
 
     @Transactional(readOnly = true)
@@ -1363,9 +1586,58 @@ public class OriginationService {
     public void removeSublimit(Long id, String actor) {
         Sublimit s = sublimits.findById(id)
                 .orElseThrow(() -> ApiException.notFound("No sublimit: " + id));
+        ProposedFacility f = facilities.findById(s.getFacilityId())
+                .orElseThrow(() -> ApiException.notFound("No facility for sublimit " + id));
+        assertStructureEditable(f.getApplicationId());
         sublimits.delete(s);
         audit.human(actor, "SUBLIMIT_REMOVED", "Sublimit", String.valueOf(id),
                 "Removed " + s.getCode(), Map.of());
+    }
+
+    /**
+     * Edit a sublimit in place (pre-sanction only). Partial update — only non-null fields are applied.
+     * After the edit the parent facility cap is re-checked with each interchangeable group counted
+     * ONCE at its shared cap (fungible members are not summed). Pass a blank {@code interchangeableGroup}
+     * to convert a fungible sublimit back to a hard-cap sublimit.
+     */
+    @Transactional
+    public Sublimit updateSublimit(Long id, UpdateSublimitRequest req, String actor) {
+        Sublimit s = sublimits.findById(id)
+                .orElseThrow(() -> ApiException.notFound("No sublimit: " + id));
+        ProposedFacility f = facilities.findById(s.getFacilityId())
+                .orElseThrow(() -> ApiException.notFound("No facility for sublimit " + id));
+        assertStructureEditable(f.getApplicationId());
+        if (req.code() != null && !req.code().isBlank()) s.setCode(req.code().toUpperCase());
+        if (req.productType() != null && !req.productType().isBlank()) s.setProductType(req.productType().toUpperCase());
+        if (req.amount() != null) s.setAmount(req.amount());
+        if (req.currency() != null && !req.currency().isBlank()) s.setCurrency(req.currency());
+        if (req.tenorMonths() != null) s.setTenorMonths(req.tenorMonths());
+        if (req.purpose() != null) s.setPurpose(req.purpose());
+        // interchangeableGroup is a tri-state edit: null = leave as-is, blank = clear to hard cap,
+        // else set the pool key. Only touch it when the caller actually supplied the field.
+        if (req.interchangeableGroup() != null) s.setInterchangeableGroup(normaliseGroup(req.interchangeableGroup()));
+        if (s.getCurrency() != null && !s.getCurrency().equalsIgnoreCase(f.getCurrency())) {
+            throw ApiException.badRequest("Sublimit currency must match the parent facility (" + f.getCurrency() + ")");
+        }
+        // Cap check on (siblings + this edited sublimit) with fungible groups counted once.
+        List<Sublimit> combined = sublimits.findByFacilityIdOrderByOrdinalAsc(f.getId()).stream()
+                .filter(x -> !x.getId().equals(s.getId()))
+                .collect(Collectors.toCollection(ArrayList::new));
+        combined.add(s);
+        double allocated = effectiveSublimitAllocation(combined);
+        if (allocated > f.getAmount() + 1e-6) {
+            throw ApiException.badRequest(
+                    ("Sublimit edit would breach facility cap: effective allocation %.0f > facility cap %.0f "
+                     + "(interchangeable groups counted once at their shared cap, not summed)")
+                            .formatted(allocated, f.getAmount()));
+        }
+        Sublimit saved = sublimits.save(s);
+        audit.human(actor, "SUBLIMIT_UPDATED", "Sublimit", String.valueOf(id),
+                "Updated %s sublimit %.0f%s".formatted(saved.getCode(), saved.getAmount(),
+                        saved.isFungible() ? " (group " + saved.getInterchangeableGroup() + ")" : " (hard cap)"),
+                Map.of("code", saved.getCode(), "amount", saved.getAmount(),
+                        "interchangeableGroup", String.valueOf(saved.getInterchangeableGroup())));
+        return saved;
     }
 
     /** Maps a facility entity to its view, embedding sublimits and interchangeability groups. */
@@ -1376,8 +1648,11 @@ public class OriginationService {
                 s.getAmount(), s.getCurrency(), s.getTenorMonths(), s.getPurpose(),
                 s.getInterchangeableGroup(), s.isFungible())).toList();
 
-        // Group fungible sublimits by group key; each group's combined cap is the sum
-        // of member amounts (utilisation can move within, capped by the combined sum).
+        // Group fungible sublimits by group key. Members of an interchangeable group SHARE one cap
+        // (utilisation moves freely within the pool), so the group's combined cap is its shared cap —
+        // the MAX member amount — NOT the sum of member amounts. Summing would double-count the same
+        // shared headroom (the bug this fixes). The model carries no explicit group-cap field; members
+        // of a pool are set to the pool size, so max() is the shared cap.
         Map<String, List<Sublimit>> byGroup = ss.stream()
                 .filter(Sublimit::isFungible)
                 .collect(Collectors.groupingBy(Sublimit::getInterchangeableGroup, java.util.LinkedHashMap::new,
@@ -1385,13 +1660,15 @@ public class OriginationService {
         List<InterchangeabilityGroupView> groupViews = byGroup.entrySet().stream()
                 .map(e -> new InterchangeabilityGroupView(
                         e.getKey(),
-                        e.getValue().stream().mapToDouble(Sublimit::getAmount).sum(),
+                        e.getValue().stream().mapToDouble(Sublimit::getAmount).max().orElse(0.0),
                         f.getCurrency(),
                         e.getValue().stream().map(Sublimit::getCode).toList(),
                         e.getValue().size()))
                 .toList();
 
-        double sublimitTotal = ss.stream().mapToDouble(Sublimit::getAmount).sum();
+        // Effective allocation counts each interchangeable group once at its shared cap (not summed),
+        // consistent with the addSublimit / updateFacility cap checks, so headroom is truthful.
+        double sublimitTotal = effectiveSublimitAllocation(ss);
         double headroom = Math.max(0.0, f.getAmount() - sublimitTotal);
         return new FacilityView(f.getId(), f.getReference(), f.getOrdinal(), f.isPrimary(),
                 f.getFacilityType(), f.getAmount(), f.getCurrency(), f.getTenorMonths(),

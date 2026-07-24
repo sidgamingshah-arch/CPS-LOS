@@ -878,7 +878,9 @@ tr.inline-panel-row > td { padding: 6px 6px 10px; }
   font-variant-numeric: tabular-nums;
 }
 .notif-panel {
-  position: absolute; top: calc(100% + 10px); right: 0; z-index: 70; width: 360px; max-width: 92vw;
+  /* Sits above the floating Credit Intel dock/FAB (z-index 70) which shares the
+     right edge, but below the ⌘K command palette (z-index 80). */
+  position: absolute; top: calc(100% + 10px); right: 0; z-index: 76; width: 360px; max-width: 92vw;
   background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-md);
   box-shadow: var(--shadow-hover); overflow: hidden;
 }
@@ -1783,3 +1785,10 @@ tr.dt-row-selected td {
 }
 :root[data-theme="dark"] .sim-chip { background: rgba(157,87,0,.16); }
 :root[data-theme="light"] .sim-chip { background: #fbf0d6; }
+
+/* ============================ Authority-gated buttons ======================
+   Wrapper around an action button that may be disabled by the acting identity's
+   authority (see authz.ts). inline-block so it sizes to the button inside a
+   .btnrow; the wrapper carries the `title` so the tooltip still shows while the
+   button is disabled (a disabled <button> does not surface its own title). */
+.authz-gate { display: inline-block; }

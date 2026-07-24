@@ -98,7 +98,10 @@ public class PricingExceptionService {
         RulePackDto pack = config.activePack(in.jurisdiction(), "PRICING");
 
         double recommended = pricing.getRecommendedRate();
-        double hurdle = pack.number("hurdle_raroc", 0.15);
+        // Use the AUTHORITATIVE hurdle already resolved on the PricingResult (segment-aware override
+        // aware) rather than re-reading the flat pack value — the SoD escalation below must gate on
+        // the same hurdle the deal was priced against.
+        double hurdle = pricing.getHurdleRaroc();
         double costOfFunds = ftpService.computeFtp(in.currency(), in.jurisdiction(),
                 in.facilityType(), in.tenorMonths(), pack.number("cost_of_funds", 0.075)).ftp();
         double opexRate = pack.number("opex_rate", 0.010);

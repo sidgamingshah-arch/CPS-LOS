@@ -15,14 +15,20 @@ import com.helix.origination.dto.Dtos.SpreadRequest;
 import com.helix.origination.dto.Dtos.SpreadVersionDetail;
 import com.helix.origination.dto.Dtos.SpreadVersionView;
 import com.helix.origination.dto.Dtos.StatusUpdateRequest;
+import com.helix.origination.dto.Dtos.UpdateCollateralRequest;
+import com.helix.origination.dto.Dtos.UpdateFacilityRequest;
+import com.helix.origination.dto.Dtos.UpdateSublimitRequest;
 import com.helix.origination.dto.Dtos.UploadDocumentRequest;
 import com.helix.origination.entity.Collateral;
 import com.helix.origination.entity.Document;
 import com.helix.origination.entity.LoanApplication;
 import com.helix.origination.entity.ProposedFacility;
 import com.helix.origination.entity.Sublimit;
+import com.helix.origination.service.DocIntelligenceService;
 import com.helix.origination.service.OriginationService;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,10 +49,31 @@ import java.util.Map;
 @RequestMapping("/api/applications")
 public class OriginationController {
 
-    private final OriginationService origination;
+    private static final Logger log = LoggerFactory.getLogger(OriginationController.class);
 
-    public OriginationController(OriginationService origination) {
+    private final OriginationService origination;
+    private final DocIntelligenceService docIntel;
+
+    public OriginationController(OriginationService origination, DocIntelligenceService docIntel) {
         this.origination = origination;
+        this.docIntel = docIntel;
+    }
+
+    /**
+     * Chain classify → extract on upload so the analyst does not need a separate "Extract" click.
+     * The extraction is an advisory SUGGESTED row (human confirm still required); it is fail-soft —
+     * a governance-off jurisdiction or any extraction error must never fail the upload itself.
+     */
+    private Document autoExtract(Document doc, String actor) {
+        if (doc != null && doc.getId() != null) {
+            try {
+                docIntel.extract(doc.getId(), actor);
+            } catch (Exception e) {
+                log.warn("Auto-extract on upload skipped for document #{} (non-fatal): {}",
+                        doc.getId(), e.getMessage());
+            }
+        }
+        return doc;
     }
 
     @PostMapping
@@ -81,7 +108,7 @@ public class OriginationController {
     @PostMapping("/{reference}/documents")
     public Document upload(@PathVariable String reference, @Valid @RequestBody UploadDocumentRequest req,
                            @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
-        return origination.uploadDocument(reference, req, actor);
+        return autoExtract(origination.uploadDocument(reference, req, actor), actor);
     }
 
     /**
@@ -95,7 +122,7 @@ public class OriginationController {
                                @RequestParam("file") MultipartFile file,
                                @RequestParam(value = "declaredType", required = false) String declaredType,
                                @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
-        return origination.uploadDocumentFile(reference, file, declaredType, actor);
+        return autoExtract(origination.uploadDocumentFile(reference, file, declaredType, actor), actor);
     }
 
     @GetMapping("/{reference}/documents")
@@ -182,6 +209,13 @@ public class OriginationController {
         origination.removeFacility(id, actor);
     }
 
+    /** Edit a proposed facility in place (pre-sanction only; the primary facility is not editable). */
+    @PatchMapping("/facilities/{id}")
+    public ProposedFacility updateFacility(@PathVariable Long id, @Valid @RequestBody UpdateFacilityRequest req,
+                                           @RequestHeader(value = "X-Actor", defaultValue = "rm.user") String actor) {
+        return origination.updateFacility(id, req, actor);
+    }
+
     /** Set the facility's rate type (FIXED / FLOATING with benchmark + spread + reset frequency). */
     @PostMapping("/{reference}/facilities/{facilityRef}/rate-type")
     public ProposedFacility setRateType(@PathVariable String reference, @PathVariable String facilityRef,
@@ -224,6 +258,23 @@ public class OriginationController {
         return origination.perfect(id, actor);
     }
 
+    /**
+     * Edit a collateral's descriptive fields in place (pre-sanction only). Market value is NOT
+     * editable here — route a valuation change through the collateral-intel revalue → review gate.
+     */
+    @PatchMapping("/collaterals/{id}")
+    public Collateral updateCollateral(@PathVariable Long id, @Valid @RequestBody UpdateCollateralRequest req,
+                                       @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
+        return origination.updateCollateral(id, req, actor);
+    }
+
+    /** Delete a collateral (pre-sanction only) — parity with facility / sublimit delete. */
+    @DeleteMapping("/collaterals/{id}")
+    public void removeCollateral(@PathVariable Long id,
+                                 @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
+        origination.removeCollateral(id, actor);
+    }
+
     @GetMapping("/{reference}/envelope")
     public DealEnvelope envelope(@PathVariable String reference) {
         return origination.envelope(reference);
@@ -252,5 +303,12 @@ public class OriginationController {
     public void removeSublimit(@PathVariable Long id,
                                @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
         origination.removeSublimit(id, actor);
+    }
+
+    /** Edit a sublimit in place (pre-sanction only); the parent facility cap is re-checked. */
+    @PatchMapping("/sublimits/{id}")
+    public Sublimit updateSublimit(@PathVariable Long id, @Valid @RequestBody UpdateSublimitRequest req,
+                                   @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
+        return origination.updateSublimit(id, req, actor);
     }
 }

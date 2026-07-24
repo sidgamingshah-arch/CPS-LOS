@@ -19,6 +19,12 @@ spring:
       hibernate:
         dialect: org.hibernate.community.dialect.SQLiteDialect
     show-sql: false
+  # Allow a realistic trade-licence / MOA / AOA PDF for the create-screen autofill upload
+  # (Spring's 1MB default is too small). The parsed text is capped in-service regardless.
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 30MB
 
 management:
   endpoints:

@@ -78,19 +78,26 @@ export default function CommandPalette({
   const [recent, setRecent] = useState<Target[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Lazy-load directory data the first time the palette opens; refresh recents.
+  // Refresh directory data every time the palette opens; refresh recents. The dynamic
+  // directories (counterparties, deals, groups, exposures) are re-fetched on EACH open so an
+  // entity created earlier in the session is immediately searchable — the previous
+  // fetch-once-per-session cache left, e.g., a just-onboarded counterparty invisible until a
+  // full reload. The config-level directories (jurisdictions, country limits) change rarely, so
+  // they stay fetch-once to avoid needless calls.
   useEffect(() => {
     if (!open) return;
     setQ("");
     setActive(0);
     setRecent(loadRecent());
     setTimeout(() => inputRef.current?.focus(), 0);
-    if (cps === null) counterparty.list().then(setCps).catch(() => setCps([]));
-    if (deals === null) origination.list().then(setDeals).catch(() => setDeals([]));
-    if (groups === null) initiation.listGroups().then(setGroups).catch(() => setGroups([]));
+    // Refetch the dynamic directories on every open so newly-created records are searchable, but
+    // keep the previously-loaded data on a transient failure (never blank a good directory to []).
+    counterparty.list().then(setCps).catch(() => setCps((p) => p ?? []));
+    origination.list().then(setDeals).catch(() => setDeals((p) => p ?? []));
+    initiation.listGroups().then(setGroups).catch(() => setGroups((p) => p ?? []));
+    portfolio.exposures().then(setExposures).catch(() => setExposures((p) => p ?? []));
     if (jurisdictions === null) config.jurisdictions().then(setJurisdictions).catch(() => setJurisdictions([]));
     if (countries === null) limits.countries().then(setCountries).catch(() => setCountries([]));
-    if (exposures === null) portfolio.exposures().then(setExposures).catch(() => setExposures([]));
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows = useMemo<Row[]>(() => {

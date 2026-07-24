@@ -7,6 +7,7 @@ import com.helix.risk.client.ConfigClient;
 import com.helix.risk.client.ModelDefinitionClient;
 import com.helix.risk.client.ModelDefinitionClient.ResolvedModel;
 import com.helix.risk.client.OriginationClient;
+import com.helix.risk.client.RiskMasterClient;
 import com.helix.risk.client.ScoringApprovalPolicyClient;
 import com.helix.risk.client.ScoringApprovalPolicyClient.Params;
 import com.helix.risk.client.ScoringApprovalPolicyClient.Resolution;
@@ -38,9 +39,18 @@ import java.util.Set;
 @Service
 public class RiskService {
 
-    /** Override notch limits per role (PRD §5, US-5.2). */
+    /**
+     * Conservative built-in FALLBACK for the per-role override-notch limits (PRD §5, US-5.2).
+     * The authoritative limits are now admin-configurable in the {@code OVERRIDE_ROLE} CODE_VALUE
+     * master (config-service; the notch is the per-role {@code score}). These constants are used
+     * ONLY when config-service is unreachable / the domain is unscored, and are kept byte-identical
+     * to the seeded master values so notch behaviour is preserved during a config outage.
+     */
     private static final Map<String, Integer> NOTCH_LIMITS = Map.of(
             "ANALYST", 1, "CREDIT_OFFICER", 2, "CREDIT_COMMITTEE", 99, "CRO", 99);
+
+    /** The CODE_VALUE domain whose per-role {@code score} is the admin-configurable notch limit. */
+    private static final String OVERRIDE_ROLE_DOMAIN = "OVERRIDE_ROLE";
 
     /**
      * Rating-confirm authority ladder (ANALYST &lt; CREDIT_OFFICER &lt; CREDIT_COMMITTEE / CRO).
@@ -62,7 +72,9 @@ public class RiskService {
     private final CapitalEngine capitalEngine;
     private final PricingEngine pricingEngine;
     private final FtpService ftpService;
+    private final PeerPricingService peerPricing;
     private final ConfigClient config;
+    private final RiskMasterClient masters;
     private final OriginationClient origination;
     private final RatingRepository ratings;
     private final CapitalResultRepository capitalResults;
@@ -90,7 +102,9 @@ public class RiskService {
     private static final Logger log = LoggerFactory.getLogger(RiskService.class);
 
     public RiskService(RatingEngine ratingEngine, CapitalEngine capitalEngine, PricingEngine pricingEngine,
-                       FtpService ftpService, ConfigClient config, OriginationClient origination,
+                       FtpService ftpService, PeerPricingService peerPricing, ConfigClient config,
+                       RiskMasterClient masters,
+                       OriginationClient origination,
                        RatingRepository ratings, CapitalResultRepository capitalResults,
                        PricingResultRepository pricingResults, ActorDirectory roles, AuditService audit,
                        ModelInstanceRepository modelInstances, ModelDefinitionClient modelDefinitions,
@@ -102,7 +116,9 @@ public class RiskService {
         this.capitalEngine = capitalEngine;
         this.pricingEngine = pricingEngine;
         this.ftpService = ftpService;
+        this.peerPricing = peerPricing;
         this.config = config;
+        this.masters = masters;
         this.origination = origination;
         this.ratings = ratings;
         this.capitalResults = capitalResults;
@@ -403,14 +419,37 @@ public class RiskService {
     /**
      * The actor's maximum override-notch authority, resolved from the roles the ACTOR_ROLE
      * master grants them (G1) — never a request-body role. A cold-start directory outage
-     * fails open (99), consistent with ActorDirectory parity.
+     * fails open (99), consistent with ActorDirectory parity. The per-role notch ceilings
+     * themselves come from the admin-configurable {@code OVERRIDE_ROLE} master (see
+     * {@link #notchLimitsByRole()}); the built-in {@link #NOTCH_LIMITS} is the config-outage fallback.
      */
     private int resolveNotchLimit(String actor) {
         Set<String> actorRoles = roles.rolesFor(actor);
         if (actorRoles == null) return 99;   // directory outage — fail open
+        Map<String, Integer> limits = notchLimitsByRole();
         return actorRoles.stream()
-                .mapToInt(r -> NOTCH_LIMITS.getOrDefault(r.toUpperCase(), 0))
+                .mapToInt(r -> limits.getOrDefault(r.toUpperCase(), 0))
                 .max().orElse(0);
+    }
+
+    /**
+     * Per-role override-notch ceilings, resolved from the admin-configurable {@code OVERRIDE_ROLE}
+     * CODE_VALUE master (the notch is each role's {@code score}). Falls back to the conservative
+     * built-in {@link #NOTCH_LIMITS} — byte-identical to the seeded values — when config-service is
+     * unreachable or the domain carries no scored values, so notch enforcement never depends on a
+     * config outage. Editing the master's scores changes the enforced limits with no code change.
+     */
+    private Map<String, Integer> notchLimitsByRole() {
+        Map<String, Integer> configured = masters.codeValueScores(OVERRIDE_ROLE_DOMAIN);
+        if (configured.isEmpty()) {
+            return NOTCH_LIMITS;
+        }
+        // Merge PER-ROLE over the built-in floor: a partial/malformed OVERRIDE_ROLE master (one that
+        // omits or fails to score a role) must NOT silently zero that role's ceiling — it falls back
+        // to the conservative built-in for any canonical role the master doesn't cover.
+        Map<String, Integer> merged = new java.util.HashMap<>(NOTCH_LIMITS);
+        merged.putAll(configured);
+        return merged;
     }
 
     @Transactional(readOnly = true)
@@ -434,8 +473,14 @@ public class RiskService {
         boolean ddRequired = "IN-RBI".equals(in.jurisdiction());
         boolean ddDone = in.spreadConfirmed();   // DD evidence captured in-platform (proxy)
 
-        CapitalResult result = capitalEngine.compute(in, rating.getFinalGrade(), rating.getEad(),
-                ddRequired, ddDone, capPack, ecraPack);
+        // Multi-facility deals (2+ proposed facilities) capitalise PER FACILITY and aggregate — each
+        // facility's CCF + its linked (and apportioned pooled) collateral move the authoritative RWA.
+        // A single facility / no facility list stays on the single requestedAmount path, byte-identical
+        // to the historical figure so existing seeds and e2e never move.
+        List<CreditInputsDto.FacilityInput> facs = in.facilities();
+        CapitalResult result = (facs != null && facs.size() >= 2)
+                ? capitalEngine.computeAggregate(in, rating.getFinalGrade(), ddRequired, ddDone, capPack, ecraPack)
+                : capitalEngine.compute(in, rating.getFinalGrade(), rating.getEad(), ddRequired, ddDone, capPack, ecraPack);
         CapitalResult saved = capitalResults.save(result);
 
         audit.engine("CAPITAL_COMPUTED", "Application", reference,
@@ -477,8 +522,27 @@ public class RiskService {
         FtpService.FtpResult ftp = ftpService.computeFtp(in.currency(), in.jurisdiction(),
                 in.facilityType(), in.tenorMonths(), pricingPack.number("cost_of_funds", 0.075));
 
+        // Authoritative deal aggregate — computed on the deal's rating EAD + capital RWA exactly as
+        // before (segment-aware hurdle; flat when no per-segment override, so byte-identical). The
+        // per-facility prices + peer price below are ADDITIVE advisory detail and never move this.
         PricingResult result = pricingEngine.price(reference, rating.getPd(), rating.getLgd(),
-                capital.getRwa(), rating.getEad(), pricingPack, ftp);
+                capital.getRwa(), rating.getEad(), pricingPack, ftp, in.segment());
+
+        // ---- dual-approach detail: per-facility RAROC prices + peer benchmark + hurdle provenance ----
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("hurdle", pricingEngine.hurdleView(pricingPack, in.segment()));
+        detail.put("perFacility", perFacilityPricing(in, rating, pricingPack));
+        detail.put("peer", peerView(in, rating, ftp, result.getRecommendedRate()));
+        Map<String, Object> aggregate = new LinkedHashMap<>();
+        aggregate.put("recommendedRate", result.getRecommendedRate());
+        aggregate.put("raroc", result.getRaroc());
+        aggregate.put("hurdleRaroc", result.getHurdleRaroc());
+        aggregate.put("ead", result.getEad());
+        aggregate.put("rwa", capital.getRwa());
+        aggregate.put("belowHurdle", result.isBelowHurdle());
+        detail.put("aggregate", aggregate);
+        result.setDetail(detail);
+
         PricingResult saved = pricingResults.save(result);
 
         // Deterministic RAROC pricing → SYSTEM actor. The AI goal-seek optimiser and
@@ -490,6 +554,75 @@ public class RiskService {
                 Map.of("recommendedRate", saved.getRecommendedRate(), "raroc", saved.getRaroc(),
                         "belowHurdle", saved.isBelowHurdle()));
         return saved;
+    }
+
+    /**
+     * Prices each proposed facility on its own deterministic EAD + RWA (from
+     * {@link CapitalEngine#perFacilityBreakdown}) and its own term-structured FTP. Advisory detail:
+     * the sum need not equal the authoritative aggregate (which prices the deal's requested EAD +
+     * capital RWA of record) — it is the granular per-facility view for the pricing screen. Empty
+     * when the deal carries no facility list.
+     */
+    private List<Map<String, Object>> perFacilityPricing(CreditInputsDto in, Rating rating,
+                                                         RulePackDto pricingPack) {
+        List<CreditInputsDto.FacilityInput> facs = in.facilities();
+        if (facs == null || facs.isEmpty()) {
+            return List.of();
+        }
+        RulePackDto capPack = config.activePack(in.jurisdiction(), "CAPITAL_SA");
+        RulePackDto ecraPack = config.activePack(in.jurisdiction(), "ECRA_MAPPING");
+        boolean ddRequired = "IN-RBI".equals(in.jurisdiction());
+        boolean ddDone = in.spreadConfirmed();
+        List<CapitalEngine.FacilityCapital> caps =
+                capitalEngine.perFacilityBreakdown(in, rating.getFinalGrade(), ddRequired, ddDone, capPack, ecraPack);
+
+        double cof = pricingPack.number("cost_of_funds", 0.075);
+        List<Map<String, Object>> out = new java.util.ArrayList<>(facs.size());
+        for (int i = 0; i < facs.size(); i++) {
+            CreditInputsDto.FacilityInput f = facs.get(i);
+            CapitalEngine.FacilityCapital fc = caps.get(i);
+            String ccy = f.currency() == null || f.currency().isBlank() ? in.currency() : f.currency();
+            FtpService.FtpResult ftp = ftpService.computeFtp(ccy, in.jurisdiction(),
+                    f.facilityType(), f.tenorMonths(), cof);
+            PricingResult pr = pricingEngine.price(f.reference(), rating.getPd(), rating.getLgd(),
+                    fc.rwa(), fc.exposure(), pricingPack, ftp, in.segment());
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("facilityReference", f.reference());
+            m.put("facilityType", f.facilityType());
+            m.put("primary", f.primary());
+            m.put("nominalAmount", f.amount());
+            m.put("ead", pr.getEad());
+            m.put("rwa", fc.rwa());
+            m.put("expectedLoss", pr.getExpectedLoss());
+            m.put("capitalCharge", pr.getCapitalCharge());
+            m.put("recommendedRate", pr.getRecommendedRate());
+            m.put("raroc", pr.getRaroc());
+            m.put("hurdleRaroc", pr.getHurdleRaroc());
+            m.put("belowHurdle", pr.isBelowHurdle());
+            out.add(m);
+        }
+        return out;
+    }
+
+    /**
+     * The peer / benchmark price (deterministic master lookup), presented ALONGSIDE the RAROC price
+     * with the delta — never blended into the authoritative figure. Fail-soft: an absent
+     * PEER_PRICING master yields {@code available=false} and the screen shows only the RAROC price.
+     */
+    private Map<String, Object> peerView(CreditInputsDto in, Rating rating, FtpService.FtpResult ftp,
+                                          double rarocRecommendedRate) {
+        Map<String, Object> peer = peerPricing.resolve(in.segment(), rating.getFinalGrade(),
+                in.facilityType(), ftp.ftp());
+        if (Boolean.TRUE.equals(peer.get("available")) && peer.get("peerRate") instanceof Number pr) {
+            double delta = rarocRecommendedRate - pr.doubleValue();
+            peer.put("rarocRecommendedRate", round6(rarocRecommendedRate));
+            peer.put("rarocMinusPeerBps", Math.round(delta * 10_000.0));
+        }
+        return peer;
+    }
+
+    private static double round6(double v) {
+        return Math.round(v * 1_000_000.0) / 1_000_000.0;
     }
 
     // ------------------------------------------------------------------ queries

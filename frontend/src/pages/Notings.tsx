@@ -65,6 +65,7 @@ export default function Notings() {
           ) : (
             <DataTable
               id="notings"
+              initialSort={{ key: "createdAt", dir: "desc" }}
               columns={columns}
               rows={list.data || []}
               rowKey={(r) => r.notingRef}

@@ -271,6 +271,13 @@ export type DataTableProps<T> = {
    * the editor, reject to surface the error inline and keep the editor open.
    */
   onCellSave?: (row: T, colKey: string, newValue: string) => Promise<void>;
+  /**
+   * Default sort applied on first mount (e.g. newest-first on a timestamp/id
+   * column). It only SEEDS the initial state — the user can still re-sort any
+   * column, and applying a saved view overrides it. The key may reference a
+   * column OR a raw row field that isn't shown as a column (e.g. `id`).
+   */
+  initialSort?: { key: string; dir: "asc" | "desc" };
 };
 
 type DtSort = { key: string; dir: "asc" | "desc" } | null;
@@ -301,7 +308,7 @@ function dtStore(key: string, val: unknown) {
 
 export function DataTable<T>({
   id, columns, rows, rowKey, onRowClick, initialPageSize = 25, empty, toolbarRight,
-  rowClassName, onCellSave,
+  rowClassName, onCellSave, initialSort,
 }: DataTableProps<T>) {
   const colsKey = `helix.dt.${id}.cols`;
   const sizeKey = `helix.dt.${id}.size`;
@@ -310,7 +317,9 @@ export function DataTable<T>({
   const [keyword, setKeyword] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [colFilters, setColFilters] = useState<Record<string, string>>({});
-  const [sort, setSort] = useState<DtSort>(null);
+  // Seeded once from `initialSort`; the user's own sort / an applied saved view
+  // then take over. Not persisted independently, so it never fights localStorage.
+  const [sort, setSort] = useState<DtSort>(() => initialSort ?? null);
   const [hidden, setHidden] = useState<string[]>(() => dtLoad<string[]>(colsKey, []));
   const [pageSize, setPageSize] = useState<number>(() => dtLoad<number>(sizeKey, initialPageSize));
   const [page, setPage] = useState(0);
@@ -428,11 +437,20 @@ export function DataTable<T>({
 
   const sorted = useMemo(() => {
     if (!sort) return filtered;
-    const col = columns.find((c) => c.key === sort.key);
-    if (!col) return filtered;
+    const sortKey = sort.key;
+    const col = columns.find((c) => c.key === sortKey);
+    // Fall back to the raw row field when the sort key has no matching column —
+    // lets `initialSort` seed on an id/timestamp that isn't rendered as a column.
+    const valueOf = col
+      ? (row: T) => basis(col, row)
+      : (row: T): string | number => {
+          const v = (row as any)[sortKey];
+          if (v == null) return "";
+          return typeof v === "number" ? v : String(v);
+        };
     const dir = sort.dir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => {
-      const av = basis(col, a), bv = basis(col, b);
+      const av = valueOf(a), bv = valueOf(b);
       let cmp: number;
       if (typeof av === "number" && typeof bv === "number") cmp = av - bv;
       else cmp = String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: "base" });

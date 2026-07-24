@@ -114,6 +114,55 @@ public final class Dtos {
             String interchangeableGroup) {
     }
 
+    /**
+     * Partial edit of a proposed facility (pre-sanction only). Every field is nullable —
+     * only non-null fields are applied. The auto-created PRIMARY facility cannot be edited
+     * (it mirrors the application's headline request); post-sanction changes must go through
+     * the governed amendment path ({@code applyAmendment}).
+     */
+    public record UpdateFacilityRequest(
+            String facilityType,
+            @Positive Double amount,
+            String currency,
+            @Positive Integer tenorMonths,
+            String purpose,
+            Double indicativeRate) {
+    }
+
+    /**
+     * Partial edit of a collateral (pre-sanction only). Descriptive fields only — {@code marketValue}
+     * is intentionally ABSENT so it can never be silently overwritten here: a valuation change must
+     * route through the collateral-intel revalue → human-review apply gate, which is the accountable
+     * path that stamps the LTV assessment. Only non-null fields are applied.
+     */
+    public record UpdateCollateralRequest(
+            String collateralType,
+            String description,
+            String valuationDate,
+            String valuationSource,
+            Double haircut,
+            String owner,
+            String location,
+            String perfectionStatus,
+            Long facilityId) {
+    }
+
+    /**
+     * Partial edit of a sublimit (pre-sanction only). Only non-null fields are applied. The parent
+     * facility cap is re-checked after the edit, counting each interchangeable group ONCE at its
+     * shared cap (fungible members are not summed). Pass a blank {@code interchangeableGroup} to
+     * convert a fungible sublimit back to a hard-cap sublimit.
+     */
+    public record UpdateSublimitRequest(
+            String code,
+            String productType,
+            @Positive Double amount,
+            String currency,
+            Integer tenorMonths,
+            String purpose,
+            String interchangeableGroup) {
+    }
+
     // ---- responses ----
 
     public record CellView(Long id, String taxonomyKey, String label, boolean derived, double value,
@@ -165,7 +214,20 @@ public final class Dtos {
                                double requestedAmount, String currency, int tenorMonths, String collateralType,
                                double collateralValue, boolean secured, boolean spreadConfirmed,
                                Map<String, Double> latestFinancials, Map<String, Double> ratios,
-                               Map<String, Double> trends) {
+                               Map<String, Double> trends,
+                               // Additive: the full proposed-facility list + collateral cover so risk-service
+                               // can capitalise & price PER FACILITY (2+ facilities) and aggregate. Single /
+                               // absent → risk keeps the single requestedAmount path (byte-identical).
+                               List<CreditFacility> facilities, List<CreditCollateral> collaterals) {
+    }
+
+    /** One proposed facility in the credit-inputs snapshot (ref/type/amount + linkage id). */
+    public record CreditFacility(Long id, String reference, String facilityType, double amount,
+                                 String currency, int tenorMonths, boolean primary) {
+    }
+
+    /** One collateral item; {@code facilityId} links it to a facility, else it pools to the deal. */
+    public record CreditCollateral(Long facilityId, String collateralType, double marketValue) {
     }
 
     /** Full deal envelope used by credit proposal generation (decision-service). */
@@ -173,7 +235,15 @@ public final class Dtos {
             String applicationReference, String counterpartyName, String jurisdiction, String segment,
             double totalProposedAmount, String currency, int tenorMonths,
             List<FacilityView> facilities, List<CollateralView> collaterals, double totalCollateralCover,
-            Map<String, Double> latestFinancials, Map<String, Double> ratios) {
+            Map<String, Double> latestFinancials, Map<String, Double> ratios,
+            /** Multi-period spread financials (latest first), so a CAM can render a MULTI-YEAR trend
+             *  table without recomputing anything — each period's native line values, quoted verbatim.
+             *  Additive field; consumers that ignore it see byte-identical behaviour. */
+            List<PeriodFinancials> periodFinancials) {
+    }
+
+    /** One period's native line values for the multi-year trend table (verbatim spread cells). */
+    public record PeriodFinancials(String label, String currency, Map<String, Double> values) {
     }
 
     public record FacilityView(Long id, String reference, int ordinal, boolean primary,

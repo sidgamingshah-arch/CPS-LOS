@@ -13,7 +13,8 @@ Closes two demo-robustness gaps in the document-intelligence / spreading story:
      CONFIRMED DocExtraction's figure fields onto canonical INPUT taxonomy keys and rebuilds the
      working spread as an UNCONFIRMED DRAFT (source DOC_INTEL). The governance invariant is proved
      directly:
-       * confirming the EXTRACTION alone does NOT populate the grid (review-only),
+       * confirming a FINANCIAL_STATEMENT extraction AUTO-drafts the spread from it (advisory DRAFT,
+         spreadConfirmed=false — the authoritative confirm-spread gate is untouched),
        * from-extraction lands a DRAFT (spreadConfirmed=false) — never auto-confirmed,
        * the authoritative gate (spreadConfirmed=true) is set ONLY by the separate spread/confirm,
        * re-running from-extraction always returns to DRAFT (never leaves an authoritative figure),
@@ -162,10 +163,17 @@ check("extraction confirmed (CONFIRMED, records the human reviewer)",
 
 st, an1 = call("GET", f"/origination/api/applications/{refA}/analysis")
 an1 = must(st, an1, "analysis(A) after extraction-confirm")
-check("confirming the EXTRACTION alone does NOT populate the grid (review-only, not auto-applied)",
-      an1.get("periods") == [], f"periods={len(an1.get('periods') or [])}")
+# AI LARGER ROLE: confirming a FINANCIAL_STATEMENT extraction now AUTO-drafts the spread from it.
+# It lands as an UNCONFIRMED DRAFT (advisory); the authoritative confirm-spread gate is untouched.
+check("confirming a FINANCIAL_STATEMENT extraction AUTO-drafts a spread (advisory, not review-only)",
+      len(an1.get("periods") or []) > 0, f"periods={len(an1.get('periods') or [])}")
+check("the auto-drafted spread is an UNCONFIRMED DRAFT (never auto-confirmed)",
+      an1.get("spreadConfirmed") is False, str(an1.get("spreadConfirmed")))
+an1_rev = cell(an1, "REVENUE")
+check("the auto-drafted DRAFT REVENUE equals the extracted revenue (figure carried through)",
+      an1_rev is not None and abs(an1_rev["value"] - float(revA)) < 1.0, f"cell={an1_rev} rev={revA}")
 
-# now explicitly populate the grid from the confirmed extraction -> DRAFT
+# re-running from-extraction explicitly still returns a DRAFT (idempotent-advisory)
 st, draft = call("POST", f"/origination/api/applications/{refA}/spread/from-extraction", {}, actor="analyst.user")
 draft = must(st, draft, "from-extraction A")
 check("from-extraction produces a spread that is a DRAFT (spreadConfirmed=false, never auto-confirmed)",

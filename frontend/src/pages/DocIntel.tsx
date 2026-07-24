@@ -205,7 +205,10 @@ export default function DocIntel() {
     const note = window.prompt("Confirmation note (optional):") ?? "";
     try {
       await docIntel.confirm(ex.id, { note }, actor);
-      notify("Extraction confirmed");
+      // Confirming a FINANCIAL_STATEMENT extraction auto-drafts an (unconfirmed) spread — surface that.
+      notify(ex.classifiedType === "FINANCIAL_STATEMENT"
+        ? "Extraction confirmed — a DRAFT spread was auto-drafted; review & confirm it on Spreading"
+        : "Extraction confirmed");
       extractions.reload();
     } catch (e: any) {
       notify(e.message, true);
@@ -437,7 +440,7 @@ export default function DocIntel() {
       {selectedDocId && (
         <Card
           title="Field extraction"
-          sub="AI reads the document and suggests field values with per-field confidence and source-page citations. This is a SUGGESTION — it must be human-confirmed and is never auto-applied to the financial spread."
+          sub="AI reads the document and suggests field values with per-field confidence and source-page citations. Confirming a financial-statement extraction auto-drafts an UNCONFIRMED spread from it — advisory only; the authoritative figure still requires the separate human confirm-spread gate."
           right={
             <Button onClick={handleExtract} busy={extracting}>
               Extract
@@ -504,8 +507,9 @@ export default function DocIntel() {
                   <Button kind="ghost" onClick={() => handleConfirm(ex)}>Confirm</Button>
                   <Button kind="subtle" onClick={() => handleReject(ex)}>Reject</Button>
                   <small className="prov">
-                    Confirming records your name in the audit trail; figures still require
-                    the financial spread before they can feed rating or capital.
+                    Confirming records your name in the audit trail. For a financial statement it also
+                    auto-drafts an unconfirmed spread you review on Spreading; figures still require the
+                    human confirm-spread gate before they can feed rating or capital.
                   </small>
                 </div>
               )}

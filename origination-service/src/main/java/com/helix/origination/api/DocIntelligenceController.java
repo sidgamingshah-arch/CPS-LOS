@@ -48,7 +48,12 @@ public class DocIntelligenceController {
     @PostMapping("/extractions/{id}/confirm")
     public DocExtraction confirm(@PathVariable Long id, @RequestBody(required = false) ConfirmRequest req,
                                  @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
-        return docIntel.confirm(id, req == null ? null : req.note(), actor);
+        DocExtraction confirmed = docIntel.confirm(id, req == null ? null : req.note(), actor);
+        // AI LARGER ROLE: auto-draft the spread AFTER confirm() has committed (top-level, own
+        // transaction on a free connection — no pool-1 deadlock). Advisory + fail-soft; never
+        // affects the confirm response.
+        docIntel.autoDraftAfterConfirm(id, actor);
+        return confirmed;
     }
 
     @PostMapping("/extractions/{id}/reject")

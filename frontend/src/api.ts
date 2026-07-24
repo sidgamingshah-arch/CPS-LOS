@@ -86,6 +86,16 @@ export const config = {
   ) => call<any>("/config/api/rulepacks", "POST", body, actor),
   signoff: (id: number, control: "policy" | "model-risk", actor: string) =>
     call<any>(`/config/api/rulepacks/${id}/signoff?control=${control}`, "POST", undefined, actor),
+  // Resolve the active FINANCIAL_TEMPLATE (chart-of-accounts augmentation + extraction map) for a
+  // deal's (jurisdiction, sector, segment). Returns the governed MasterRecord (payload carries
+  // templateKey / extraInputLines / extraDerivedLines / extraRatios / extractionMap).
+  resolveFinancialTemplate: (jurisdiction?: string, sector?: string, segment?: string) => {
+    const q = new URLSearchParams();
+    if (jurisdiction) q.set("jurisdiction", jurisdiction);
+    if (sector) q.set("sector", sector);
+    if (segment) q.set("segment", segment);
+    return call<any>(`/config/api/financial-templates/resolve?${q.toString()}`, "GET");
+  },
 };
 
 // ---- AI governance (capability on/off switch with per-jurisdiction override) ----
@@ -122,6 +132,18 @@ export const counterparty = {
   list: () => call<any[]>("/counterparty/api/counterparties", "GET"),
   get: (id: number) => call<any>(`/counterparty/api/counterparties/${id}`, "GET"),
   create: (body: any, actor: string) => call<any>("/counterparty/api/counterparties", "POST", body, actor),
+  // Create-screen autofill: upload a trade licence / MOA / AOA and get advisory field SUGGESTIONS
+  // back (legalName / cin / registrationNo / gstin + detected extras). Nothing is persisted — the
+  // human edits the pre-filled form and submits it separately. Multipart real-file path.
+  extractDoc: (file: File, declaredType: string | undefined, actor: string) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    if (declaredType) form.append("declaredType", declaredType);
+    return postForm<any>("/counterparty/api/counterparties/extract-doc", form, actor);
+  },
+  // Same advisory extraction from pasted document text (JSON path).
+  extractDocText: (text: string, declaredType: string | undefined, actor: string) =>
+    call<any>("/counterparty/api/counterparties/extract-doc", "POST", { text, declaredType }, actor),
   verifyKyc: (id: number, actor: string) =>
     call<any>(`/counterparty/api/counterparties/${id}/kyc/verify`, "POST", undefined, actor),
   runScreening: (id: number, actor: string) =>
@@ -194,21 +216,42 @@ export const origination = {
   facilityViews: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/facilities/view`, "GET"),
   addFacility: (ref: string, body: any, actor: string) =>
     call<any>(`/origination/api/applications/${ref}/facilities`, "POST", body, actor),
+  // Edit a proposed facility in place (pre-sanction only; primary facility not editable).
+  updateFacility: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/facilities/${id}`, "PATCH", body, actor),
   removeFacility: (id: number, actor: string) =>
     call<any>(`/origination/api/applications/facilities/${id}`, "DELETE", undefined, actor),
   sublimits: (facilityId: number) => call<any[]>(`/origination/api/applications/facilities/${facilityId}/sublimits`, "GET"),
   addSublimit: (facilityId: number, body: any, actor: string) =>
     call<any>(`/origination/api/applications/facilities/${facilityId}/sublimits`, "POST", body, actor),
+  // Edit a sublimit in place (pre-sanction only); parent facility cap re-checked server-side.
+  updateSublimit: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/sublimits/${id}`, "PATCH", body, actor),
   removeSublimit: (id: number, actor: string) =>
     call<any>(`/origination/api/applications/sublimits/${id}`, "DELETE", undefined, actor),
   collaterals: (ref: string) => call<any[]>(`/origination/api/applications/${ref}/collaterals`, "GET"),
   addCollateral: (ref: string, body: any, actor: string) =>
     call<any>(`/origination/api/applications/${ref}/collaterals`, "POST", body, actor),
+  // Edit a collateral's descriptive fields in place (pre-sanction only). Market value changes
+  // route through the collateral-intel revalue -> review gate, NOT here.
+  updateCollateral: (id: number, body: any, actor: string) =>
+    call<any>(`/origination/api/applications/collaterals/${id}`, "PATCH", body, actor),
+  removeCollateral: (id: number, actor: string) =>
+    call<any>(`/origination/api/applications/collaterals/${id}`, "DELETE", undefined, actor),
   perfectCollateral: (id: number, actor: string) =>
     call<any>(`/origination/api/applications/collaterals/${id}/perfect`, "POST", undefined, actor),
   // collateral intelligence: extraction + LTV revaluation + charge-Excel
   colExtract: (ref: string, body: any, actor: string) =>
     call<any>(`/origination/api/collateral-intel/${ref}/extract`, "POST", body, actor),
+  // AI-EXTRACT from a REAL uploaded collateral document: upload the file (DMS store + PDFBox/UTF-8/OCR
+  // text extraction, creating a first-class Document that also appears in the deal's document list),
+  // then run collateral extraction over that document's text. Stays a SUGGESTED advisory — confirm
+  // materialises the Collateral (human gate). documentKind stays a manual pick.
+  colUploadAndExtract: async (ref: string, file: File, documentKind: string, actor: string) => {
+    const doc = await origination.uploadDocumentFile(ref, file, undefined, actor);
+    const extraction = await origination.colExtract(ref, { documentKind, documentId: doc.id }, actor);
+    return { doc, extraction };
+  },
   colExtractions: (ref: string) =>
     call<any[]>(`/origination/api/collateral-intel/${ref}/extractions`, "GET"),
   colConfirm: (id: number, body: any, actor: string) =>
@@ -928,6 +971,8 @@ export const repayments = {
 };
 
 export const syndication = {
+  // discovery: ONLY the SYNDICATION-structured deals (reference · borrower · total commitment · #lenders)
+  deals: () => call<any[]>("/origination/api/syndication/deals", "GET"),
   // agency: book / fee waterfall / agency reconciliation / feed
   book: (ref: string) => call<any>(`/origination/api/syndication/${ref}/book`, "GET"),
   allocate: (ref: string, body: any, actor: string) =>

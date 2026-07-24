@@ -11,7 +11,7 @@
  */
 
 import { useState } from "react";
-import { scf, fmt } from "../api";
+import { counterparty, scf, fmt } from "../api";
 import { useApp } from "../app-context";
 import { Badge, Button, Card, Col, DataTable, EmptyState, Field, HumanBadge, statusTone, useAsync } from "../ui";
 
@@ -24,9 +24,12 @@ function eligKind(result: string): string {
 export default function Scf() {
   const { actor, notify } = useApp();
   const programs = useAsync(() => scf.list(), []);
+  // Anchor picker source — onboarded counterparties (fail-soft to free-text entry).
+  const cps = useAsync(() => counterparty.list().catch(() => []), []);
   const [selected, setSelected] = useState<string>("");
 
-  // ── Create-programme form ──────────────────────────────────────────────────
+  // ── Create-anchor-programme form ────────────────────────────────────────────
+  const [anchorPick, setAnchorPick] = useState<string>("");   // counterparty id, "" = enter manually
   const [anchorRef, setAnchorRef] = useState("");
   const [anchorName, setAnchorName] = useState("");
   const [programType, setProgramType] = useState(PROGRAM_TYPES[0]);
@@ -34,6 +37,15 @@ export default function Scf() {
   const [perSpokeCap, setPerSpokeCap] = useState("");
   const [currency, setCurrency] = useState("INR");
   const [createBusy, setCreateBusy] = useState(false);
+
+  // Pick an anchor from onboarded counterparties → auto-fill reference + name; ""
+  // means enter the anchor reference by hand (fallback when it isn't onboarded yet).
+  function chooseAnchor(id: string) {
+    setAnchorPick(id);
+    if (!id) { setAnchorRef(""); setAnchorName(""); return; }
+    const cp = (cps.data || []).find((c: any) => String(c.id) === id);
+    if (cp) { setAnchorRef(cp.reference || ""); setAnchorName(cp.legalName || ""); }
+  }
 
   async function createProgram() {
     if (!anchorRef.trim()) { notify("Anchor reference is required", true); return; }
@@ -51,7 +63,7 @@ export default function Scf() {
         currency,
       }, actor);
       notify(`Programme ${v.program.scfRef} created (DRAFT)`);
-      setAnchorRef(""); setAnchorName(""); setProgramLimit(""); setPerSpokeCap("");
+      setAnchorPick(""); setAnchorRef(""); setAnchorName(""); setProgramLimit(""); setPerSpokeCap("");
       programs.reload();
       setSelected(v.program.scfRef);
     } catch (e: any) { notify(e.message, true); } finally { setCreateBusy(false); }
@@ -94,13 +106,24 @@ export default function Scf() {
           )}
         </Card>
 
-        <Card title="Draft a programme" sub="Anchor-backed VENDOR or DEALER finance. Eligibility criteria are pinned from the SCF_ELIGIBILITY master at create.">
+        <Card title="Create anchor programme" sub="This is the anchor-programme creation form — an anchor-backed VENDOR or DEALER finance programme that spokes draw against. Eligibility criteria are pinned from the SCF_ELIGIBILITY master at create.">
           <div className="grid cols-2">
+            <Field label="Anchor counterparty" required
+              hint="Pick an onboarded counterparty (auto-fills reference + name), or choose “Enter manually” to type the anchor reference.">
+              <select value={anchorPick} onChange={(e) => chooseAnchor(e.target.value)}>
+                <option value="">— Enter manually —</option>
+                {(cps.data || []).map((c: any) => (
+                  <option key={c.id} value={String(c.id)}>{c.legalName} · {c.reference}</option>
+                ))}
+              </select>
+            </Field>
             <Field label="Anchor reference" required>
-              <input value={anchorRef} onChange={(e) => setAnchorRef(e.target.value)} placeholder="e.g. CP-ANCHOR1" />
+              <input value={anchorRef} readOnly={anchorPick !== ""}
+                onChange={(e) => setAnchorRef(e.target.value)} placeholder="e.g. CP-ANCHOR1" />
             </Field>
             <Field label="Anchor name">
-              <input value={anchorName} onChange={(e) => setAnchorName(e.target.value)} placeholder="Anchor legal name" />
+              <input value={anchorName} readOnly={anchorPick !== ""}
+                onChange={(e) => setAnchorName(e.target.value)} placeholder="Anchor legal name" />
             </Field>
             <Field label="Programme type">
               <select value={programType} onChange={(e) => setProgramType(e.target.value)}>
@@ -126,7 +149,10 @@ export default function Scf() {
       <div className="grid">
         {selected
           ? <ProgramDetail key={selected} scfRef={selected} onChanged={() => programs.reload()} />
-          : <Card title="Programme detail"><div className="muted">Select a programme to view spokes, eligibility and the approval workflow.</div></Card>}
+          : <Card title="Programme detail">
+              <EmptyState glyph="◲" title="Select a programme to manage spokes"
+                sub="Select a programme on the left — spokes can be added while the programme is DRAFT. From here you also submit for approval, then approve / reject under segregation of duties." />
+            </Card>}
       </div>
     </div>
   );
@@ -270,6 +296,9 @@ function ProgramDetail({ scfRef, onChanged }: { scfRef: string; onChanged: () =>
 
         {isDraft && (
           <div className="card" style={{ marginTop: 12 }}>
+            <div className="scf-note" style={{ marginBottom: 10 }}>
+              Add the anchor's suppliers / distributors as spokes here — allowed while the programme is DRAFT.
+            </div>
             <div className="grid cols-2">
               <Field label="Spoke reference" required>
                 <input value={spokeRef} onChange={(e) => setSpokeRef(e.target.value)} placeholder="e.g. CP-SPOKE1" />

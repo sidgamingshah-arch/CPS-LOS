@@ -6,9 +6,10 @@
 import { useState } from "react";
 import { origination, risk, models, fmt } from "../api";
 import { useApp } from "../app-context";
-import { AiBadge, Badge, Button, Card, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, DeterministicBadge, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
 import { ExplainCard, type XaiFactor } from "../xai";
 import { useCodes } from "../code-values";
+import { authorityLabel, canRole } from "../authz";
 
 type SectorOutlook = string;
 
@@ -60,10 +61,13 @@ function ScoringApproval({ approval, confirmed, busy, actor, onApprove }: {
   actor: string;
   onApprove: () => void;
 }) {
+  const { roles } = useApp();
   const authority: string = approval?.requiredAuthority ?? "CREDIT_OFFICER";
   const status: string = approval?.approvalStatus ?? (confirmed ? "APPROVED" : "PENDING_APPROVAL");
   const required: boolean = approval?.approvalRequired !== false;
   const decided = status === "APPROVED" || confirmed;
+  // Advisory authority hint — mirrors the server confirm-rank gate (default-permissive).
+  const mayApprove = canRole(authority, roles, actor);
   return (
     <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }}>
       <div className="inline" style={{ gap: 12, flexWrap: "wrap", alignItems: "center" }}>
@@ -74,9 +78,12 @@ function ScoringApproval({ approval, confirmed, busy, actor, onApprove }: {
         <Unchanged label="GRADE / PD PRESERVED" />
       </div>
       <div className="inline" style={{ gap: 10, marginTop: 10, alignItems: "center" }}>
-        <Button kind="primary" busy={busy} disabled={busy || decided} onClick={onApprove}>
-          {decided ? "Approved" : `Approve as ${authority}`}
-        </Button>
+        <span className="authz-gate"
+          title={mayApprove ? undefined : `Requires ${authorityLabel(authority)} authority`}>
+          <Button kind="primary" busy={busy} disabled={busy || decided || !mayApprove} onClick={onApprove}>
+            {decided ? "Approved" : `Approve as ${authority}`}
+          </Button>
+        </span>
         <span className="muted" style={{ fontSize: 12 }}>
           Acting as {actor} · confirming actor must hold {authority} authority; the overrider cannot self-approve.
         </span>
@@ -203,6 +210,8 @@ export default function RiskLab() {
 
   const sum = ratingAsync.data;
   const rating = sum?.rating ?? null;
+  const capital = sum?.capital ?? null;
+  const perFacilityCapital: any[] = capital?.trace?.perFacility ?? [];
   const latestRag = (ragAsync.data ?? [])[0] ?? null;
   const latestMacro = (macroAsync.data ?? [])[0] ?? null;
 
@@ -233,6 +242,21 @@ export default function RiskLab() {
         } as XaiFactor;
       })
     : [];
+
+  // Authoritative scorecard — the QUANTITATIVE rating basis. Every factor is a ratio auto-derived
+  // from the analyst-confirmed financial spread; the weighted roll-up is deterministic and AI-free.
+  // Shown for transparency only — no advisory overlay ever moves it.
+  const scorecardFactors: XaiFactor[] = Object.entries(rating?.scoreBreakdown?.factors ?? {}).map(
+    ([k, v]: [string, any]) => ({
+      label: <span className="mono">{k}</span>,
+      value: fmt.num(v.value, 2),
+      subScore: fmt.num(v.score, 1),
+      weight: fmt.num(v.weight, 2),
+      contribution: fmt.num(v.contribution, 2),
+    }),
+  );
+  const gradeSource: string | undefined = rating?.scoreBreakdown?.gradeSource;
+  const scorecardSource: string | undefined = rating?.scoreBreakdown?.scorecardSource;
 
   return (
     <div className="grid">
@@ -291,6 +315,31 @@ export default function RiskLab() {
                   actor={actor}
                   onApprove={handleApproveScore}
                 />
+
+                {/* Quantitative rating basis — the deterministic scorecard, auto from the spread. */}
+                {scorecardFactors.length > 0 && (
+                  <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }}>
+                    <div className="inline" style={{ gap: 10, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <DeterministicBadge label="QUANTITATIVE · AUTO FROM SPREAD" />
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        The default scorecard is 100% quantitative — computed from ratios in the analyst-confirmed
+                        spread. Deterministic and AI-free; qualitative parameters live in the scoring model below.
+                        {gradeSource === "MODEL_OF_RECORD" &&
+                          " (This deal's grade of record is the qualitative model composite; the scorecard is the quantitative reference.)"}
+                      </span>
+                    </div>
+                    <ExplainCard
+                      title="Quantitative scorecard — auto from spread"
+                      subtitle="Each factor is a ratio derived from the analyst-confirmed financial spread; the weighted roll-up is the deterministic scorecard score. Deliberately AI-free."
+                      compact
+                      explanation={{
+                        factors: scorecardFactors,
+                        factorHeaders: { factor: "Factor", value: "Ratio", subScore: "Score / 100", weight: "Weight", contribution: "Contribution" },
+                        method: `Deterministic scorecard · source ${scorecardSource ?? "built-in"}`,
+                      }}
+                    />
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -318,6 +367,64 @@ export default function RiskLab() {
               </div>
             }
           />
+        </Card>
+      )}
+
+      {/* Deterministic capital — deal aggregate + per-facility RWA (when multiple facilities). */}
+      {ref && capital && (
+        <Card
+          title="Capital — deterministic RWA"
+          sub="Standardised-approach RWA & capital. Multi-facility deals aggregate a per-facility RWA (each facility's CCF + its linked/apportioned collateral); a single facility is the historical single-figure computation."
+          right={<DeterministicBadge label="CAPITAL · DETERMINISTIC" />}
+        >
+          <div className="grid cols-3">
+            <Stat label="Exposure class" value={capital.exposureClass} />
+            <Stat label="EAD (post-CCF)" value={<span className="num">{fmt.money(capital.ead)}</span>} />
+            <Stat label="Applied risk weight" value={fmt.pct(capital.appliedRiskWeight, 0)} />
+            <Stat label="Secured portion" value={<span className="num">{fmt.money(capital.securedPortion)}</span>} />
+            <Stat label="RWA" value={<span className="num">{fmt.money(capital.rwa)}</span>} />
+            <Stat label="Capital required" value={<span className="num">{fmt.money(capital.capitalRequired)}</span>} />
+          </div>
+
+          {perFacilityCapital.length > 0 ? (
+            <div style={{ marginTop: 12 }}>
+              <div className="prov" style={{ marginBottom: 6 }}>
+                Per-facility RWA (aggregates to the deal RWA above):
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Facility</th>
+                    <th>Type</th>
+                    <th className="num">Amount</th>
+                    <th className="num">CCF</th>
+                    <th className="num">Exposure</th>
+                    <th className="num">Collateral cover</th>
+                    <th className="num">RWA</th>
+                    <th className="num">Capital</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {perFacilityCapital.map((f: any) => (
+                    <tr key={f.facilityReference}>
+                      <td className="mono">{f.facilityReference}</td>
+                      <td>{f.facilityType}</td>
+                      <td className="num">{fmt.money(f.nominalAmount)}</td>
+                      <td className="num">{fmt.num(f.ccf, 2)}</td>
+                      <td className="num">{fmt.money(f.exposureAfterCcf)}</td>
+                      <td className="num">{fmt.money(f.collateralCover)}</td>
+                      <td className="num">{fmt.money(f.rwa)}</td>
+                      <td className="num">{fmt.money(f.capitalRequired)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="muted" style={{ marginTop: 10 }}>
+              Single-facility deal — RWA is the historical single-figure computation (no per-facility split).
+            </div>
+          )}
         </Card>
       )}
 
@@ -569,17 +676,30 @@ export default function RiskLab() {
 function ManualOverrideCard({ refValue, rating, model, onChanged }: {
   refValue: string; rating: any; model: any; onChanged: () => void;
 }) {
-  const { actor, notify } = useApp();
+  const { actor, notify, roles: actorRoles } = useApp();
   const grades = useCodes("GRADE_SCALE");
   const reasons = useCodes("OVERRIDE_REASON");
   const roles = useCodes("OVERRIDE_ROLE");
   const gradeCodes = grades.map((g) => g.code);
+  // Per-role notch ceilings, keyed by (upper-cased) role code — the SAME OVERRIDE_ROLE master
+  // the backend now reads (its `score` is the notch limit). Editing the master moves both.
   const roleLimits: Record<string, number> = Object.fromEntries(
-    roles.map((r) => [r.code, r.score ?? 1]),
+    roles.map((r) => [r.code.toUpperCase(), r.score ?? 1]),
   );
+  // The acting identity's OWN override authority — the max notch ceiling across the roles the
+  // ACTOR_ROLE master grants this actor. This MIRRORS the server's resolveNotchLimit: authority
+  // comes from the authenticated actor's real roles, NEVER a picked/claimed role. When roles are
+  // unknown (directory not yet loaded) we don't pre-block — the server stays the source of truth.
+  const rolesLoaded = (actorRoles ?? []).length > 0;
+  const knownActorRoles = (actorRoles ?? []).filter((r) => roleLimits[r.toUpperCase()] != null);
+  // Actor's real notch authority. If roles are LOADED but none map to an OVERRIDE_ROLE, the actor
+  // has no override authority (limit 0 -> block, matching the server's max-over-zero result). Only
+  // when roles aren't loaded yet do we fail-open (99) and let the server stay the source of truth.
+  const actorLimit = knownActorRoles.length
+    ? Math.max(...knownActorRoles.map((r) => roleLimits[r.toUpperCase()]))
+    : (rolesLoaded ? 0 : 99);
   const [proposedGrade, setProposedGrade] = useState("");
   const [reasonCode, setReasonCode] = useState("");
-  const [role, setRole] = useState<string>("ANALYST");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -589,16 +709,19 @@ function ManualOverrideCard({ refValue, rating, model, onChanged }: {
   const notch = proposedGrade && modelGrade
     ? gradeCodes.indexOf(modelGrade) - gradeCodes.indexOf(proposedGrade)
     : 0;
-  const roleLimit = roleLimits[role] ?? 1;
-  const exceedsLimit = Math.abs(notch) > roleLimit;
+  // Authority is the actor's own resolved limit (server is the source of truth). No "acting as"
+  // picker and no separate can()-gate: exceedsLimit already reflects the actor's real notch ceiling
+  // (including 0 for an actor with no mapped override role), which is the honest, non-decorative gate.
+  const exceedsLimit = Math.abs(notch) > actorLimit;
 
   async function submit() {
     if (!proposedGrade) { notify("Pick the grade you are overriding to", true); return; }
     if (!reasonCode) { notify("Select a reason code", true); return; }
     setBusy(true);
     try {
-      await risk.overrideRating(refValue, { proposedGrade, reasonCode, note, role }, actor);
-      notify(`Rating overridden to ${proposedGrade} (${role})`);
+      // `role` is intentionally NOT sent — the server resolves notch authority from the actor.
+      await risk.overrideRating(refValue, { proposedGrade, reasonCode, note }, actor);
+      notify(`Rating overridden to ${proposedGrade}`);
       setProposedGrade(""); setReasonCode(""); setNote("");
       onChanged();
     } catch (e: any) { notify(e.message, true); } finally { setBusy(false); }
@@ -611,7 +734,7 @@ function ManualOverrideCard({ refValue, rating, model, onChanged }: {
 
   return (
     <Card title="Manual rating override"
-      sub="A named human changes the authoritative grade — notch-limited by role, reason-coded, and segregation-of-duties checked. 100% manual: no AI recommendation pre-fills or drives this."
+      sub="A named human changes the authoritative grade — notch-limited by the actor's own role authority, reason-coded, and segregation-of-duties checked. 100% manual: no AI recommendation pre-fills or drives this."
       right={<HumanBadge label="HUMAN · MANUAL" />}>
 
       {/* Authoritative figures of record (what an override would change). */}
@@ -650,17 +773,16 @@ function ManualOverrideCard({ refValue, rating, model, onChanged }: {
             {reasons.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}
           </select>
         </Field>
-        <Field label="Acting as role">
-          <select value={role} onChange={(e) => setRole(e.target.value)}>
-            {roles.map((r) => {
-              const limit = r.score ?? 1;
-              return (
-                <option key={r.code} value={r.code}>
-                  {r.label}{limit < 99 ? ` (≤${limit} notch)` : " (unlimited)"}
-                </option>
-              );
-            })}
-          </select>
+        <Field label="Your override authority">
+          {/* Read-only — the server enforces this from the actor's ACTOR_ROLE roles, not a picker. */}
+          <div className="prov" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minHeight: 34 }}>
+            <HumanBadge label={actor} />
+            <span className="muted">
+              {knownActorRoles.length ? knownActorRoles.map((r) => r.replace(/_/g, " ")).join(", ") : "no mapped override role"}
+              {" · "}
+              <b>{actorLimit >= 99 ? "unlimited notches" : `≤ ${actorLimit} notch`}</b>
+            </span>
+          </div>
         </Field>
       </div>
 
@@ -674,16 +796,19 @@ function ManualOverrideCard({ refValue, rating, model, onChanged }: {
           Implied move from model grade <b>{modelGrade}</b> → <b>{proposedGrade}</b>: <b>{notchLabel}</b>.
           {exceedsLimit && (
             <span style={{ color: "var(--bad, #c0392b)", marginLeft: 6 }}>
-              Exceeds the {role.replace(/_/g, " ")} limit of {roleLimit} notch(es) — will be rejected and must be escalated.
+              Exceeds your authority of {actorLimit} notch(es) — will be rejected and must be escalated to a higher authority.
             </span>
           )}
         </div>
       )}
 
       <div className="btnrow">
-        <Button kind="primary" busy={busy} onClick={submit} disabled={!proposedGrade || !reasonCode || exceedsLimit || busy}>
-          Apply manual override
-        </Button>
+        <span className="authz-gate"
+          title={exceedsLimit ? `Beyond your override authority (≤ ${actorLimit} notch) — escalate to a higher authority` : undefined}>
+          <Button kind="primary" busy={busy} onClick={submit} disabled={!proposedGrade || !reasonCode || exceedsLimit || busy}>
+            Apply manual override
+          </Button>
+        </span>
         <span className="muted">Acting as {actor}</span>
         <Unchanged label="DETERMINISTIC PD/CAPITAL RE-DERIVED" />
       </div>
@@ -716,9 +841,9 @@ function ModelCard({ refValue, grade, model }: {
 
   if (!v) {
     return (
-      <Card title="Scoring model" right={<AiBadge label="ADVISORY · CONFIGURABLE" />}>
+      <Card title="Scoring model — qualitative path" right={<AiBadge label="ADVISORY · CONFIGURABLE" />}>
         <EmptyState glyph="◷" title="No scoring model resolved yet"
-          sub="Rate the deal first; the engine resolves the MODEL_DEFINITION for this jurisdiction/segment, then score it here." />
+          sub="This is the QUALITATIVE path — where qualitative parameters live in the MODEL_DEFINITION model of record (human-input, or governed AI-suggest→human-confirm). Rate the deal first; the engine resolves the model for this jurisdiction/segment, then score it here." />
         <Button kind="subtle" busy={busy} onClick={() => run(() => models.resolve(refValue, actor), "Model resolved")}>
           Resolve model
         </Button>
@@ -737,9 +862,12 @@ function ModelCard({ refValue, grade, model }: {
   }));
 
   return (
-    <Card title={`Scoring model · ${v.displayName}`}
-      sub={`Model ${v.modelKey} v${v.modelVersion} · weighted composite of qualitative + quantitative sections. Advisory & human-confirmed — the authoritative grade is never changed.`}
+    <Card title={`Scoring model (qualitative path) · ${v.displayName}`}
+      sub={`Model ${v.modelKey} v${v.modelVersion} · the QUALITATIVE model of record — qualitative parameters are human-input or governed AI-suggest→human-confirm, alongside module-sourced quantitative inputs. Advisory & human-confirmed; the authoritative grade is never changed.`}
       right={<AiBadge label="ADVISORY · CONFIGURABLE" />}>
+      <div className="inline" style={{ marginBottom: 10 }}>
+        <GovFlow ai="AI SUGGESTS" human="HUMAN CONFIRMS" note="qualitative parameters · advisory" />
+      </div>
       <div className="btnrow" style={{ marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
         <Button kind="primary" busy={busy} disabled={busy}
           onClick={() => run(() => models.suggest(refValue, actor), "Auto-scored — module params pulled, standalone params model-scored; review & confirm")}>
