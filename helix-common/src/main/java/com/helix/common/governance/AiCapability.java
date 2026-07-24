@@ -29,7 +29,11 @@ public enum AiCapability {
     MONTE_CARLO("monte-carlo-projection",
             "Monte-Carlo financial projections — stochastic simulation over per-line driver "
             + "distributions calibrated from industry / peer / historical inputs (advisory P10/P50/P90 "
-            + "bands + breach probability; never moves the authoritative rating/capital/pricing)");
+            + "bands + breach probability; never moves the authoritative rating/capital/pricing)"),
+    CAD_DOC_AI("cad-doc-ai",
+            "CAD document verification — advisory signature-specimen match + title/property-document "
+            + "field extraction and completeness check over a checklist item. Never auto-complies an "
+            + "item: it produces an advisory finding a named human confirms and then sets the status");
 
     private final String key;
     private final String description;

@@ -2,13 +2,17 @@ package com.helix.decision.api;
 
 import com.helix.decision.dto.CadDtos.CadCaseView;
 import com.helix.decision.dto.CadDtos.DeviationDecisionRequest;
+import com.helix.decision.dto.CadDtos.DocVerificationDecisionRequest;
 import com.helix.decision.dto.CadDtos.InitiateCadRequest;
 import com.helix.decision.dto.CadDtos.LimitReleaseRequest;
 import com.helix.decision.dto.CadDtos.RaiseDeviationRequest;
 import com.helix.decision.dto.CadDtos.UpdateItemRequest;
+import com.helix.decision.dto.CadDtos.VerifyDocRequest;
 import com.helix.decision.entity.CadCase;
+import com.helix.decision.entity.CadDocVerification;
 import com.helix.decision.entity.ChecklistItem;
 import com.helix.decision.entity.Deviation;
+import com.helix.decision.service.CadDocAiService;
 import com.helix.decision.service.CadService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,9 +32,11 @@ import java.util.List;
 public class CadController {
 
     private final CadService cad;
+    private final CadDocAiService docAi;
 
-    public CadController(CadService cad) {
+    public CadController(CadService cad, CadDocAiService docAi) {
         this.cad = cad;
+        this.docAi = docAi;
     }
 
     @PostMapping("/cases")
@@ -77,5 +83,43 @@ public class CadController {
     public CadCaseView limitRelease(@PathVariable Long id, @Valid @RequestBody LimitReleaseRequest req,
                                     @RequestHeader(value = "X-Actor", defaultValue = "cad.officer") String actor) {
         return cad.limitRelease(id, req, actor);
+    }
+
+    // ---- CAD document-AI (advisory signature + title/property-doc verification) ----
+
+    /**
+     * Advisory AI verification of a checklist item's supporting document. Produces a
+     * {@link CadDocVerification} finding (DRAFT, advisory) — it NEVER moves the checklist
+     * item to COMPLIED; a human still sets the item status.
+     */
+    @PostMapping("/cases/{caseId}/items/{itemId}/verify-doc")
+    public CadDocVerification verifyDoc(@PathVariable Long caseId, @PathVariable Long itemId,
+                                        @RequestBody(required = false) VerifyDocRequest req,
+                                        @RequestHeader(value = "X-Actor", defaultValue = "cad.officer") String actor) {
+        return docAi.verifyDoc(caseId, itemId, req, actor);
+    }
+
+    @GetMapping("/cases/{caseId}/doc-verifications")
+    public List<CadDocVerification> docVerifications(@PathVariable Long caseId) {
+        return docAi.listForCase(caseId);
+    }
+
+    @GetMapping("/doc-verifications/{id}")
+    public CadDocVerification docVerification(@PathVariable Long id) {
+        return docAi.get(id);
+    }
+
+    @PostMapping("/doc-verifications/{id}/accept")
+    public CadDocVerification acceptDocVerification(@PathVariable Long id,
+                                                    @RequestBody(required = false) DocVerificationDecisionRequest req,
+                                                    @RequestHeader(value = "X-Actor", defaultValue = "cad.officer") String actor) {
+        return docAi.decide(id, true, req == null ? null : req.note(), actor);
+    }
+
+    @PostMapping("/doc-verifications/{id}/reject")
+    public CadDocVerification rejectDocVerification(@PathVariable Long id,
+                                                    @RequestBody(required = false) DocVerificationDecisionRequest req,
+                                                    @RequestHeader(value = "X-Actor", defaultValue = "cad.officer") String actor) {
+        return docAi.decide(id, false, req == null ? null : req.note(), actor);
     }
 }

@@ -27,4 +27,21 @@ public final class CadDtos {
 
     public record CadCaseView(Object cadCase, List<?> items, List<?> deviations) {
     }
+
+    /**
+     * Advisory CAD document-AI verification request over a checklist item.
+     * {@code verificationType} is SIGNATURE or PROPERTY_DOC (default PROPERTY_DOC).
+     * For SIGNATURE, {@code claimedSignatory} is the name on the document and
+     * {@code specimenSignatory} the on-file specimen. For PROPERTY_DOC, {@code docText}
+     * is the document text to extract from and {@code mandatoryFields} optionally
+     * overrides the default mandatory-field set.
+     */
+    public record VerifyDocRequest(String verificationType, String docText,
+                                   String claimedSignatory, String specimenSignatory,
+                                   List<String> mandatoryFields) {
+    }
+
+    /** Human accept/reject of an advisory doc-verification finding (note optional). */
+    public record DocVerificationDecisionRequest(String note) {
+    }
 }

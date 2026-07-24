@@ -245,9 +245,23 @@ public class MasterSeeder implements CommandLineRunner {
 
         // ---- CAD / documentation masters ----
         masters.seedActive("CHECKLIST_MASTER", "CORP_TERM_LOAN_SECURED", null, map("items", List.of("Sanction letter", "Facility agreement", "Mortgage deed", "Board resolution", "Insurance assignment")));
-        masters.seedActive("DOC_TEMPLATE_MASTER", "FACILITY_AGREEMENT", null, map("format", "DOCX", "clauses", List.of("definitions", "facility", "interest", "covenants", "events_of_default")));
-        masters.seedActive("DOC_TEMPLATE_MASTER", "SANCTION_LETTER", null, map("format", "PDF", "clauses", List.of("sanction_summary", "approved_facilities", "pricing_terms", "conditions_precedent", "conditions_general", "validity", "acceptance")));
+        // DOC_TEMPLATE_MASTER — the existing clause keys + order are preserved; richer clause keys
+        // are APPENDED (each has a render case in DocGenService.renderTemplateClause). Existing
+        // e2e assertions (len>=5, membership of approved_facilities / conditions_precedent) hold.
+        masters.seedActive("DOC_TEMPLATE_MASTER", "FACILITY_AGREEMENT", null, map("format", "DOCX", "clauses", List.of(
+                "definitions", "facility", "interest", "covenants", "events_of_default",
+                "drawdown", "default_interest", "security_and_perfection", "financial_covenants",
+                "information_covenants", "prepayment", "fees_and_charges", "cross_default",
+                "representations", "governing_law_jurisdiction")));
+        masters.seedActive("DOC_TEMPLATE_MASTER", "SANCTION_LETTER", null, map("format", "PDF", "clauses", List.of(
+                "sanction_summary", "approved_facilities", "pricing_terms", "conditions_precedent",
+                "conditions_general", "validity", "acceptance",
+                "security_summary", "covenants_summary", "insurance_summary", "fees_summary")));
+        // ---- TNC_MASTER — REGISTERED_MORTGAGE kept intact (byte-identical); the canonical clause
+        // library is APPENDED below. Every new record carries `text` (== body) so the existing
+        // DocGenService add-clause / list-clause paths are unchanged, plus {title, body, appliesTo}.
         masters.seedActive("TNC_MASTER", "REGISTERED_MORTGAGE", null, map("text", "Borrower to maintain valid insurance on the mortgaged property assigned to the bank.", "appliesTo", "PROPERTY"));
+        seedTncLibrary();
 
         // ---- CP_MASTER — pre-disbursement Conditions Precedent templates per facility type ----
         // The pre-disbursement gate (decision-service) seeds an application's CP register
@@ -1294,5 +1308,147 @@ public class MasterSeeder implements CommandLineRunner {
             m.put((String) kv[i], kv[i + 1]);
         }
         return m;
+    }
+
+    /**
+     * One TNC_MASTER payload. Carries {@code title} + {@code body} (the requested structure) and
+     * {@code text} (== body) + {@code appliesTo} for backward compatibility with the existing
+     * DocGenService add-clause / list-clause paths, which read {@code text} / {@code appliesTo}.
+     */
+    private static Map<String, Object> tnc(String title, String appliesTo, String body) {
+        return map("title", title, "body", body, "text", body, "appliesTo", appliesTo);
+    }
+
+    /**
+     * Canonical wholesale-credit clause library appended to TNC_MASTER (REGISTERED_MORTGAGE stays
+     * as-is above). These are real facility/sanction clauses selectable via the doc-generation
+     * clause-surgery API; each is a maker-checker master record like every other master.
+     */
+    private void seedTncLibrary() {
+        masters.seedActive("TNC_MASTER", "DRAWDOWN_MECHANICS", null, tnc(
+                "Drawdown mechanics", "ALL",
+                "The Borrower shall avail the Facility by irrevocable drawdown request delivered at least two "
+                + "Business Days before the drawdown date, specifying the amount and value date, and subject to the "
+                + "satisfaction of all conditions precedent, the accuracy of the representations on the drawdown date "
+                + "and no Event of Default being continuing."));
+        masters.seedActive("TNC_MASTER", "INTEREST_AND_DEFAULT_INTEREST", null, tnc(
+                "Interest and default interest", "ALL",
+                "Interest accrues on the daily outstanding at the applicable rate on an actual/365 basis, payable "
+                + "monthly in arrears. Default interest of 2.00% per annum above the applicable rate accrues on any "
+                + "overdue amount from the due date until payment and is compounded at monthly rests."));
+        masters.seedActive("TNC_MASTER", "SECURITY_CREATION_CERSAI_ROC", null, tnc(
+                "Security creation & charge registration (CERSAI/ROC)", "SECURED",
+                "The Borrower shall create and perfect a first-ranking charge over the secured assets prior to first "
+                + "drawdown, register the charge with the Registrar of Companies (Form CHG-1) and on the CERSAI "
+                + "portal under SARFAESI, and deliver evidence of registration to the Lender."));
+        masters.seedActive("TNC_MASTER", "INSURANCE_BANK_CLAUSE", null, tnc(
+                "Insurance with bank clause", "SECURED",
+                "The Borrower shall keep the charged assets comprehensively insured for full reinstatement value "
+                + "against all usual risks with the Lender named as loss payee / mortgagee (bank clause), assign the "
+                + "policies to the Lender, and furnish evidence of renewal on each due date."));
+        masters.seedActive("TNC_MASTER", "FINANCIAL_COVENANTS", null, tnc(
+                "Financial covenants", "ALL",
+                "The Borrower shall maintain, and test at the agreed frequency, the financial covenants specified in "
+                + "the credit decision (including debt-service coverage, leverage and current-ratio covenants) and "
+                + "certify compliance in each compliance certificate; the Lender's recomputation prevails on a "
+                + "discrepancy."));
+        masters.seedActive("TNC_MASTER", "INFORMATION_COVENANTS", null, tnc(
+                "Information covenants", "ALL",
+                "The Borrower shall furnish audited financial statements within 180 days of each financial year-end, "
+                + "management accounts and a covenant compliance certificate at the agreed frequency, the annual "
+                + "business plan, and shall promptly notify the Lender of any material litigation, regulatory action "
+                + "or event of default."));
+        masters.seedActive("TNC_MASTER", "EVENTS_OF_DEFAULT", null, tnc(
+                "Events of default", "ALL",
+                "Each of the following is an Event of Default: non-payment when due; breach of covenant uncured "
+                + "within the cure period; misrepresentation; insolvency or inability to pay debts; cross-default; "
+                + "invalidity of any Security Document; and any material adverse change. On an Event of Default the "
+                + "Lender may declare the Facility immediately due and payable and enforce its security."));
+        masters.seedActive("TNC_MASTER", "CROSS_DEFAULT", null, tnc(
+                "Cross-default", "ALL",
+                "An Event of Default occurs if any financial indebtedness of the Borrower or a guarantor is not paid "
+                + "when due after any grace period, or becomes (or becomes capable of being declared) due before its "
+                + "stated maturity by reason of a default, or any commitment for such indebtedness is cancelled or "
+                + "suspended by a creditor by reason of a default."));
+        masters.seedActive("TNC_MASTER", "REPRESENTATIONS_AND_WARRANTIES", null, tnc(
+                "Representations and warranties", "ALL",
+                "The Borrower represents that it is duly incorporated with full power to enter into the facility "
+                + "documentation, that its obligations are legal, valid, binding and enforceable, that its financial "
+                + "statements fairly present its position, that no Event of Default is continuing and that no material "
+                + "litigation is pending or threatened."));
+        masters.seedActive("TNC_MASTER", "CONDITIONS_PRECEDENT", null, tnc(
+                "Conditions precedent", "ALL",
+                "The Lender's obligation to permit the first drawdown is subject to receipt, in form and substance "
+                + "satisfactory to it, of the executed facility and security documentation, constitutional documents "
+                + "and authorising resolutions, evidence of security perfection and insurance, KYC, and payment of "
+                + "all fees then due."));
+        masters.seedActive("TNC_MASTER", "CONDITIONS_SUBSEQUENT", null, tnc(
+                "Conditions subsequent", "ALL",
+                "The Borrower shall satisfy, within the periods specified in the facility documentation, the "
+                + "conditions subsequent (including registration of charges, delivery of original title documents, "
+                + "and filing of statutory forms); failure to do so within the stipulated period is an Event of "
+                + "Default."));
+        masters.seedActive("TNC_MASTER", "FEES_AND_CHARGES", null, tnc(
+                "Fees and charges", "ALL",
+                "The Borrower shall pay the processing, commitment, documentation, agency and other fees per the "
+                + "Lender's schedule of charges, together with all stamp duty, registration charges and applicable "
+                + "taxes, and shall gross up any payment subject to a required deduction of tax."));
+        masters.seedActive("TNC_MASTER", "PREPAYMENT", null, tnc(
+                "Prepayment", "ALL",
+                "The Borrower may prepay in whole or in part on not less than seven Business Days' notice together "
+                + "with accrued interest, any prepayment premium and break costs; amounts prepaid on a term facility "
+                + "may not be redrawn. Mandatory prepayment applies on specified events including change of control "
+                + "or material asset disposal."));
+        masters.seedActive("TNC_MASTER", "SET_OFF", null, tnc(
+                "Set-off", "ALL",
+                "The Lender may combine or consolidate the Borrower's accounts and set off any matured obligation of "
+                + "the Borrower against any obligation of the Lender to the Borrower, applying any applicable rate of "
+                + "exchange, and shall notify the Borrower promptly after doing so."));
+        masters.seedActive("TNC_MASTER", "ASSIGNMENT_AND_NOVATION", null, tnc(
+                "Assignment and novation", "ALL",
+                "The Borrower shall not assign or transfer its rights or obligations without the Lender's prior "
+                + "written consent. The Lender may assign, transfer, novate or grant a participation in its rights and "
+                + "obligations to any bank, financial institution or other person and may disclose reasonably "
+                + "required information to a prospective transferee."));
+        masters.seedActive("TNC_MASTER", "GOVERNING_LAW_AND_JURISDICTION", null, tnc(
+                "Governing law and jurisdiction", "ALL",
+                "The facility documentation and any non-contractual obligations arising out of it are governed by the "
+                + "laws of the Lender's jurisdiction, and the parties submit to the exclusive jurisdiction of the "
+                + "courts at the Lender's head office, save that the Lender may enforce its security in any court of "
+                + "competent jurisdiction."));
+        masters.seedActive("TNC_MASTER", "INDEMNITY", null, tnc(
+                "Indemnity", "ALL",
+                "The Borrower shall indemnify the Lender on demand against any loss, cost, claim, liability or expense "
+                + "(including legal fees) incurred as a consequence of an Event of Default, a drawdown not made by "
+                + "reason of the Borrower's default, any funding break cost, or the enforcement or preservation of the "
+                + "Lender's rights."));
+        masters.seedActive("TNC_MASTER", "FORCE_MAJEURE", null, tnc(
+                "Force majeure", "ALL",
+                "Neither party is liable for any failure or delay in performing its obligations (other than a payment "
+                + "obligation) to the extent caused by an event beyond its reasonable control, provided it notifies "
+                + "the other party and uses reasonable endeavours to mitigate; a payment obligation is never excused "
+                + "by force majeure."));
+        masters.seedActive("TNC_MASTER", "CONFIDENTIALITY", null, tnc(
+                "Confidentiality", "ALL",
+                "Each party shall keep confidential all non-public information received from the other in connection "
+                + "with the facilities and shall not disclose it save to its officers, advisers, regulators and "
+                + "permitted assignees on a need-to-know basis, or as required by law or by a competent court or "
+                + "regulator."));
+        masters.seedActive("TNC_MASTER", "NEGATIVE_PLEDGE", null, tnc(
+                "Negative pledge", "ALL",
+                "The Borrower shall not create or permit to subsist any charge, lien, mortgage or other encumbrance "
+                + "over its assets, nor dispose of any secured asset otherwise than in the ordinary course, without "
+                + "the Lender's prior written consent."));
+        masters.seedActive("TNC_MASTER", "END_USE_OF_FUNDS", null, tnc(
+                "End-use of funds", "ALL",
+                "The Borrower shall utilise the Facility solely for the sanctioned purpose, shall not divert the "
+                + "proceeds to any group entity or to capital-market / speculative purposes, and shall furnish an "
+                + "end-use certificate from its statutory auditor when required by the Lender."));
+        masters.seedActive("TNC_MASTER", "CONTINUING_GUARANTEE", null, tnc(
+                "Continuing guarantee", "GUARANTEE",
+                "The Guarantee is a continuing guarantee for the whole of the Borrower's obligations, is independent "
+                + "of and additional to any security, is not discharged by any variation, indulgence or release, and "
+                + "the Guarantor waives any right to require the Lender first to proceed against the Borrower or to "
+                + "enforce any security."));
     }
 }
