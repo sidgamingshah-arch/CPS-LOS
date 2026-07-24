@@ -19,6 +19,7 @@ import {
   EmptyState,
   Field,
   GovFlow,
+  Modal,
   Stat,
   Unchanged,
   useAsync,
@@ -30,6 +31,10 @@ export default function Groups() {
   const counterparties = useAsync(() => counterparty.list(), []);
 
   const [selectedGroupRef, setSelectedGroupRef] = useState<string>("");
+
+  // Create-group modal state. `null` = closed; an object opens it, optionally pre-filling the
+  // name and requesting a one-click tag of a counterparty (from the CREATE_NEW_GROUP suggestion).
+  const [creatingGroup, setCreatingGroup] = useState<{ tagId?: number; defaultName?: string } | null>(null);
 
   // Auto-select the first group once loaded
   useEffect(() => {
@@ -127,7 +132,10 @@ export default function Groups() {
       </div>
 
       {/* ── Group selector ── */}
-      <Card title="Group selector">
+      <Card
+        title="Group selector"
+        right={<Button kind="ghost" onClick={() => setCreatingGroup({})}>＋ Create group</Button>}
+      >
         <Field label="Borrower group">
           <select
             value={selectedGroupRef}
@@ -147,7 +155,7 @@ export default function Groups() {
             <EmptyState
               glyph="◌"
               title="No borrower groups yet"
-              sub="Create one in Counterparties → Groups, or via POST /api/initiation/groups. Once tagged, members roll up here for combined credit decisioning."
+              sub="Use ＋ Create group above to add one. Once counterparties are tagged, members roll up here for combined credit decisioning."
             />
           </div>
         )}
@@ -197,6 +205,21 @@ export default function Groups() {
               <Badge>recommendation: {suggestion.recommendation}</Badge>
               <Stat label="Top score" value={(suggestion.topScore ?? 0).toFixed(3)} />
             </div>
+
+            {suggestion.recommendation === "CREATE_NEW_GROUP" && (
+              <div className="gate" style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span>No existing group is a strong match — spin up a new group and tag this counterparty in one step.</span>
+                <Button
+                  kind="subtle"
+                  onClick={() => setCreatingGroup({
+                    tagId: Number(suggestForId),
+                    defaultName: deriveGroupName(suggestion.subjectLegalName),
+                  })}
+                >
+                  Create group & tag
+                </Button>
+              </div>
+            )}
 
             <h4 style={{ margin: "12px 0 6px" }}>Existing-group matches</h4>
             {(suggestion.groupMatches ?? []).length === 0 && (
@@ -393,8 +416,110 @@ export default function Groups() {
           )}
         </Card>
       )}
+
+      {creatingGroup && (
+        <CreateGroupModal
+          init={creatingGroup}
+          onClose={() => setCreatingGroup(null)}
+          onCreated={(g: any, tagged: boolean) => {
+            setCreatingGroup(null);
+            allGroups.reload();
+            counterparties.reload();
+            setSelectedGroupRef(g.reference);
+            if (tagged) setSuggestion(null);
+          }}
+        />
+      )}
     </div>
   );
+
+  // Create a borrower group (name · group RM · country · multi-country). Backend already exists
+  // (POST /api/initiation/groups); this is the missing UI. When `init.tagId` is set (from the
+  // AI CREATE_NEW_GROUP recommendation) it also tags that counterparty in one named-human step.
+  function CreateGroupModal({
+    init,
+    onClose,
+    onCreated,
+  }: {
+    init: { tagId?: number; defaultName?: string };
+    onClose: () => void;
+    onCreated: (g: any, tagged: boolean) => void;
+  }) {
+    const [name, setName] = useState(init.defaultName || "");
+    const [groupRmId, setGroupRmId] = useState(actor);
+    const [country, setCountry] = useState("");
+    const [multiCountry, setMultiCountry] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const submit = async () => {
+      if (!name.trim()) return;
+      setBusy(true);
+      try {
+        const g = await initiation.createGroup(
+          {
+            name: name.trim(),
+            groupRmId: groupRmId.trim() || undefined,
+            country: country.trim() || undefined,
+            multiCountry,
+          },
+          actor,
+        );
+        let tagged = false;
+        if (init.tagId) {
+          await initiation.tagToGroup(init.tagId, g.id, actor);
+          tagged = true;
+        }
+        notify(tagged ? `Created ${g.reference} and tagged the counterparty` : `Created group ${g.reference}`);
+        onCreated(g, tagged);
+      } catch (e: any) {
+        notify(e.message, true);
+      } finally {
+        setBusy(false);
+      }
+    };
+    return (
+      <Modal
+        title={init.tagId ? "Create group & tag counterparty" : "Create borrower group"}
+        onClose={onClose}
+        sub="A borrower group anchors the combined credit rollup. Group RM defaults to you."
+        footer={
+          <>
+            <Button kind="subtle" onClick={onClose}>Cancel</Button>
+            <Button onClick={submit} busy={busy} disabled={!name.trim()}>Create group</Button>
+          </>
+        }
+      >
+        <Field label="Group name" required>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Meridian Group" />
+        </Field>
+        <div className="grid cols-2">
+          <Field label="Group RM" hint="Defaults to the current actor">
+            <input value={groupRmId} onChange={(e) => setGroupRmId(e.target.value)} placeholder="e.g. rm.priya" />
+          </Field>
+          <Field label="Country" hint="Primary country (optional)">
+            <input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. IN" />
+          </Field>
+        </div>
+        <label className="inline" style={{ fontSize: 13, marginTop: 4 }}>
+          <input type="checkbox" style={{ width: "auto" }} checked={multiCountry} onChange={(e) => setMultiCountry(e.target.checked)} />{" "}
+          Multi-country group
+        </label>
+        {init.tagId != null && (
+          <div className="gate" style={{ marginTop: 10 }}>
+            On create, this counterparty is tagged to the new group — a named-human action, audited.
+          </div>
+        )}
+      </Modal>
+    );
+  }
+}
+
+/** Derives a sensible default group name from a counterparty's legal name (strips the legal form). */
+function deriveGroupName(subjectLegalName?: string): string {
+  const base = (subjectLegalName || "")
+    .replace(/\b(Private|Public|Pvt|Ltd|Limited|LLP|LLC|Inc|Co|Corp|PLC)\b\.?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `${base || "New"} Group`;
 }
 
 function narrativeToHtml(s: string): string {
