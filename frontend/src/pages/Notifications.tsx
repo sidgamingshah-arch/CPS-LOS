@@ -118,6 +118,7 @@ export default function Notifications() {
         {error && <div className="alert err">{error}</div>}
         <DataTable
           id="notifications"
+          initialSort={{ key: "createdAt", dir: "desc" }}
           columns={cols}
           rows={data || []}
           rowKey={(n) => String(n.id)}

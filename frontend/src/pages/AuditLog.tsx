@@ -71,6 +71,7 @@ export default function AuditLog() {
       {error && <div className="alert err">{error}</div>}
       <DataTable
         id="audit-log"
+        initialSort={{ key: "occurredAt", dir: "desc" }}
         columns={cols}
         rows={rows}
         rowKey={(e) => String(e.id)}

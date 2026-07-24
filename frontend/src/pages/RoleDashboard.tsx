@@ -92,7 +92,7 @@ export default function RoleDashboard() {
         </div>
         <div className="rh-actions">
           <Button kind="subtle" onClick={() => nav("dashboard")}>Portfolio Dashboard →</Button>
-          <Button kind="subtle" onClick={() => nav("copilot")}>Ask Copilot</Button>
+          <Button kind="subtle" onClick={() => nav("copilot")}>Ask Credit Intel</Button>
         </div>
       </div>
 

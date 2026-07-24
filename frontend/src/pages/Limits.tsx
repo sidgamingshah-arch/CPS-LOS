@@ -72,6 +72,7 @@ export default function Limits() {
         <Card title="Utilisation ledger" sub="Append-only — every UTILISE / RELEASE / RESERVE / REVERSAL recorded.">
           <DataTable
             id="limits-ledger"
+            initialSort={{ key: "createdAt", dir: "desc" }}
             columns={ledgerCols}
             rows={ledger.data || []}
             rowKey={(u) => String(u.id)}

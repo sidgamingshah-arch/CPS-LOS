@@ -36,6 +36,7 @@ export default function Deals() {
       <Card title="Origination pipeline" sub="Intake → spread → rate → capital → price → approve → book.">
         <DataTable
           id="deals"
+          initialSort={{ key: "createdAt", dir: "desc" }}
           columns={cols}
           rows={apps.data || []}
           rowKey={(a) => a.reference}

@@ -9,6 +9,7 @@ import { useApp } from "../app-context";
 import { AiBadge, Badge, Button, Card, DeterministicBadge, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
 import { ExplainCard, type XaiFactor } from "../xai";
 import { useCodes } from "../code-values";
+import { authorityLabel, canRole } from "../authz";
 
 type SectorOutlook = string;
 
@@ -60,10 +61,13 @@ function ScoringApproval({ approval, confirmed, busy, actor, onApprove }: {
   actor: string;
   onApprove: () => void;
 }) {
+  const { roles } = useApp();
   const authority: string = approval?.requiredAuthority ?? "CREDIT_OFFICER";
   const status: string = approval?.approvalStatus ?? (confirmed ? "APPROVED" : "PENDING_APPROVAL");
   const required: boolean = approval?.approvalRequired !== false;
   const decided = status === "APPROVED" || confirmed;
+  // Advisory authority hint — mirrors the server confirm-rank gate (default-permissive).
+  const mayApprove = canRole(authority, roles, actor);
   return (
     <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }}>
       <div className="inline" style={{ gap: 12, flexWrap: "wrap", alignItems: "center" }}>
@@ -74,9 +78,12 @@ function ScoringApproval({ approval, confirmed, busy, actor, onApprove }: {
         <Unchanged label="GRADE / PD PRESERVED" />
       </div>
       <div className="inline" style={{ gap: 10, marginTop: 10, alignItems: "center" }}>
-        <Button kind="primary" busy={busy} disabled={busy || decided} onClick={onApprove}>
-          {decided ? "Approved" : `Approve as ${authority}`}
-        </Button>
+        <span className="authz-gate"
+          title={mayApprove ? undefined : `Requires ${authorityLabel(authority)} authority`}>
+          <Button kind="primary" busy={busy} disabled={busy || decided || !mayApprove} onClick={onApprove}>
+            {decided ? "Approved" : `Approve as ${authority}`}
+          </Button>
+        </span>
         <span className="muted" style={{ fontSize: 12 }}>
           Acting as {actor} · confirming actor must hold {authority} authority; the overrider cannot self-approve.
         </span>
@@ -683,10 +690,14 @@ function ManualOverrideCard({ refValue, rating, model, onChanged }: {
   // ACTOR_ROLE master grants this actor. This MIRRORS the server's resolveNotchLimit: authority
   // comes from the authenticated actor's real roles, NEVER a picked/claimed role. When roles are
   // unknown (directory not yet loaded) we don't pre-block — the server stays the source of truth.
+  const rolesLoaded = (actorRoles ?? []).length > 0;
   const knownActorRoles = (actorRoles ?? []).filter((r) => roleLimits[r.toUpperCase()] != null);
+  // Actor's real notch authority. If roles are LOADED but none map to an OVERRIDE_ROLE, the actor
+  // has no override authority (limit 0 -> block, matching the server's max-over-zero result). Only
+  // when roles aren't loaded yet do we fail-open (99) and let the server stay the source of truth.
   const actorLimit = knownActorRoles.length
     ? Math.max(...knownActorRoles.map((r) => roleLimits[r.toUpperCase()]))
-    : 99;
+    : (rolesLoaded ? 0 : 99);
   const [proposedGrade, setProposedGrade] = useState("");
   const [reasonCode, setReasonCode] = useState("");
   const [note, setNote] = useState("");
@@ -698,6 +709,9 @@ function ManualOverrideCard({ refValue, rating, model, onChanged }: {
   const notch = proposedGrade && modelGrade
     ? gradeCodes.indexOf(modelGrade) - gradeCodes.indexOf(proposedGrade)
     : 0;
+  // Authority is the actor's own resolved limit (server is the source of truth). No "acting as"
+  // picker and no separate can()-gate: exceedsLimit already reflects the actor's real notch ceiling
+  // (including 0 for an actor with no mapped override role), which is the honest, non-decorative gate.
   const exceedsLimit = Math.abs(notch) > actorLimit;
 
   async function submit() {
@@ -789,9 +803,12 @@ function ManualOverrideCard({ refValue, rating, model, onChanged }: {
       )}
 
       <div className="btnrow">
-        <Button kind="primary" busy={busy} onClick={submit} disabled={!proposedGrade || !reasonCode || exceedsLimit || busy}>
-          Apply manual override
-        </Button>
+        <span className="authz-gate"
+          title={exceedsLimit ? `Beyond your override authority (≤ ${actorLimit} notch) — escalate to a higher authority` : undefined}>
+          <Button kind="primary" busy={busy} onClick={submit} disabled={!proposedGrade || !reasonCode || exceedsLimit || busy}>
+            Apply manual override
+          </Button>
+        </span>
         <span className="muted">Acting as {actor}</span>
         <Unchanged label="DETERMINISTIC PD/CAPITAL RE-DERIVED" />
       </div>
