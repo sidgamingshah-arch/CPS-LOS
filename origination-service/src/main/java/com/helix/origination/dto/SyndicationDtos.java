@@ -34,6 +34,16 @@ public class SyndicationDtos {
                                    double allocatedTotal, boolean reused, List<AllocationLine> lines) {
     }
 
+    /**
+     * At-a-glance summary of a syndicated deal — lets the UI list ONLY SYNDICATION
+     * deals (so a picker never offers a non-syndicated app that would yield an empty
+     * book). {@code totalCommitment} and {@code lenderCount} are derived from the
+     * captured lender participants; borrower/currency come from the application.
+     */
+    public record SyndicatedDealSummary(String reference, String borrower, String currency,
+                                        double totalCommitment, int lenderCount) {
+    }
+
     // ============================================================ information memorandum
 
     /** Create a DRAFT Information Memorandum for a syndication deal. {@code title} optional. */

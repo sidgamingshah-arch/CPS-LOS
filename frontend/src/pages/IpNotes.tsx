@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fmt, ipNotes } from "../api";
+import { counterparty, fmt, ipNotes } from "../api";
 import { useApp } from "../app-context";
 import {
   Badge, Button, Card, Col, DataTable, EmptyState, Field, HumanBadge, statusTone, useAsync,
@@ -89,6 +89,9 @@ export default function IpNotes() {
 function CreateIpNote({ actor, notify, onDone }: {
   actor: string; notify: (t: string, e?: boolean) => void; onDone: (ref: string) => void;
 }) {
+  // Counterparty picker source — the prospect / obligor the note sponsors (fail-soft to empty).
+  const cps = useAsync(() => counterparty.list().catch(() => []), []);
+  const [cpPick, setCpPick] = useState("");          // chosen counterparty id (string)
   const [counterpartyId, setCounterpartyId] = useState("");
   const [counterpartyRef, setCounterpartyRef] = useState("");
   const [counterpartyName, setCounterpartyName] = useState("");
@@ -103,9 +106,22 @@ function CreateIpNote({ actor, notify, onDone }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Selecting a counterparty auto-populates id / reference / name and defaults the
+  // jurisdiction + segment from it (when they map to a known option). Only the deal
+  // terms below stay user-entered.
+  const chooseCp = (id: string) => {
+    setCpPick(id);
+    const cp = (cps.data || []).find((c: any) => String(c.id) === id);
+    if (!cp) { setCounterpartyId(""); setCounterpartyRef(""); setCounterpartyName(""); return; }
+    setCounterpartyId(String(cp.id));
+    setCounterpartyRef(cp.reference || "");
+    setCounterpartyName(cp.legalName || "");
+    if (cp.jurisdiction && JURISDICTIONS.includes(cp.jurisdiction)) setJurisdiction(cp.jurisdiction);
+    if (cp.segment && SEGMENTS.includes(cp.segment)) setSegment(cp.segment);
+  };
+
   const submit = async () => {
-    if (!counterpartyId.trim() || !counterpartyRef.trim()) { setErr("Counterparty id and reference are required"); return; }
-    if (!counterpartyName.trim()) { setErr("Counterparty name is required"); return; }
+    if (!cpPick || !counterpartyId.trim() || !counterpartyRef.trim()) { setErr("Select a counterparty"); return; }
     if (!(Number(proposedAmount) > 0)) { setErr("Proposed amount must be positive"); return; }
     if (!(Number(tenorMonths) > 0)) { setErr("Tenor must be positive"); return; }
     setErr(null); setBusy(true);
@@ -120,7 +136,7 @@ function CreateIpNote({ actor, notify, onDone }: {
         purpose, prospectSummary,
       }, actor);
       notify(`IP note ${n.ipNoteRef} created (DRAFT)`);
-      setCounterpartyId(""); setCounterpartyRef(""); setCounterpartyName("");
+      setCpPick(""); setCounterpartyId(""); setCounterpartyRef(""); setCounterpartyName("");
       setProposedAmount(""); setPurpose(""); setProspectSummary("");
       onDone(n.ipNoteRef);
     } catch (e: any) { notify(e.message, true); }
@@ -129,16 +145,19 @@ function CreateIpNote({ actor, notify, onDone }: {
 
   return (
     <Card title="Raise an IP note" sub="Created as DRAFT under your name; submit to route it for credit sign-off.">
-      <Field label="Counterparty id" required hint="Prospect / obligor id from Counterparties"
-        error={err && !counterpartyId.trim() ? err : null}>
-        <input value={counterpartyId} onChange={(e) => setCounterpartyId(e.target.value)} inputMode="numeric" placeholder="e.g. 12" />
+      <Field label="Counterparty" required
+        hint="Pick the prospect / obligor — its id, reference, name, jurisdiction and segment are filled in automatically."
+        error={err && !cpPick ? err : null}>
+        <select value={cpPick} onChange={(e) => chooseCp(e.target.value)}>
+          <option value="">— select counterparty —</option>
+          {(cps.data || []).map((c: any) => (
+            <option key={c.id} value={String(c.id)}>{c.legalName} · {c.reference}</option>
+          ))}
+        </select>
       </Field>
-      <Field label="Counterparty reference" required error={err && counterpartyId.trim() && !counterpartyRef.trim() ? err : null}>
-        <input value={counterpartyRef} onChange={(e) => setCounterpartyRef(e.target.value)} placeholder="e.g. CP-ABCD1234" />
-      </Field>
-      <Field label="Counterparty name" required error={err && counterpartyRef.trim() && !counterpartyName.trim() ? err : null}>
-        <input value={counterpartyName} onChange={(e) => setCounterpartyName(e.target.value)} placeholder="Legal name" />
-      </Field>
+      {cpPick && (
+        <p className="prov">Selected: {counterpartyName} · {counterpartyRef} (id {counterpartyId})</p>
+      )}
       <Field label="Jurisdiction" required>
         <select value={jurisdiction} onChange={(e) => setJurisdiction(e.target.value)}>
           {JURISDICTIONS.map((j) => <option key={j} value={j}>{j}</option>)}
@@ -155,7 +174,7 @@ function CreateIpNote({ actor, notify, onDone }: {
         </select>
       </Field>
       <Field label="Proposed amount" required hint="Deterministic figure — quoted verbatim, never mutated"
-        error={err && counterpartyName.trim() && !(Number(proposedAmount) > 0) ? err : null}>
+        error={err && cpPick && !(Number(proposedAmount) > 0) ? err : null}>
         <input value={proposedAmount} onChange={(e) => setProposedAmount(e.target.value)} inputMode="numeric" placeholder="e.g. 400000000" />
       </Field>
       <Field label="Currency" required>

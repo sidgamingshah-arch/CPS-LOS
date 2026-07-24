@@ -928,6 +928,8 @@ export const repayments = {
 };
 
 export const syndication = {
+  // discovery: ONLY the SYNDICATION-structured deals (reference · borrower · total commitment · #lenders)
+  deals: () => call<any[]>("/origination/api/syndication/deals", "GET"),
   // agency: book / fee waterfall / agency reconciliation / feed
   book: (ref: string) => call<any>(`/origination/api/syndication/${ref}/book`, "GET"),
   allocate: (ref: string, body: any, actor: string) =>

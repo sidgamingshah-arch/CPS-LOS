@@ -12,7 +12,7 @@
  * an audit-clean record of what was circulated versus what was finalised.
  */
 import { useState } from "react";
-import { origination, syndicationIm, fmt, type SyndicationIm as Im } from "../api";
+import { syndication, syndicationIm, fmt, type SyndicationIm as Im } from "../api";
 import { useApp } from "../app-context";
 import {
   Badge, Button, Card, type Col, DataTable, EmptyState, Field, GovFlow, HumanBadge,
@@ -36,7 +36,8 @@ function humanise(key: string): string {
 
 export default function SyndicationIm() {
   const { actor, notify, ref: ctxRef } = useApp();
-  const apps = useAsync(() => origination.list(), []);
+  // Only SYNDICATION-structured deals — an IM only makes sense for a syndicated deal.
+  const deals = useAsync(() => syndication.deals().catch(() => []), []);
   const [ref, setRef] = useState<string>(ctxRef ?? "");
   const [selId, setSelId] = useState<number | null>(null);
 
@@ -73,11 +74,15 @@ export default function SyndicationIm() {
         <Field label="Syndicated deal">
           <select value={ref} onChange={(e) => { setRef(e.target.value); setSelId(null); }}>
             <option value="">— select deal —</option>
-            {(apps.data ?? []).map((a: any) => (
-              <option key={a.reference} value={a.reference}>{a.counterpartyName} · {a.reference}</option>
+            {(deals.data ?? []).map((d: any) => (
+              <option key={d.reference} value={d.reference}>{d.borrower} · {d.reference}</option>
             ))}
           </select>
         </Field>
+        <div className="scf-note">
+          Only <b>SYNDICATION</b>-structured deals are listed — set a deal's structure to SYNDICATION
+          in Deal Structuring for it to appear here.
+        </div>
       </Card>
 
       {!ref && (
