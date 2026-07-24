@@ -41,7 +41,7 @@ public class CollateralIntelController {
     public CollateralExtraction extract(@PathVariable String reference,
                                         @Valid @RequestBody ExtractCollateralRequest req,
                                         @RequestHeader(value = "X-Actor", defaultValue = "analyst.user") String actor) {
-        return intel.extract(reference, req.documentKind(), req.text(), actor);
+        return intel.extract(reference, req.documentKind(), req.text(), req.documentId(), actor);
     }
 
     @GetMapping("/{reference}/extractions")

@@ -221,6 +221,15 @@ export const origination = {
   // collateral intelligence: extraction + LTV revaluation + charge-Excel
   colExtract: (ref: string, body: any, actor: string) =>
     call<any>(`/origination/api/collateral-intel/${ref}/extract`, "POST", body, actor),
+  // AI-EXTRACT from a REAL uploaded collateral document: upload the file (DMS store + PDFBox/UTF-8/OCR
+  // text extraction, creating a first-class Document that also appears in the deal's document list),
+  // then run collateral extraction over that document's text. Stays a SUGGESTED advisory — confirm
+  // materialises the Collateral (human gate). documentKind stays a manual pick.
+  colUploadAndExtract: async (ref: string, file: File, documentKind: string, actor: string) => {
+    const doc = await origination.uploadDocumentFile(ref, file, undefined, actor);
+    const extraction = await origination.colExtract(ref, { documentKind, documentId: doc.id }, actor);
+    return { doc, extraction };
+  },
   colExtractions: (ref: string) =>
     call<any[]>(`/origination/api/collateral-intel/${ref}/extractions`, "GET"),
   colConfirm: (id: number, body: any, actor: string) =>
