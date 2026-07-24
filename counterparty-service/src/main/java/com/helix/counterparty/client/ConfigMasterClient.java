@@ -113,6 +113,46 @@ public class ConfigMasterClient {
         return listActive("NEGATIVE_LIST");
     }
 
+    /**
+     * The counterparty RISK_FLAG catalogue (config-service master). Degrades to a built-in list
+     * byte-identical to the seeded 6 flags so advisory screening stays deterministic when
+     * config-service is unreachable. The WIRED (behaviour-driving) fields are the screening
+     * parameters read by {@code ScreeningService}: {@code screeningListSource}/{@code defaultSeverity}/
+     * {@code defaultScore}/{@code matchedAttributes}/{@code order}/{@code active}. {@code label},
+     * {@code cddImpact} and {@code blocksKyc} are DESCRIPTIVE metadata — authoritative CDD tiering
+     * is the CDD_TIERS rule pack and the KYC gate is severity-driven; they are not read from here.
+     */
+    public List<MasterRecordDto> riskFlags() {
+        List<MasterRecordDto> live = listActive("RISK_FLAG");
+        return live.isEmpty() ? RISK_FLAG_FALLBACK : live;
+    }
+
+    private static final List<MasterRecordDto> RISK_FLAG_FALLBACK = List.of(
+            new MasterRecordDto(null, "RISK_FLAG", "PEP", null, Map.of(
+                    "label", "Politically Exposed Person", "order", 10, "cddImpact", "ENHANCED",
+                    "screeningListSource", "PEP", "defaultSeverity", "HIGH", "defaultScore", 0.92,
+                    "matchedAttributes", List.of("name", "role:director", "jurisdiction:{country}"),
+                    "blocksKyc", true, "active", true), "ACTIVE", 1),
+            new MasterRecordDto(null, "RISK_FLAG", "ADVERSE_MEDIA", null, Map.of(
+                    "label", "Adverse Media", "order", 20, "cddImpact", "ENHANCED",
+                    "screeningListSource", "ADVERSE_MEDIA", "defaultSeverity", "MEDIUM", "defaultScore", 0.74,
+                    "matchedAttributes", List.of("name", "topic:regulatory-investigation"),
+                    "blocksKyc", true, "active", true), "ACTIVE", 1),
+            new MasterRecordDto(null, "RISK_FLAG", "HIGH_RISK_JURISDICTION", null, Map.of(
+                    "label", "High-Risk Jurisdiction", "order", 30, "cddImpact", "ENHANCED",
+                    "screeningListSource", "OFAC", "defaultSeverity", "HIGH", "defaultScore", 0.68,
+                    "matchedAttributes", List.of("name", "country:{country}"),
+                    "blocksKyc", true, "active", true), "ACTIVE", 1),
+            new MasterRecordDto(null, "RISK_FLAG", "COMPLEX_OWNERSHIP", null, Map.of(
+                    "label", "Complex Ownership", "order", 40, "cddImpact", "ENHANCED",
+                    "blocksKyc", false, "active", true), "ACTIVE", 1),
+            new MasterRecordDto(null, "RISK_FLAG", "LISTED_ENTITY", null, Map.of(
+                    "label", "Listed Entity", "order", 50, "cddImpact", "SIMPLIFIED",
+                    "blocksKyc", false, "active", true), "ACTIVE", 1),
+            new MasterRecordDto(null, "RISK_FLAG", "REGULATED_FI", null, Map.of(
+                    "label", "Regulated Financial Institution", "order", 60, "cddImpact", "SIMPLIFIED",
+                    "blocksKyc", false, "active", true), "ACTIVE", 1));
+
     public int draftCleanupMonths() {
         return listActive("DRAFT_CLEANUP").stream().findFirst()
                 .map(r -> ((Number) r.payload().getOrDefault("months", 6)).intValue())

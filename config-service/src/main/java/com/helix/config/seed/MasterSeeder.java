@@ -90,6 +90,51 @@ public class MasterSeeder implements CommandLineRunner {
                         "RM", map("requestedAmount", "WRITE", "internalRiskGrade", "HIDDEN"),
                         "ANALYST", map("requestedAmount", "READ", "internalRiskGrade", "READ"),
                         "CREDIT_HEAD", map("requestedAmount", "WRITE", "internalRiskGrade", "WRITE"))));
+        // RISK_FLAG — the counterparty risk-flag catalogue (CLoM tester ask: "can risk flags be
+        // configurable + how do they impact"). One record per flag. The LIVE, WIRED controls are the
+        // screening parameters — screeningListSource / defaultSeverity / defaultScore /
+        // matchedAttributes / order / active: ScreeningService reads them, so editing a record
+        // reshapes the advisory screening hit that flag raises with NO code change (byte-identical
+        // to the historical hardcoded flags, verified by e2e_risk_flags). cddImpact + blocksKyc are
+        // DESCRIPTIVE metadata only — authoritative CDD tiering is authored in the per-jurisdiction
+        // CDD_TIERS rule pack (enhanced_triggers / simplified_eligible, see e2e_cdd_tiers) and the
+        // KYC HITL gate blocks on a hit's severity >= MEDIUM; those remain the sources of truth.
+        // Flags feed CDD intensity + advisory screening + the KYC-verify gate only — never an
+        // authoritative rating/pricing figure. `{country}` in an attribute is interpolated at
+        // screening time.
+        masters.seedActive("RISK_FLAG", "PEP", null, map(
+                "label", "Politically Exposed Person", "order", 10,
+                "description", "Counterparty (or a related party) is a politically exposed person.",
+                "cddImpact", "ENHANCED", "screeningListSource", "PEP",
+                "defaultSeverity", "HIGH", "defaultScore", 0.92,
+                "matchedAttributes", List.of("name", "role:director", "jurisdiction:{country}"),
+                "blocksKyc", true, "active", true));
+        masters.seedActive("RISK_FLAG", "ADVERSE_MEDIA", null, map(
+                "label", "Adverse Media", "order", 20,
+                "description", "Negative news / regulatory-investigation coverage on the counterparty.",
+                "cddImpact", "ENHANCED", "screeningListSource", "ADVERSE_MEDIA",
+                "defaultSeverity", "MEDIUM", "defaultScore", 0.74,
+                "matchedAttributes", List.of("name", "topic:regulatory-investigation"),
+                "blocksKyc", true, "active", true));
+        masters.seedActive("RISK_FLAG", "HIGH_RISK_JURISDICTION", null, map(
+                "label", "High-Risk Jurisdiction", "order", 30,
+                "description", "Counterparty is domiciled in / connected to a high-risk jurisdiction.",
+                "cddImpact", "ENHANCED", "screeningListSource", "OFAC",
+                "defaultSeverity", "HIGH", "defaultScore", 0.68,
+                "matchedAttributes", List.of("name", "country:{country}"),
+                "blocksKyc", true, "active", true));
+        masters.seedActive("RISK_FLAG", "COMPLEX_OWNERSHIP", null, map(
+                "label", "Complex Ownership", "order", 40,
+                "description", "Opaque / multi-layered beneficial-ownership structure.",
+                "cddImpact", "ENHANCED", "blocksKyc", false, "active", true));
+        masters.seedActive("RISK_FLAG", "LISTED_ENTITY", null, map(
+                "label", "Listed Entity", "order", 50,
+                "description", "Publicly listed entity (simplified-CDD eligible).",
+                "cddImpact", "SIMPLIFIED", "blocksKyc", false, "active", true));
+        masters.seedActive("RISK_FLAG", "REGULATED_FI", null, map(
+                "label", "Regulated Financial Institution", "order", 60,
+                "description", "Regulated FI (simplified-CDD eligible).",
+                "cddImpact", "SIMPLIFIED", "blocksKyc", false, "active", true));
         masters.seedActive("NEGATIVE_LIST", "country:CU", null, map("type", "COUNTRY", "value", "CU", "reason", "sanctions"));
         masters.seedActive("NEGATIVE_LIST", "country:KP", null, map("type", "COUNTRY", "value", "KP", "reason", "sanctions"));
         masters.seedActive("NEGATIVE_LIST", "country:IR", null, map("type", "COUNTRY", "value", "IR", "reason", "sanctions"));
@@ -717,6 +762,41 @@ public class MasterSeeder implements CommandLineRunner {
                 v("PROJECT_FINANCE", "Project finance"),
                 v("TRADE_FINANCE", "Trade finance"),
                 v("FINANCIAL_INSTITUTION", "Financial institution"));
+        // Industry sectors — counterparty sector dropdown (CLoM tester ask: sector as a dropdown).
+        codes("SECTOR", "Industry sectors",
+                v("MANUFACTURING", "Manufacturing"),
+                v("INFRASTRUCTURE", "Infrastructure"),
+                v("REAL_ESTATE", "Real estate"),
+                v("SERVICES", "Services"),
+                v("TRADING", "Trading"),
+                v("AGRICULTURE", "Agriculture & allied"),
+                v("ENERGY", "Energy & utilities"),
+                v("METALS_MINING", "Metals & mining"),
+                v("CHEMICALS", "Chemicals"),
+                v("PHARMA_HEALTHCARE", "Pharma & healthcare"),
+                v("TECHNOLOGY", "Technology & IT"),
+                v("TELECOM", "Telecom"),
+                v("TEXTILES", "Textiles"),
+                v("AUTOMOTIVE", "Automotive"),
+                v("HOSPITALITY", "Hospitality"),
+                v("FINANCIAL_SERVICES", "Financial services"));
+        // Countries (ISO-3166 alpha-2) — counterparty country dropdown.
+        codes("COUNTRY", "Countries",
+                v("IN", "India"),
+                v("AE", "United Arab Emirates"),
+                v("US", "United States"),
+                v("GB", "United Kingdom"),
+                v("SG", "Singapore"),
+                v("HK", "Hong Kong"),
+                v("DE", "Germany"),
+                v("FR", "France"),
+                v("JP", "Japan"),
+                v("AU", "Australia"),
+                v("CH", "Switzerland"),
+                v("NL", "Netherlands"),
+                v("SA", "Saudi Arabia"),
+                v("QA", "Qatar"),
+                v("MU", "Mauritius"));
         // Specialised deal-structure variants.
         codes("STRUCTURE_TYPE", "Deal structure types",
                 v("SINGLE", "Single"),

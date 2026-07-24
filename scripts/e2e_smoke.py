@@ -449,7 +449,11 @@ print("== 25. Obligor creation summary + decision + approve ==")
 st, summ = call("GET", f"/counterparty/api/initiation/prospects/{p1['id']}/summary")
 check("creation summary aggregates dedup+negative+checks", st == 200 and "dedup" in summ and "negative" in summ and "externalChecks" in summ, f"{st}")
 call("POST", f"/counterparty/api/initiation/prospects/{p1['id']}/decision", {"proceed": True, "reason": ""}, actor="rm.alice")
-st, ob = call("POST", f"/counterparty/api/initiation/prospects/{p1['id']}/approve", actor="rm.alice")
+# Obligor approval enforces maker≠checker (approver != prospect creator rm.alice) — promote as a
+# distinct named human (credit.head), which is the intended two-human governed obligor creation.
+st, sod = call("POST", f"/counterparty/api/initiation/prospects/{p1['id']}/approve", actor="rm.alice")
+check("obligor approval blocks the creator (maker≠checker SoD)", st == 403, f"{st}")
+st, ob = call("POST", f"/counterparty/api/initiation/prospects/{p1['id']}/approve", actor="credit.head")
 check("prospect approved into obligor", st == 200 and ob["recordType"] == "OBLIGOR" and ob["externalId"], f"{st}")
 
 print("== 26. RM ownership + groups ==")

@@ -1,11 +1,14 @@
 package com.helix.counterparty.entity;
 
+import com.helix.common.util.JsonAttributeConverters;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
+import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -14,6 +17,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * A verified, risk-rated counterparty identity (PRD §7 Counterparty object).
@@ -80,13 +85,21 @@ public class Counterparty {
     @Column(length = 20)
     private String kycStatus;          // Enums.KycStatus name
 
-    // ---- risk flags feeding CDD intensity & screening (PRD §1) ----
+    // ---- risk flags feeding CDD intensity & screening (PRD §1). The catalogue of flags is now
+    // config-driven (RISK_FLAG master); the six historical flags keep typed columns for parity,
+    // and any additional config-defined flag is stored in extraRiskFlags below. ----
     private boolean listedEntity;
     private boolean regulatedFi;
     private boolean pep;
     private boolean adverseMedia;
     private boolean highRiskJurisdiction;
     private boolean complexOwnership;
+
+    /** Config-defined risk flags beyond the six typed booleans (RISK_FLAG key -> boolean). */
+    @Lob
+    @Convert(converter = JsonAttributeConverters.MapConverter.class)
+    @Column(length = 2000)
+    private Map<String, Object> extraRiskFlags = new LinkedHashMap<>();
 
     private LocalDate reKycDueDate;
 
@@ -104,6 +117,8 @@ public class Counterparty {
     private String borrowerType;             // NTB | ETB | DUAL_OBLIGOR
 
     private String rmId;                      // default RM = creator; reassignable via workflow
+    @Column(length = 60)
+    private String createdBy;                 // maker (creator) — anchors maker≠checker on sign-off/approve
     private Long groupId;                     // tagged group, if any
 
     private String industry;

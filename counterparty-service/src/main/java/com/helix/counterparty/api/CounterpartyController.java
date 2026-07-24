@@ -5,6 +5,7 @@ import com.helix.common.ingest.Ingestion.Result;
 import com.helix.counterparty.dto.Dtos.CloseRequest;
 import com.helix.counterparty.dto.Dtos.CreateCounterpartyRequest;
 import com.helix.counterparty.dto.Dtos.DispositionRequest;
+import com.helix.counterparty.dto.Dtos.HumanRationaleRequest;
 import com.helix.counterparty.dto.Dtos.HygieneResult;
 import com.helix.counterparty.dto.Dtos.UboStructureRequest;
 import com.helix.counterparty.dto.IngestDtos.RawScreeningPayload;
@@ -123,6 +124,13 @@ public class CounterpartyController {
     public ScreeningHit disposition(@PathVariable Long hitId, @Valid @RequestBody DispositionRequest req,
                                     @RequestHeader(value = "X-Actor", defaultValue = "compliance.officer") String actor) {
         return screening.disposition(hitId, req.disposition(), req.note(), actor);
+    }
+
+    /** Record a named-human rationale on a hit (used when no model drafted one — no simulated text). */
+    @PostMapping("/screening/{hitId}/rationale")
+    public ScreeningHit recordRationale(@PathVariable Long hitId, @Valid @RequestBody HumanRationaleRequest req,
+                                        @RequestHeader(value = "X-Actor", defaultValue = "compliance.officer") String actor) {
+        return screening.setHumanRationale(hitId, req.rationale(), actor);
     }
 
     /** Ingest a sanctions/screening vendor feed via the canonical connector (idempotent). */

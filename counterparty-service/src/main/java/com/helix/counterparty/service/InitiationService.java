@@ -97,6 +97,7 @@ public class InitiationService {
         cp.setLifecycleStatus("DRAFT");
         cp.setBorrowerType(req.borrowerType() == null ? "NTB" : req.borrowerType().toUpperCase());
         cp.setRmId(actor);                       // default RM = creator (automated ownership resolution)
+        cp.setCreatedBy(actor);                  // maker — anchors maker≠checker on obligor approval
         cp.setKycStatus("NOT_STARTED");
         cp.setCddTier("STANDARD");
         cp.setLastActivityAt(Instant.now());
@@ -287,6 +288,22 @@ public class InitiationService {
         NegativeResult neg = negativeCheck(prospectId);
         if (neg.hit()) {
             throw ApiException.conflict("Cannot create obligor: subject is on the negative list");
+        }
+        // SoD: the human who approves a prospect into an obligor must differ from its creator
+        // (maker≠checker). Evaluated AFTER the hard negative-list block so a sanctioned prospect is
+        // still refused (409) regardless of who approves it. Fail-CLOSED on an unknown creator — a
+        // record with no recorded creator (should not occur after the audit-trail backfill) is
+        // refused rather than silently bypassing SoD.
+        String creator = cp.getCreatedBy();
+        if (creator == null || creator.isBlank()) {
+            throw ApiException.forbiddenAutonomy(
+                    "Segregation of duties cannot be verified: this prospect has no recorded creator; "
+                            + "a named creator must be established before obligor approval");
+        }
+        if (creator.equals(actor)) {
+            throw ApiException.forbiddenAutonomy(
+                    "Segregation of duties: obligor approval must be a different named human than the "
+                            + "prospect creator (" + creator + ")");
         }
         cp.setRecordType("OBLIGOR");
         cp.setLifecycleStatus("ACTIVE");

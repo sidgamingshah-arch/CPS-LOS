@@ -129,6 +129,11 @@ export const counterparty = {
   screening: (id: number) => call<any[]>(`/counterparty/api/counterparties/${id}/screening`, "GET"),
   disposition: (hitId: number, body: any, actor: string) =>
     call<any>(`/counterparty/api/counterparties/screening/${hitId}/disposition`, "POST", body, actor),
+  // Record a named-human rationale on a hit (used when no LLM drafted one — no simulated text).
+  setRationale: (hitId: number, rationale: string, actor: string) =>
+    call<any>(`/counterparty/api/counterparties/screening/${hitId}/rationale`, "POST", { rationale }, actor),
+  // Config-driven RISK_FLAG catalogue (label / cddImpact / screening severity+score / blocksKyc).
+  riskFlags: () => call<any[]>("/config/api/masters/RISK_FLAG", "GET").catch(() => []),
   resolveUbo: (id: number, body: any, actor: string) =>
     call<any[]>(`/counterparty/api/counterparties/${id}/ubo`, "POST", body, actor),
   ubo: (id: number) => call<any[]>(`/counterparty/api/counterparties/${id}/ubo`, "GET"),

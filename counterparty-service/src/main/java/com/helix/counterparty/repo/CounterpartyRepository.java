@@ -13,4 +13,7 @@ public interface CounterpartyRepository extends JpaRepository<Counterparty, Long
     java.util.List<Counterparty> findByRecordTypeAndLifecycleStatus(String recordType, String lifecycleStatus);
 
     java.util.List<Counterparty> findByKycStatus(String kycStatus);
+
+    /** Rows predating the createdBy column (null) — backfilled from the audit trail at startup. */
+    java.util.List<Counterparty> findByCreatedByIsNull();
 }

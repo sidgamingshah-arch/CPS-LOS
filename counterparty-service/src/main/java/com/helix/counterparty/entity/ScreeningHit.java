@@ -56,12 +56,24 @@ public class ScreeningHit {
     @Column(length = 1000)
     private List<String> matchedAttributes;
 
-    /** AI-generated rationale citing the matched fields (decision-support only). */
+    /** AI-generated rationale citing the matched fields (decision-support only). NULL when no LLM
+     *  is configured — a canned template is NOT fabricated; a named human enters {@link #humanRationale}. */
     // Sensitive free text (names the matched party); never queried — encrypted at rest.
     @Convert(converter = EncryptedStringConverter.class)
     @Lob
     @Column(length = 2000)
     private String aiRationale;
+
+    /** Named-human-authored rationale, recorded when no model drafted one (governed: no simulated text). */
+    // Sensitive free text; never queried — encrypted at rest.
+    @Convert(converter = EncryptedStringConverter.class)
+    @Lob
+    @Column(length = 2000)
+    private String humanRationale;
+
+    /** Provenance of the rationale shown to the user: AI | HUMAN | EXTERNAL | NONE. */
+    @Column(length = 20)
+    private String rationaleSource = "NONE";
 
     @Column(nullable = false, length = 30)
     private String disposition;        // Enums.ScreeningDisposition name

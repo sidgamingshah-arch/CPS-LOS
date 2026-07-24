@@ -863,6 +863,104 @@ export function QuickCreate({
 }
 
 /* ============================================================================
+   Modal — a reusable centered dialog (focus-trapped, Escape-dismissable). Reuses
+   the QuickCreate chrome (.qc-scrim/.qc-modal/.qc-head/.qc-body/.qc-foot). Unlike
+   QuickCreate it renders arbitrary children (used for the full New-counterparty
+   form, which carries risk-flag checkboxes QuickCreate can't express) and is
+   externally-controlled via onClose. `wide` widens it for richer forms.
+   ============================================================================ */
+export function Modal({ title, sub, onClose, wide, children, footer }: {
+  title: React.ReactNode;
+  sub?: React.ReactNode;
+  onClose: () => void;
+  wide?: boolean;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const dlg = dialogRef.current;
+    const focusables = () =>
+      Array.from(dlg?.querySelectorAll<HTMLElement>(
+        'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])',
+      ) ?? []).filter((el) => !el.hasAttribute("disabled"));
+    focusables()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); return; }
+      if (e.key === "Tab") {
+        const els = focusables();
+        if (els.length === 0) return;
+        const first = els[0], last = els[els.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  return (
+    <div className="qc-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`qc-modal${wide ? " wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}
+        ref={dialogRef} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="qc-head">
+          <div><h3 id={titleId}>{title}</h3>{sub && <div className="sub">{sub}</div>}</div>
+          <button className="qc-close" type="button" aria-label="Close" onClick={onClose}>×</button>
+        </div>
+        <div className="qc-body">{children}</div>
+        {footer && <div className="qc-foot">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   Tabs — a lightweight, a11y-correct tab strip (role=tablist/tab, aria-selected,
+   roving tabIndex). Reuses the .chip-row/.chip-toggle pill idiom so no new visual
+   language is introduced. Used to break a busy detail screen into workflow steps.
+   ============================================================================ */
+export function Tabs({ tabs, active, onChange }: {
+  tabs: { key: string; label: React.ReactNode }[];
+  active: string;
+  onChange: (key: string) => void;
+}) {
+  return (
+    <div className="chip-row tabs" role="tablist" aria-label="Sections">
+      {tabs.map((t) => (
+        <button
+          key={t.key} type="button" role="tab" id={`tab-${t.key}`}
+          aria-selected={active === t.key} aria-controls={`tabpanel-${t.key}`}
+          tabIndex={active === t.key ? 0 : -1}
+          className={`chip-toggle${active === t.key ? " on" : ""}`}
+          onClick={() => onChange(t.key)}
+        >{t.label}</button>
+      ))}
+    </div>
+  );
+}
+
+/** Turn an enum/token like RATING_APPROVAL into "Rating approval" for display. */
+export function humanize(s?: string | null): string {
+  if (!s) return "";
+  const t = String(s).replace(/[_-]+/g, " ").trim().toLowerCase();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : "";
+}
+
+/** A small "SIMULATED" marker for stand-in / dummy-integration data (no live external call). */
+export function SimChip({ label = "SIMULATED", title }: { label?: string; title?: string }) {
+  return (
+    <span className="sim-chip" title={title || "Simulated / demo data — no live external system is called. A real feed replaces this at deployment."}>
+      ◑ {label}
+    </span>
+  );
+}
+
+/** A compact hover-info affordance — replaces verbose on-screen design blurbs with a tooltip. */
+export function InfoDot({ text }: { text: string }) {
+  return <span className="info-dot" tabIndex={0} role="note" aria-label={text} title={text}>ⓘ</span>;
+}
+
+/* ============================================================================
    RichText + MarkdownView (gap #58) — an XSS-safe, dependency-free rich-text
    field for free-text / clause / notes inputs. To stay CSP- and XSS-safe with
    NO external library it is a lightweight MARKDOWN editor: a small toolbar
