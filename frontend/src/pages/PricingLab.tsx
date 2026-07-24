@@ -4,9 +4,9 @@
  * pricing produced by the risk engine is never modified.
  */
 import { useState } from "react";
-import { origination, risk, optimiser, fmt } from "../api";
+import { origination, risk, optimiser, config, fmt } from "../api";
 import { useApp } from "../app-context";
-import { Badge, Button, Card, EmptyState, Field, Stat, Unchanged, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, DeterministicBadge, EmptyState, Field, Stat, Unchanged, useAsync } from "../ui";
 
 interface PricingException {
   id: number;
@@ -106,6 +106,25 @@ export default function PricingLab() {
 
   const sum = summaryAsync.data;
   const pricing = sum?.pricing ?? null;
+  const detail = pricing?.detail ?? null;
+  const perFacility: any[] = detail?.perFacility ?? [];
+  const peer = detail?.peer ?? null;
+
+  // Admin: the configured hurdle (flat + any per-segment override) read live from the PRICING
+  // rule pack for this deal's jurisdiction. Editing stays under maker-checker in Rule Packs — this
+  // surface makes the (config-driven, never hardcoded) hurdle visible where pricing is decided.
+  const selectedApp = (apps.data ?? []).find((a: any) => a.reference === ref) ?? null;
+  const jurisdiction: string = selectedApp?.jurisdiction ?? "";
+  const segment: string = selectedApp?.segment ?? "";
+  const pricingPackAsync = useAsync(
+    () => (jurisdiction ? config.pack(jurisdiction, "PRICING").catch(() => null) : Promise.resolve(null)),
+    [jurisdiction],
+  );
+  const pricingPack = pricingPackAsync.data;
+  const hurdleOverrides: Record<string, number> = pricingPack?.payload?.hurdle_raroc_overrides ?? {};
+  const flatHurdle: number | undefined = pricingPack?.payload?.hurdle_raroc;
+  const segmentOverride = segment && hurdleOverrides[segment] != null ? hurdleOverrides[segment] : undefined;
+  const resolvedHurdle = segmentOverride ?? flatHurdle;
 
   const handleOptimise = async () => {
     if (!ref) { notify("Select a deal first", true); return; }
@@ -231,6 +250,138 @@ export default function PricingLab() {
           </div>
         )}
       </Card>
+
+      {/* Dual-approach recommended price: deterministic RAROC price beside the peer benchmark. */}
+      {ref && pricing && (
+        <Card
+          title="Recommended price — two approaches"
+          sub="The deterministic RAROC-based price sits beside the peer/benchmark price. Both are shown; they are never silently blended — a human weighs them."
+          right={<DeterministicBadge label="RAROC · DETERMINISTIC" />}
+        >
+          <div className="grid cols-3">
+            <Stat
+              label="RAROC-based rate"
+              value={<span className="num">{fmt.pct(pricing.recommendedRate)}</span>}
+            />
+            <Stat
+              label="Peer / benchmark rate"
+              value={
+                peer?.available
+                  ? <span className="num">{fmt.pct(peer.peerRate)}</span>
+                  : <span className="muted">—</span>
+              }
+            />
+            <Stat
+              label="RAROC − peer"
+              value={
+                peer?.available
+                  ? <Badge kind={peer.rarocMinusPeerBps >= 0 ? "ok" : "warn"}>
+                      {peer.rarocMinusPeerBps >= 0 ? "+" : ""}{peer.rarocMinusPeerBps} bps
+                    </Badge>
+                  : <span className="muted">n/a</span>
+              }
+            />
+          </div>
+          {peer?.available ? (
+            <div className="prov" style={{ marginTop: 10 }}>
+              Peer source: {peer.source || "—"} · matched key <span className="mono">{peer.matchedKey}</span> ·
+              basis {peer.basis === "ALL_IN_RATE" ? "all-in rate" : "spread over cost of funds"}.
+              {" "}Advisory presentation; the RAROC price above is the deterministic figure of record.
+            </div>
+          ) : (
+            <div className="muted" style={{ marginTop: 10 }}>
+              No PEER_PRICING benchmark configured for this segment/grade/product — showing the RAROC price only (fail-soft).
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Per-facility RAROC pricing — each proposed facility priced on its own EAD/RWA. */}
+      {ref && pricing && perFacility.length > 0 && (
+        <Card
+          title="Per-facility pricing"
+          sub="Each proposed facility priced on its own deterministic EAD + RWA and term-structured funding. The deal aggregate above is the authoritative pricing of record."
+          right={<DeterministicBadge label="PER-FACILITY · DETERMINISTIC" />}
+        >
+          <table>
+            <thead>
+              <tr>
+                <th>Facility</th>
+                <th>Type</th>
+                <th className="num">EAD</th>
+                <th className="num">RWA</th>
+                <th className="num">Recommended rate</th>
+                <th className="num">RAROC</th>
+                <th className="num">Hurdle</th>
+                <th>vs Hurdle</th>
+              </tr>
+            </thead>
+            <tbody>
+              {perFacility.map((f: any) => (
+                <tr key={f.facilityReference}>
+                  <td className="mono">{f.facilityReference}{f.primary && <span className="muted"> · primary</span>}</td>
+                  <td>{f.facilityType}</td>
+                  <td className="num">{fmt.money(f.ead)}</td>
+                  <td className="num">{fmt.money(f.rwa)}</td>
+                  <td className="num">{fmt.pct(f.recommendedRate)}</td>
+                  <td className="num">{fmt.pct(f.raroc)}</td>
+                  <td className="num">{fmt.pct(f.hurdleRaroc)}</td>
+                  <td>
+                    <Badge kind={f.belowHurdle ? "bad" : "ok"}>
+                      {f.belowHurdle ? "Below" : "Meets"}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      {/* Admin: the configurable hurdle RAROC (config-driven, dual-signed in Rule Packs). */}
+      {ref && (
+        <Card
+          title="Hurdle configuration (admin)"
+          sub="The RAROC hurdle is read from the PRICING rule pack — never hardcoded. It is authored under dual sign-off in Rule Packs; this panel makes the active value (and any per-segment override) visible where pricing is decided."
+          right={<AiBadge label="CONFIG · MAKER-CHECKER" />}
+        >
+          {pricingPackAsync.loading && <div className="loading">Loading pricing pack…</div>}
+          {!pricingPackAsync.loading && !pricingPack && (
+            <div className="muted">Pricing pack unavailable for {jurisdiction || "this jurisdiction"}.</div>
+          )}
+          {pricingPack && (
+            <>
+              <div className="grid cols-3">
+                <Stat label="Flat hurdle RAROC" value={<span className="num">{flatHurdle != null ? fmt.pct(flatHurdle) : "—"}</span>} />
+                <Stat
+                  label={`Applies to ${segment || "this deal"}`}
+                  value={<span className="num">{resolvedHurdle != null ? fmt.pct(resolvedHurdle) : "—"}</span>}
+                />
+                <Stat
+                  label="Per-segment override"
+                  value={segmentOverride != null
+                    ? <Badge kind="info">{fmt.pct(segmentOverride)}</Badge>
+                    : <span className="muted">none</span>}
+                />
+              </div>
+              {Object.keys(hurdleOverrides).length > 0 && (
+                <table style={{ marginTop: 10 }}>
+                  <thead><tr><th>Segment</th><th className="num">Hurdle override</th></tr></thead>
+                  <tbody>
+                    {Object.entries(hurdleOverrides).map(([seg, v]) => (
+                      <tr key={seg}><td className="mono">{seg}</td><td className="num">{fmt.pct(v as number)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div className="prov" style={{ marginTop: 10 }}>
+                Source: rule pack <span className="mono">{pricingPack.code} v{pricingPack.version}</span> ·
+                type PRICING · {jurisdiction}. Edit under maker-checker in Rule Packs — changes there flow straight into the RAROC price.
+              </div>
+            </>
+          )}
+        </Card>
+      )}
 
       {!ref && (
         <Card>

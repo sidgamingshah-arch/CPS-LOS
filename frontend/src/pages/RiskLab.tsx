@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { origination, risk, models, fmt } from "../api";
 import { useApp } from "../app-context";
-import { AiBadge, Badge, Button, Card, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
+import { AiBadge, Badge, Button, Card, DeterministicBadge, EmptyState, Field, GradeBadge, GovFlow, GovSplit, HumanBadge, Stat, Unchanged, useAsync } from "../ui";
 import { ExplainCard, type XaiFactor } from "../xai";
 import { useCodes } from "../code-values";
 
@@ -203,6 +203,8 @@ export default function RiskLab() {
 
   const sum = ratingAsync.data;
   const rating = sum?.rating ?? null;
+  const capital = sum?.capital ?? null;
+  const perFacilityCapital: any[] = capital?.trace?.perFacility ?? [];
   const latestRag = (ragAsync.data ?? [])[0] ?? null;
   const latestMacro = (macroAsync.data ?? [])[0] ?? null;
 
@@ -318,6 +320,64 @@ export default function RiskLab() {
               </div>
             }
           />
+        </Card>
+      )}
+
+      {/* Deterministic capital — deal aggregate + per-facility RWA (when multiple facilities). */}
+      {ref && capital && (
+        <Card
+          title="Capital — deterministic RWA"
+          sub="Standardised-approach RWA & capital. Multi-facility deals aggregate a per-facility RWA (each facility's CCF + its linked/apportioned collateral); a single facility is the historical single-figure computation."
+          right={<DeterministicBadge label="CAPITAL · DETERMINISTIC" />}
+        >
+          <div className="grid cols-3">
+            <Stat label="Exposure class" value={capital.exposureClass} />
+            <Stat label="EAD (post-CCF)" value={<span className="num">{fmt.money(capital.ead)}</span>} />
+            <Stat label="Applied risk weight" value={fmt.pct(capital.appliedRiskWeight, 0)} />
+            <Stat label="Secured portion" value={<span className="num">{fmt.money(capital.securedPortion)}</span>} />
+            <Stat label="RWA" value={<span className="num">{fmt.money(capital.rwa)}</span>} />
+            <Stat label="Capital required" value={<span className="num">{fmt.money(capital.capitalRequired)}</span>} />
+          </div>
+
+          {perFacilityCapital.length > 0 ? (
+            <div style={{ marginTop: 12 }}>
+              <div className="prov" style={{ marginBottom: 6 }}>
+                Per-facility RWA (aggregates to the deal RWA above):
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Facility</th>
+                    <th>Type</th>
+                    <th className="num">Amount</th>
+                    <th className="num">CCF</th>
+                    <th className="num">Exposure</th>
+                    <th className="num">Collateral cover</th>
+                    <th className="num">RWA</th>
+                    <th className="num">Capital</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {perFacilityCapital.map((f: any) => (
+                    <tr key={f.facilityReference}>
+                      <td className="mono">{f.facilityReference}</td>
+                      <td>{f.facilityType}</td>
+                      <td className="num">{fmt.money(f.nominalAmount)}</td>
+                      <td className="num">{fmt.num(f.ccf, 2)}</td>
+                      <td className="num">{fmt.money(f.exposureAfterCcf)}</td>
+                      <td className="num">{fmt.money(f.collateralCover)}</td>
+                      <td className="num">{fmt.money(f.rwa)}</td>
+                      <td className="num">{fmt.money(f.capitalRequired)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="muted" style={{ marginTop: 10 }}>
+              Single-facility deal — RWA is the historical single-figure computation (no per-facility split).
+            </div>
+          )}
         </Card>
       )}
 

@@ -490,6 +490,43 @@ public class MasterSeeder implements CommandLineRunner {
         seedProposalFormats();
         seedScoringApprovalPolicy();
         seedAnnexureTypes();
+        seedPeerPricing();
+    }
+
+    // ---------------------------------------------------------------- peer / benchmark pricing
+
+    /**
+     * PEER_PRICING master — the benchmark leg of the dual-approach price. risk-service presents this
+     * deterministic market rate ALONGSIDE the RAROC-based price (never blends them silently); the
+     * human sees both. recordKey degrades most-specific → broadest:
+     * {@code {SEGMENT}:{GRADE}:{PRODUCT}} → {@code {SEGMENT}:{GRADE}} → {@code {SEGMENT}:{PRODUCT}} →
+     * {@code {SEGMENT}} → {@code DEFAULT}. Payload carries an {@code allInRateBps} (absolute all-in
+     * benchmark rate) or a {@code spreadBps} (over the deal's cost of funds), plus a {@code source}.
+     * Purely advisory presentation — no authoritative figure reads this.
+     */
+    private void seedPeerPricing() {
+        // Broadest fallback: a spread over the deal's own cost of funds.
+        masters.seedActive("PEER_PRICING", "DEFAULT", null, map(
+                "spreadBps", 250, "source", "Wholesale syndicated-loan survey 2026 (blended)"));
+        // Segment-level benchmarks (all-in market rates).
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE", null, map(
+                "allInRateBps", 1030, "source", "Mid-corporate primary-loan benchmark 2026"));
+        masters.seedActive("PEER_PRICING", "LARGE_CORPORATE", null, map(
+                "allInRateBps", 920, "source", "Large-corporate primary-loan benchmark 2026"));
+        masters.seedActive("PEER_PRICING", "SME", null, map(
+                "allInRateBps", 1180, "source", "SME primary-loan benchmark 2026"));
+        // Rating-refined mid-corporate benchmarks.
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE:A", null, map(
+                "allInRateBps", 965, "source", "Mid-corporate A-grade benchmark 2026"));
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE:BBB", null, map(
+                "allInRateBps", 1045, "source", "Mid-corporate BBB-grade benchmark 2026"));
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE:BB", null, map(
+                "allInRateBps", 1210, "source", "Mid-corporate BB-grade benchmark 2026"));
+        // Product-refined cells (rating + product) — the most specific keys.
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE:BBB:TERM_LOAN", null, map(
+                "allInRateBps", 1055, "source", "Mid-corporate BBB term-loan benchmark 2026"));
+        masters.seedActive("PEER_PRICING", "MID_CORPORATE:BBB:WORKING_CAPITAL", null, map(
+                "allInRateBps", 995, "source", "Mid-corporate BBB working-capital benchmark 2026"));
     }
 
     // ---------------------------------------------------------------- annexure types

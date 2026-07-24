@@ -52,6 +52,16 @@ public class PricingResult {
     @Column(length = 8000)
     private Map<String, Object> breakdown;
 
+    /**
+     * Additive dual-approach detail (never mutates the authoritative aggregate above): the
+     * per-facility RAROC prices ({@code perFacility}), the resolved {@code hurdle} provenance, and
+     * the {@code peer} benchmark price. Null on older rows / when nothing extra was computed, so the
+     * authoritative recommendedRate/raroc/hurdleRaroc stay byte-identical to the historical shape.
+     */
+    @Convert(converter = JsonAttributeConverters.MapConverter.class)
+    @Column(length = 16000)
+    private Map<String, Object> detail;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;

@@ -165,7 +165,20 @@ public final class Dtos {
                                double requestedAmount, String currency, int tenorMonths, String collateralType,
                                double collateralValue, boolean secured, boolean spreadConfirmed,
                                Map<String, Double> latestFinancials, Map<String, Double> ratios,
-                               Map<String, Double> trends) {
+                               Map<String, Double> trends,
+                               // Additive: the full proposed-facility list + collateral cover so risk-service
+                               // can capitalise & price PER FACILITY (2+ facilities) and aggregate. Single /
+                               // absent → risk keeps the single requestedAmount path (byte-identical).
+                               List<CreditFacility> facilities, List<CreditCollateral> collaterals) {
+    }
+
+    /** One proposed facility in the credit-inputs snapshot (ref/type/amount + linkage id). */
+    public record CreditFacility(Long id, String reference, String facilityType, double amount,
+                                 String currency, int tenorMonths, boolean primary) {
+    }
+
+    /** One collateral item; {@code facilityId} links it to a facility, else it pools to the deal. */
+    public record CreditCollateral(Long facilityId, String collateralType, double marketValue) {
     }
 
     /** Full deal envelope used by credit proposal generation (decision-service). */
