@@ -27,6 +27,7 @@ import com.helix.origination.dto.Dtos.DealEnvelope;
 import com.helix.origination.dto.Dtos.FacilityView;
 import com.helix.origination.dto.Dtos.InterchangeabilityGroupView;
 import com.helix.origination.dto.Dtos.OverrideRequest;
+import com.helix.origination.dto.Dtos.PeriodFinancials;
 import com.helix.origination.dto.Dtos.SublimitView;
 import com.helix.origination.dto.Dtos.PeriodAnalysis;
 import com.helix.origination.dto.Dtos.SpreadAnalysis;
@@ -1473,9 +1474,21 @@ public class OriginationService {
         Map<String, Double> latest = creditInputs(reference).latestFinancials();
         Map<String, Double> ratios = creditInputs(reference).ratios();
 
+        // Multi-period trend feed (latest first, ordinal-ascending == most-recent-first, matching the
+        // authoritative latest-period selection). Native line values quoted verbatim — no recomputation;
+        // a CAM's financial-trend section renders these, the figure path is untouched.
+        List<PeriodFinancials> periodFin = new ArrayList<>();
+        for (FinancialPeriod p : periods.findByApplicationIdOrderByOrdinalAsc(app.getId())) {
+            Map<String, Double> values = new LinkedHashMap<>();
+            for (SpreadCell c : cells.findByPeriodId(p.getId())) {
+                values.put(c.getTaxonomyKey(), c.getValue());
+            }
+            periodFin.add(new PeriodFinancials(p.getLabel(), p.getCurrency(), values));
+        }
+
         return new DealEnvelope(reference, app.getCounterpartyName(), app.getJurisdiction(), app.getSegment(),
                 totalProposed, app.getCurrency(), app.getTenorMonths(),
-                facViews, colViews, totalCover, latest, ratios);
+                facViews, colViews, totalCover, latest, ratios, periodFin);
     }
 
     // ----------------------------------------------------- sublimits (multi)

@@ -14,6 +14,9 @@ public interface PerfectionCaseRepository extends JpaRepository<PerfectionCase, 
 
     List<PerfectionCase> findBySubjectRefOrderByIdDesc(String subjectRef);
 
+    /** Perfection cases linked to a deal — drives the credit-proposal security/perfection section. */
+    List<PerfectionCase> findByApplicationRefOrderByIdDesc(String applicationRef);
+
     List<PerfectionCase> findByStatusOrderByIdDesc(String status);
 
     /** Drives the OPTIONAL, DEFAULT-OFF limit-release gate. */

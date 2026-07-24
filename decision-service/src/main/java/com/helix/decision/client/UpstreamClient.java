@@ -100,7 +100,15 @@ public class UpstreamClient {
                                   String segment, double totalProposedAmount, String currency, int tenorMonths,
                                   List<FacilityViewDto> facilities, List<CollateralViewDto> collaterals,
                                   double totalCollateralCover, Map<String, Double> latestFinancials,
-                                  Map<String, Double> ratios) {
+                                  Map<String, Double> ratios,
+                                  /** Multi-period spread financials (latest first) for the MULTI-YEAR trend
+                                   *  section. Null/empty when the upstream is older or the spread has no
+                                   *  periods — the section degrades gracefully. */
+                                  List<PeriodFinancialsDto> periodFinancials) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record PeriodFinancialsDto(String label, String currency, Map<String, Double> values) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
