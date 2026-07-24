@@ -6,6 +6,7 @@ import com.helix.origination.dto.SyndicationDtos.AllocationResult;
 import com.helix.origination.dto.SyndicationDtos.CreateImRequest;
 import com.helix.origination.dto.SyndicationDtos.ImSectionRequest;
 import com.helix.origination.dto.SyndicationDtos.SyndicateBook;
+import com.helix.origination.dto.SyndicationDtos.SyndicatedDealSummary;
 import com.helix.origination.entity.InformationMemorandum;
 import com.helix.origination.entity.SecondaryTransfer;
 import com.helix.origination.entity.SyndicationAllocation;
@@ -40,6 +41,15 @@ public class SyndicationController {
     public SyndicationController(SyndicationService syndication, InformationMemorandumService memoranda) {
         this.syndication = syndication;
         this.memoranda = memoranda;
+    }
+
+    /**
+     * Every SYNDICATION-structured deal, summarised — lets a picker list ONLY syndicated
+     * deals (reference, borrower, total commitment, #lenders) instead of the whole app list.
+     */
+    @GetMapping("/deals")
+    public List<SyndicatedDealSummary> syndicatedDeals() {
+        return syndication.syndicatedDeals();
     }
 
     /** Full syndicate book — lenders, shares, fee waterfall, funded-to-date. */

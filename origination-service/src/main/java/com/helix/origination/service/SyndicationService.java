@@ -12,6 +12,7 @@ import com.helix.origination.dto.SyndicationDtos.AllocationResult;
 import com.helix.origination.dto.SyndicationDtos.FeeBreakdown;
 import com.helix.origination.dto.SyndicationDtos.LenderLine;
 import com.helix.origination.dto.SyndicationDtos.SyndicateBook;
+import com.helix.origination.dto.SyndicationDtos.SyndicatedDealSummary;
 import com.helix.origination.entity.DealParticipant;
 import com.helix.origination.entity.DealStructure;
 import com.helix.origination.entity.LoanApplication;
@@ -83,6 +84,29 @@ public class SyndicationService {
         this.masters = masters;
         this.audit = audit;
         this.mapper = mapper;
+    }
+
+    // ============================================================ syndicated-deal discovery
+
+    /**
+     * Every SYNDICATION-structured deal, summarised for a picker (reference, borrower,
+     * total captured commitment, lender count). Lets the UI offer ONLY syndicated deals
+     * instead of the whole application list. Read-only and fail-soft — a deal whose
+     * application row is missing still lists (borrower/currency fall back gracefully).
+     */
+    @Transactional(readOnly = true)
+    public List<SyndicatedDealSummary> syndicatedDeals() {
+        List<SyndicatedDealSummary> out = new ArrayList<>();
+        for (DealStructure s : structures.findByStructureType("SYNDICATION")) {
+            String ref = s.getApplicationReference();
+            List<DealParticipant> lenders = lenders(ref);
+            double totalCommitment = lenders.stream().mapToDouble(DealParticipant::getCommittedAmount).sum();
+            LoanApplication app = applications.findByReference(ref).orElse(null);
+            String borrower = app != null ? app.getCounterpartyName() : ref;
+            String currency = app != null ? app.getCurrency() : "INR";
+            out.add(new SyndicatedDealSummary(ref, borrower, currency, round2(totalCommitment), lenders.size()));
+        }
+        return out;
     }
 
     // ============================================================ syndicate book
