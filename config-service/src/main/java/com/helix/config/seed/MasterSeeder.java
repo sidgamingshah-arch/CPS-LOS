@@ -1058,12 +1058,14 @@ public class MasterSeeder implements CommandLineRunner {
                 "selector", map(),
                 "horizonYears", 5,
                 "drivers", java.util.List.of(
-                        projDriver("revenue_growth", "Revenue growth (YoY)", 0.10),
-                        projDriver("ebitda_margin", "EBITDA margin", 0.18),
-                        projDriver("interest_rate", "Interest rate on debt", 0.09),
-                        projDriver("amortisation_pct", "Debt amortisation / yr", 0.15),
-                        projDriver("tax_rate", "Tax rate", 0.25),
-                        projDriver("capex_pct_revenue", "Capex (% revenue)", 0.05)),
+                        // The 4th arg is the Monte-Carlo volatility (σ-fraction), calibrated from
+                        // industry feed / peer stats / historical trend — inert for the deterministic proforma.
+                        projDriver("revenue_growth", "Revenue growth (YoY)", 0.10, 0.35),
+                        projDriver("ebitda_margin", "EBITDA margin", 0.18, 0.15),
+                        projDriver("interest_rate", "Interest rate on debt", 0.09, 0.12),
+                        projDriver("amortisation_pct", "Debt amortisation / yr", 0.15, 0.10),
+                        projDriver("tax_rate", "Tax rate", 0.25, 0.05),
+                        projDriver("capex_pct_revenue", "Capex (% revenue)", 0.05, 0.30)),
                 "lines", java.util.List.of(
                         projLine("REVENUE", "Revenue", "prev_REVENUE * (1 + revenue_growth)", "REVENUE"),
                         projLine("EBITDA", "EBITDA", "REVENUE * ebitda_margin", "EBITDA"),
@@ -1079,6 +1081,11 @@ public class MasterSeeder implements CommandLineRunner {
 
     private Map<String, Object> projDriver(String key, String label, double dflt) {
         return map("key", key, "label", label, "defaultValue", dflt);
+    }
+
+    /** Projection driver with a Monte-Carlo {@code volatility} (σ-fraction) for the stochastic overlay. */
+    private Map<String, Object> projDriver(String key, String label, double dflt, double volatility) {
+        return map("key", key, "label", label, "defaultValue", dflt, "volatility", volatility);
     }
 
     /** A projected line. {@code seedFrom} names the base-year actual line that seeds prev_/base_ (null = computed only). */

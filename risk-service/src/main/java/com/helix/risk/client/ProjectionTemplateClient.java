@@ -30,7 +30,12 @@ public class ProjectionTemplateClient {
         this.config = RestClient.builder().baseUrl(baseUrl).build();
     }
 
-    public record Driver(String key, String label, double defaultValue) { }
+    /**
+     * A driver assumption. {@code volatility} is the fractional standard deviation used by the
+     * Monte-Carlo simulation (σ = |mean| × volatility), calibrated from industry / peer / historical
+     * inputs; absent in the template → a conservative default. Inert for the deterministic proforma.
+     */
+    public record Driver(String key, String label, double defaultValue, double volatility) { }
 
     public record Line(String key, String label, String formula, String seedFrom) { }
 
@@ -68,8 +73,10 @@ public class ProjectionTemplateClient {
         if (p.get("drivers") instanceof List<?> l) {
             for (Object o : l) if (o instanceof Map<?, ?> m) {
                 Object dv = m.get("defaultValue");
+                Object vol = m.get("volatility");
                 drivers.add(new Driver(str(m.get("key")), str(m.get("label")),
-                        dv instanceof Number n ? n.doubleValue() : 0.0));
+                        dv instanceof Number n ? n.doubleValue() : 0.0,
+                        vol instanceof Number vn ? vn.doubleValue() : 0.15));
             }
         }
         List<Line> lines = new ArrayList<>();

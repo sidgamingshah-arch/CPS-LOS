@@ -25,6 +25,29 @@ public class ProjectionDtos {
 
     public record SensitivityRequest(String driver, Double delta) { }
 
+    // ---- Monte-Carlo simulation (advisory ML overlay; never moves authoritative figures) ----
+
+    /** One driver's simulated distribution: mean (effective value) + σ-fraction + calibration sources. */
+    public record MonteCarloDriver(String key, String label, double mean, double volatility,
+                                   List<String> sources) { }
+
+    /** Final-year distribution stats for one projected line. */
+    public record LineStat(String line, String label, double p10, double p50, double p90, double mean) { }
+
+    /**
+     * Monte-Carlo projection result: N stochastic runs of the deterministic per-line proforma with
+     * drivers sampled from their calibrated distributions. Headline is the final-year DSCR band +
+     * breach probability. Advisory — the authoritative grade/capital/pricing are untouched.
+     */
+    public record MonteCarloView(String applicationReference, String templateKey, int templateVersion,
+                                 int horizonYears, int iterations, long seed, boolean advisory,
+                                 List<MonteCarloDriver> drivers,
+                                 double dscrP10, double dscrP50, double dscrP90, double dscrMean,
+                                 double dscrBreachProbability,
+                                 List<LineStat> finalYearLines,
+                                 String authoritativeGrade, boolean gradeUnchanged,
+                                 List<String> methodologyNotes) { }
+
     /** Sensitivity: base vs a driver flexed by delta — the headline is the final-year DSCR move. */
     public record SensitivityView(String driver, double delta,
                                   double baseValue, double flexedValue,

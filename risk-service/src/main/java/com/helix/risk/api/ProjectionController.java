@@ -1,6 +1,7 @@
 package com.helix.risk.api;
 
 import com.helix.risk.dto.ProjectionDtos.DriverOverrideRequest;
+import com.helix.risk.dto.ProjectionDtos.MonteCarloView;
 import com.helix.risk.dto.ProjectionDtos.ProjectionView;
 import com.helix.risk.dto.ProjectionDtos.SensitivityRequest;
 import com.helix.risk.dto.ProjectionDtos.SensitivityView;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -53,5 +55,17 @@ public class ProjectionController {
     public ProjectionView confirm(@PathVariable String reference,
                                   @RequestHeader("X-Actor") String actor) {
         return projections.confirm(reference, actor);
+    }
+
+    /**
+     * Monte-Carlo simulation over the per-line projection drivers (advisory ML overlay): final-year
+     * DSCR P10/P50/P90 + covenant-breach probability + per-line distribution. Governed by the
+     * MONTE_CARLO capability; never moves the authoritative rating/capital/pricing.
+     */
+    @PostMapping("/{reference}/projection/simulate")
+    public MonteCarloView simulate(@PathVariable String reference,
+                                   @RequestParam(value = "iterations", required = false) Integer iterations,
+                                   @RequestHeader(value = "X-Actor", defaultValue = "risk.analyst") String actor) {
+        return projections.simulate(reference, iterations, actor);
     }
 }
