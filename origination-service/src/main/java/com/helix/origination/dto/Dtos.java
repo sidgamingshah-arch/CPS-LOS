@@ -173,7 +173,15 @@ public final class Dtos {
             String applicationReference, String counterpartyName, String jurisdiction, String segment,
             double totalProposedAmount, String currency, int tenorMonths,
             List<FacilityView> facilities, List<CollateralView> collaterals, double totalCollateralCover,
-            Map<String, Double> latestFinancials, Map<String, Double> ratios) {
+            Map<String, Double> latestFinancials, Map<String, Double> ratios,
+            /** Multi-period spread financials (latest first), so a CAM can render a MULTI-YEAR trend
+             *  table without recomputing anything — each period's native line values, quoted verbatim.
+             *  Additive field; consumers that ignore it see byte-identical behaviour. */
+            List<PeriodFinancials> periodFinancials) {
+    }
+
+    /** One period's native line values for the multi-year trend table (verbatim spread cells). */
+    public record PeriodFinancials(String label, String currency, Map<String, Double> values) {
     }
 
     public record FacilityView(Long id, String reference, int ordinal, boolean primary,

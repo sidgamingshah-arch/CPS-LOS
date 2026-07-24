@@ -9,14 +9,29 @@ import com.helix.decision.client.UpstreamClient;
 import com.helix.decision.client.UpstreamClient.DealEnvelopeDto;
 import com.helix.decision.client.UpstreamClient.MasterRecordDto;
 import com.helix.decision.client.UpstreamClient.RiskSummaryDto;
+import com.helix.decision.client.UpstreamClient.PeriodFinancialsDto;
 import com.helix.decision.dto.GroupDtos.GroupInsights;
 import com.helix.decision.dto.GroupDtos.GroupMemberInsight;
+import com.helix.decision.entity.Annexure;
+import com.helix.decision.entity.CadCase;
+import com.helix.decision.entity.ChecklistItem;
+import com.helix.decision.entity.ConditionPrecedent;
 import com.helix.decision.entity.Covenant;
 import com.helix.decision.entity.CreditDecision;
 import com.helix.decision.entity.CreditProposal;
+import com.helix.decision.entity.Deviation;
+import com.helix.decision.entity.PerfectionCase;
+import com.helix.decision.entity.PerfectionStep;
+import com.helix.decision.repo.AnnexureRepository;
+import com.helix.decision.repo.CadCaseRepository;
+import com.helix.decision.repo.ChecklistItemRepository;
+import com.helix.decision.repo.ConditionPrecedentRepository;
 import com.helix.decision.repo.CovenantRepository;
 import com.helix.decision.repo.CreditDecisionRepository;
 import com.helix.decision.repo.CreditProposalRepository;
+import com.helix.decision.repo.DeviationRepository;
+import com.helix.decision.repo.PerfectionCaseRepository;
+import com.helix.decision.repo.PerfectionStepRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +41,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -45,11 +61,24 @@ public class CreditProposalService {
     private final GroupInsightsService groupInsights;
     private final AuditService audit;
     private final LlmClient llm;
+    // Local grounding sources for the richer bank-CAM sections (all read-only here).
+    private final DeviationRepository deviations;
+    private final CadCaseRepository cadCases;
+    private final ChecklistItemRepository checklistItems;
+    private final ConditionPrecedentRepository conditionPrecedents;
+    private final AnnexureRepository annexures;
+    private final PerfectionCaseRepository perfectionCases;
+    private final PerfectionStepRepository perfectionSteps;
 
     public CreditProposalService(CreditProposalRepository proposals, CovenantRepository covenants,
                                  CreditDecisionRepository decisions, UpstreamClient upstream,
                                  GroupInsightsService groupInsights, AuditService audit,
-                                 LlmClient llm) {
+                                 LlmClient llm,
+                                 DeviationRepository deviations, CadCaseRepository cadCases,
+                                 ChecklistItemRepository checklistItems,
+                                 ConditionPrecedentRepository conditionPrecedents,
+                                 AnnexureRepository annexures, PerfectionCaseRepository perfectionCases,
+                                 PerfectionStepRepository perfectionSteps) {
         this.proposals = proposals;
         this.covenants = covenants;
         this.decisions = decisions;
@@ -57,6 +86,13 @@ public class CreditProposalService {
         this.groupInsights = groupInsights;
         this.audit = audit;
         this.llm = llm;
+        this.deviations = deviations;
+        this.cadCases = cadCases;
+        this.checklistItems = checklistItems;
+        this.conditionPrecedents = conditionPrecedents;
+        this.annexures = annexures;
+        this.perfectionCases = perfectionCases;
+        this.perfectionSteps = perfectionSteps;
     }
 
     /** No-format entry point — resolves the deal-segment default (else STANDARD). Byte-identical to
@@ -420,6 +456,21 @@ public class CreditProposalService {
             case "dscr_waterfall" -> secDscrWaterfall(md, ctx);
             case "rent_roll" -> secRentRoll(md, ctx);
             case "scf_program" -> secScfProgram(md, ctx);
+            // richer bank-CAM sections — grounded where data exists, else advisory prose / graceful note.
+            // None of these produce or mutate an authoritative figure; every figure is quoted verbatim.
+            case "borrower_background" -> secBorrowerBackground(md, ctx);
+            case "management" -> secBorrowerBackground(md, ctx);   // alias — company & management overview
+            case "industry_outlook" -> secIndustryOutlook(md, ctx);
+            case "financial_trend" -> secFinancialTrend(md, ctx);
+            case "key_risks_mitigants" -> secKeyRisksMitigants(md, ctx);
+            case "security_perfection" -> secSecurityPerfection(md, ctx);
+            case "account_conduct" -> secAccountConduct(md, ctx);
+            case "deviations" -> secDeviations(md, ctx);
+            case "raroc_profitability" -> secRarocProfitability(md, ctx);
+            case "esg" -> secEsg(md, ctx);
+            case "conditions" -> secConditions(md, ctx);
+            case "recommendation" -> secRecommendation(md, ctx);
+            case "regulatory_compliance" -> secRegulatoryCompliance(md, ctx);
             default -> { /* unknown key — skip */ }
         }
     }
@@ -647,6 +698,334 @@ public class CreditProposalService {
     private static void putMoney(Map<String, String> kv, Map<String, Double> vals, String key, String label, String ccy) {
         Double v = vals == null ? null : vals.get(key);
         if (v != null) kv.put(label, money(v, ccy));
+    }
+
+    // ---- richer bank-CAM section builders -------------------------------------------------------
+    // Each is GROUNDED where the data exists (envelope / risk summary / local CAD·CP·perfection·
+    // annexure records) and degrades to an ADVISORY prose narrative or a short "not available" line
+    // otherwise. NONE mutates or produces an authoritative figure — every figure is quoted verbatim,
+    // and the advisory narrative is prose-only and fail-soft (no provider ⇒ deterministic content).
+
+    /** Company & management overview. Also aliased from the {@code management} key. */
+    private void secBorrowerBackground(Md md, Ctx ctx) {
+        DealEnvelopeDto env = ctx.env();
+        md.h2("Borrower background & management (advisory)");
+        md.bullets(
+                bullet("Borrower", nv(env.counterpartyName())),
+                bullet("Jurisdiction · segment", nv(env.jurisdiction()) + " · " + nv(env.segment())),
+                bullet("Proposed total exposure", money(env.totalProposedAmount(), env.currency())),
+                bullet("Facility lines", String.valueOf(env.facilities() == null ? 0 : env.facilities().size())),
+                bullet("Indicative tenor", env.tenorMonths() + " months"));
+        LlmResult n = advisoryNarrative("proposal-borrower-background",
+                "Summarise the borrower's business profile and management standing at a high level.",
+                "Borrower: " + nv(env.counterpartyName()) + "; jurisdiction/segment: " + nv(env.jurisdiction())
+                        + " / " + nv(env.segment()) + "; proposed exposure "
+                        + money(env.totalProposedAmount(), env.currency()) + " over " + env.tenorMonths() + " months.");
+        if (n.usable()) md.line(n.text().strip());
+        else md.muted("Company & management narrative to be completed by the RM (no AI narrative provider configured).");
+    }
+
+    /** Sector view — grounded from a SECTOR_OUTLOOK master when seeded, else advisory prose. */
+    private void secIndustryOutlook(Md md, Ctx ctx) {
+        DealEnvelopeDto env = ctx.env();
+        md.h2("Industry outlook (advisory)");
+        Map<String, Object> outlook = sectorOutlook(env.segment());
+        if (outlook != null && !outlook.isEmpty()) {
+            md.muted("Sourced from the SECTOR_OUTLOOK master (config-as-data) for segment " + nv(env.segment()) + ".");
+            Map<String, String> kv = new LinkedHashMap<>();
+            for (String k : List.of("stance", "outlook", "summary", "headwinds", "tailwinds", "view")) {
+                Object v = outlook.get(k);
+                if (v != null && !String.valueOf(v).isBlank()) kv.put(cap(k), String.valueOf(v));
+            }
+            if (!kv.isEmpty()) { md.kvBlock(kv); return; }
+        }
+        LlmResult n = advisoryNarrative("proposal-industry-outlook",
+                "Give a brief, balanced sector view (demand-supply, regulation, key headwinds/tailwinds) for the borrower's segment.",
+                "Segment: " + nv(env.segment()) + "; jurisdiction: " + nv(env.jurisdiction()) + ".");
+        if (n.usable()) md.line(n.text().strip());
+        else md.muted("Sector outlook not available — no SECTOR_OUTLOOK master seeded and no AI narrative provider configured. Attach the industry-scenario annexure manually.");
+    }
+
+    /** MULTI-YEAR spread trend. Renders a period-over-period table when the spread has &gt;1 period. */
+    private void secFinancialTrend(Md md, Ctx ctx) {
+        DealEnvelopeDto env = ctx.env();
+        md.h2("Financial trend (multi-year)");
+        md.line("_Figures quoted verbatim from the deal's confirmed spread — no figure is recomputed here._");
+        List<PeriodFinancialsDto> ps = env.periodFinancials();
+        if (ps == null || ps.isEmpty()) {
+            Map<String, String> latest = format(env.latestFinancials(), TREND_LINES);
+            if (latest.isEmpty()) md.line("_No spread on record — financial trend not available._");
+            else { md.muted("Single-period snapshot only (no multi-period spread captured)."); md.kvBlock(latest); }
+            return;
+        }
+        List<String> metrics = new ArrayList<>();
+        for (var e : TREND_LINES.entrySet()) {
+            boolean any = ps.stream().anyMatch(p -> p.values() != null && p.values().get(e.getKey()) != null);
+            if (any) metrics.add(e.getKey());
+        }
+        if (metrics.isEmpty()) { md.line("_Spread present but no comparable line items across periods._"); return; }
+        String[] header = new String[ps.size() + 1];
+        header[0] = "Metric";
+        for (int i = 0; i < ps.size(); i++) {
+            PeriodFinancialsDto p = ps.get(i);
+            header[i + 1] = (p.label() == null ? "P" + i : p.label())
+                    + (p.currency() == null ? "" : " (" + p.currency() + ")");
+        }
+        md.table(header);
+        for (String key : metrics) {
+            String[] cells = new String[ps.size() + 1];
+            cells[0] = TREND_LINES.get(key);
+            for (int i = 0; i < ps.size(); i++) {
+                Double v = ps.get(i).values() == null ? null : ps.get(i).values().get(key);
+                cells[i + 1] = v == null ? "—" : String.format(Locale.UK, "%,.0f", v);
+            }
+            md.row(cells);
+        }
+        if (ps.size() == 1) md.muted("Only one period on record — add prior-year comparatives to the spread for a fuller trend.");
+    }
+
+    /** Key risks (derived from the authoritative figures — quoted, never recomputed) + advisory mitigants. */
+    private void secKeyRisksMitigants(Md md, Ctx ctx) {
+        DealEnvelopeDto env = ctx.env();
+        RiskSummaryDto rs = ctx.rs();
+        md.h2("Key risks & mitigants (advisory)");
+        List<String> risks = new ArrayList<>();
+        if (rs.pricing() != null && rs.pricing().belowHurdle()) {
+            risks.add("Return below hurdle — RAROC " + pct(rs.pricing().raroc()) + " vs hurdle "
+                    + pct(rs.pricing().hurdleRaroc()) + " (escalation required).");
+        }
+        if (rs.rating() != null && rs.rating().overridden()) {
+            risks.add("Rating override applied — model " + nv(rs.rating().modelGrade()) + " → final "
+                    + nv(rs.rating().finalGrade()) + "; ensure the override rationale is on file.");
+        }
+        Map<String, Double> ratios = env.ratios();
+        Double dscr = ratios == null ? null : ratios.get("DSCR");
+        if (dscr != null && dscr < 1.25) risks.add("Thin debt-service cover — DSCR " + String.format(Locale.UK, "%.2f", dscr) + "x (< 1.25x).");
+        Double lev = ratios == null ? null : ratios.get("NET_LEVERAGE");
+        if (lev != null && lev > 4.0) risks.add("Elevated leverage — net leverage " + String.format(Locale.UK, "%.2f", lev) + "x (> 4.0x).");
+        Double icr = ratios == null ? null : ratios.get("INTEREST_COVERAGE");
+        if (icr != null && icr < 2.0) risks.add("Weak interest cover — " + String.format(Locale.UK, "%.2f", icr) + "x (< 2.0x).");
+        if (env.collaterals() == null || env.collaterals().isEmpty()) risks.add("Unsecured — no collateral recorded against the exposure.");
+        if (risks.isEmpty()) {
+            md.line("_No material risk flags derived from the deterministic figures. Complete the qualitative risk assessment manually._");
+        } else {
+            md.line("Risk flags derived from the authoritative figures (advisory — quoted, not recomputed):");
+            for (String r : risks) md.line("- " + r);
+        }
+        LlmResult n = advisoryNarrative("proposal-key-risks",
+                "Given the derived risk flags, suggest standard mitigants (covenants, security, monitoring). Do not add new risks or figures.",
+                "Risk flags: " + (risks.isEmpty() ? "none material" : String.join("; ", risks)) + ".");
+        if (n.usable()) { md.line("**Mitigants (advisory):**"); md.line(n.text().strip()); }
+    }
+
+    /** Perfection / CERSAI detail — envelope collateral perfection status + local perfection cases/steps. */
+    private void secSecurityPerfection(Md md, Ctx ctx) {
+        DealEnvelopeDto env = ctx.env();
+        md.h2("Security & perfection status");
+        boolean any = false;
+        if (env.collaterals() != null && !env.collaterals().isEmpty()) {
+            any = true;
+            md.table(new String[]{"Type", "Description", "Effective value", "Perfection"});
+            for (var c : env.collaterals()) {
+                md.row(c.collateralType(), nv(c.description()), money(c.effectiveValue(), env.currency()),
+                        nv(c.perfectionStatus()));
+            }
+        }
+        for (PerfectionCase pc : perfectionCases.findByApplicationRefOrderByIdDesc(env.applicationReference())) {
+            any = true;
+            md.line("**Perfection case " + pc.getPerfRef() + "** · " + nv(pc.getSubjectType()) + " "
+                    + nv(pc.getSubjectRef()) + " · status " + nv(pc.getStatus()));
+            List<PerfectionStep> steps = perfectionSteps.findByCaseRefOrderByStepOrderAsc(pc.getPerfRef());
+            if (!steps.isEmpty()) {
+                md.table(new String[]{"Step", "Owner role", "Status"});
+                for (PerfectionStep s : steps) md.row(nv(s.getTitle()), nv(s.getOwnerRole()), nv(s.getStatus()));
+            }
+        }
+        if (!any) md.line("_Unsecured / no collateral or perfection case on record._");
+    }
+
+    /** Banking account-conduct summary — sourced from a feed not wired here; graceful placeholder. */
+    private void secAccountConduct(Md md, Ctx ctx) {
+        md.h2("Account conduct (banking summary)");
+        md.muted("Account-conduct / ASR (account-statement-review) data is sourced from the core-banking conduct feed, "
+                + "which is not wired into this proposal build. Attach the banking-conduct summary manually — no figure is asserted here.");
+    }
+
+    /** Deviations & justifications — CAD waivers/deviations + any routing deviations. */
+    private void secDeviations(Md md, Ctx ctx) {
+        DealEnvelopeDto env = ctx.env();
+        CreditDecision dec = ctx.dec();
+        md.h2("Deviations & justifications");
+        boolean any = false;
+        Optional<CadCase> cad = cadCases.findFirstByApplicationRefOrderByIdDesc(env.applicationReference());
+        if (cad.isPresent()) {
+            List<Deviation> devs = deviations.findByCadCaseIdOrderByCreatedAtDesc(cad.get().getId());
+            if (!devs.isEmpty()) {
+                any = true;
+                md.table(new String[]{"Type", "Checklist item", "Justification", "Status", "L1", "L2"});
+                for (Deviation d : devs) {
+                    String item = checklistItems.findById(d.getChecklistItemId())
+                            .map(ChecklistItem::getDescription).orElse("#" + d.getChecklistItemId());
+                    md.row(nv(d.getType()), item, nv(d.getReason()), nv(d.getStatus()),
+                            nv(d.getApproverL1()), nv(d.getApproverL2()));
+                }
+            }
+        }
+        if (dec != null && dec.getDeviations() != null && !dec.getDeviations().isEmpty()) {
+            any = true;
+            md.line("Routing deviations recorded at decision:");
+            for (String s : dec.getDeviations()) md.line("- " + s);
+        }
+        if (!any) md.line("_No deviations or waivers recorded._");
+    }
+
+    /** RAROC + profitability posture, quoted verbatim from the pricing engine. */
+    private void secRarocProfitability(Md md, Ctx ctx) {
+        RiskSummaryDto rs = ctx.rs();
+        md.h2("RAROC & profitability (advisory)");
+        if (rs.pricing() == null) { md.line("_Pricing not yet run — RAROC unavailable._"); return; }
+        Map<String, String> kv = new LinkedHashMap<>();
+        kv.put("Recommended rate", pct(rs.pricing().recommendedRate()));
+        kv.put("RAROC", pct(rs.pricing().raroc()));
+        kv.put("Hurdle RAROC", pct(rs.pricing().hurdleRaroc()));
+        kv.put("Status", rs.pricing().belowHurdle() ? "Below hurdle — escalate" : "Clears hurdle");
+        md.kvBlock(kv);
+        md.muted("Ancillary / fee income is not separately captured in the pricing-engine feed; the RAROC above is the "
+                + "risk-adjusted return on the funded exposure, quoted verbatim from risk-service.");
+    }
+
+    /** ESG assessment — reuses an attached ESG annexure if present, else advisory prose. */
+    private void secEsg(Md md, Ctx ctx) {
+        DealEnvelopeDto env = ctx.env();
+        md.h2("ESG assessment (advisory)");
+        Annexure esg = null;
+        for (Annexure a : annexures.findBySubjectRefOrderByIdDesc(env.applicationReference())) {
+            if ("ESG_ASSESSMENT".equalsIgnoreCase(a.getAnnexureType())) { esg = a; break; }
+        }
+        if (esg != null) {
+            md.muted("Sourced from ESG annexure " + esg.getAnnexureRef() + " · status " + esg.getStatus()
+                    + (esg.isAdvisory() ? " · advisory" : "") + ".");
+            Map<String, Object> sections = esg.getSections();
+            if (sections != null && !sections.isEmpty()) {
+                Map<String, String> kv = new LinkedHashMap<>();
+                sections.forEach((k, v) -> {
+                    if (v != null && !String.valueOf(v).isBlank()) kv.put(cap(k), String.valueOf(v));
+                });
+                if (!kv.isEmpty()) { md.kvBlock(kv); return; }
+            }
+            md.line("_ESG annexure attached but not yet authored._");
+            return;
+        }
+        LlmResult n = advisoryNarrative("proposal-esg",
+                "Give a brief environmental / social / governance risk view for the borrower's segment.",
+                "Borrower: " + nv(env.counterpartyName()) + "; segment: " + nv(env.segment())
+                        + "; jurisdiction: " + nv(env.jurisdiction()) + ".");
+        if (n.usable()) md.line(n.text().strip());
+        else md.muted("ESG assessment not available — no ESG annexure attached and no AI narrative provider configured.");
+    }
+
+    /** Conditions precedent / subsequent — the CP register + any conditions attached at decision. */
+    private void secConditions(Md md, Ctx ctx) {
+        DealEnvelopeDto env = ctx.env();
+        CreditDecision dec = ctx.dec();
+        md.h2("Conditions precedent & subsequent");
+        boolean any = false;
+        List<ConditionPrecedent> cps = conditionPrecedents.findByApplicationReferenceOrderByIdAsc(env.applicationReference());
+        if (!cps.isEmpty()) {
+            any = true;
+            md.table(new String[]{"Code", "Condition", "Facility", "Mandatory", "Status"});
+            for (ConditionPrecedent cp : cps) {
+                md.row(nv(cp.getCode()), nv(cp.getTitle()), nv(cp.getFacilityRef()),
+                        cp.isMandatory() ? "Yes" : "No", nv(cp.getStatus()));
+            }
+        }
+        if (dec != null && dec.getConditions() != null && !dec.getConditions().isEmpty()) {
+            any = true;
+            md.line("Conditions attached at decision:");
+            for (String s : dec.getConditions()) md.line("- " + s);
+        }
+        if (!any) md.line("_No conditions precedent or subsequent registered._");
+    }
+
+    /** RM recommendation — reports the named-human decision (never substitutes an AI decision). */
+    private void secRecommendation(Md md, Ctx ctx) {
+        CreditDecision dec = ctx.dec();
+        md.h2("Recommendation");
+        if (dec == null) { md.line("_Pending routing and the named-human recommendation._"); return; }
+        if (dec.getOutcome() != null) {
+            md.line("Decision: **" + dec.getOutcome() + "** by " + nv(dec.getDecidedBy())
+                    + (dec.getDeciderRole() == null ? "" : " (" + dec.getDeciderRole() + ")") + ".");
+            if (dec.getRationale() != null && !dec.getRationale().isBlank()) md.line("Rationale: " + dec.getRationale());
+        } else {
+            md.line("Routed to **" + nv(dec.getRequiredAuthority()) + "** — awaiting the named-human decision.");
+        }
+        md.muted("The recommendation and sign-off are a named-human action; this section reports it and never substitutes for it.");
+    }
+
+    /** Exposure-norm / limit compliance posture (deterministically enforced in limit-service). */
+    private void secRegulatoryCompliance(Md md, Ctx ctx) {
+        DealEnvelopeDto env = ctx.env();
+        RiskSummaryDto rs = ctx.rs();
+        md.h2("Regulatory & exposure-norm compliance");
+        Map<String, String> kv = new LinkedHashMap<>();
+        kv.put("Jurisdiction", nv(env.jurisdiction()));
+        kv.put("Proposed exposure", money(env.totalProposedAmount(), env.currency()));
+        kv.put("Tenor", env.tenorMonths() + " months");
+        if (rs.rating() != null) kv.put("Rating escalation", rs.rating().escalated() ? "Escalated" : "None");
+        if (rs.pricing() != null) kv.put("Below-hurdle escalation", rs.pricing().belowHurdle() ? "Required" : "Not triggered");
+        md.kvBlock(kv);
+        md.muted("Single / group-borrower exposure norms and country / department limits are enforced deterministically in "
+                + "limit-service at booking. This section summarises the governance posture; it does not recompute any limit.");
+    }
+
+    // ---- helpers for the richer sections --------------------------------------------------------
+
+    /** Canonical trend lines rendered in the multi-year table, in display order. */
+    private static final Map<String, String> TREND_LINES = trendLines();
+
+    private static Map<String, String> trendLines() {
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("REVENUE", "Revenue");
+        m.put("EBITDA", "EBITDA");
+        m.put("PAT", "PAT");
+        m.put("TOTAL_DEBT", "Total debt");
+        m.put("NET_WORTH", "Net worth");
+        m.put("CASH", "Cash");
+        m.put("CFO", "Cash flow from ops");
+        return m;
+    }
+
+    /**
+     * Advisory, prose-only narrative helper for the qualitative sections. Never produces or mutates a
+     * figure and never recommends a credit decision. Fail-soft: {@code none}/error/empty returns an
+     * unusable {@link LlmResult}, so the caller falls back to grounded facts or a graceful note.
+     */
+    private LlmResult advisoryNarrative(String capability, String guidance, String facts) {
+        String system = "You are drafting an ADVISORY, prose-only section for a wholesale-credit appraisal memo "
+                + "(capability=" + capability + "). " + guidance + " Use ONLY the facts supplied; quote every figure "
+                + "verbatim and never invent, estimate or change a value. Do not approve, reject or recommend a credit "
+                + "decision — a named human at the required authority signs. Reply with 3-5 sentences of plain prose.";
+        return safeComplete(LlmRequest.of(capability, system, facts));
+    }
+
+    /** The SECTOR_OUTLOOK master matching the deal segment (by record key or payload segment), or null. */
+    private Map<String, Object> sectorOutlook(String segment) {
+        if (segment == null || segment.isBlank()) return null;
+        for (MasterRecordDto r : upstream.masters("SECTOR_OUTLOOK")) {
+            Map<String, Object> p = payload(r);
+            Object seg = p.get("segment");
+            if (segment.equalsIgnoreCase(r.recordKey())
+                    || (seg != null && segment.equalsIgnoreCase(String.valueOf(seg)))) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    private static String cap(String key) {
+        if (key == null || key.isBlank()) return key;
+        String s = key.replace('_', ' ').trim().toLowerCase(Locale.UK);
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     // ----------------------------------------------------------- format resolution

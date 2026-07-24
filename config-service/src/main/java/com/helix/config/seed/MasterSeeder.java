@@ -648,6 +648,41 @@ public class MasterSeeder implements CommandLineRunner {
                         sec("covenants", "Covenants"),
                         sec("routing", "Approval Routing"),
                         sec("provenance", "Provenance"))));
+
+        // FULL_CAM — the comprehensive bank-grade CAM: every core section PLUS the richer sections a
+        // real committee memo carries (borrower/management overview, industry outlook, multi-year
+        // financial trend, key risks & mitigants, security-perfection detail, account conduct,
+        // deviations & justifications, RAROC/profitability, ESG, conditions, RM recommendation and
+        // regulatory/exposure-norm compliance). No default segment — it is an explicit-pick format so
+        // it never changes any segment's default layout. Every section is a rendering; figures are
+        // quoted verbatim, and the advisory prose is fail-soft (deterministic content when no provider).
+        masters.seedActive("PROPOSAL_FORMAT", "FULL_CAM", null, map(
+                "label", "Full bank CAM (comprehensive)", "segment", "",
+                "sections", java.util.List.of(
+                        sec("executive_summary", "Executive Summary"),
+                        sec("borrower_background", "Borrower Background & Management"),
+                        sec("industry_outlook", "Industry Outlook"),
+                        sec("facilities", "Facilities Proposed"),
+                        sec("sublimits", "Sublimits & Interchangeability"),
+                        sec("collateral", "Collateral & Security"),
+                        sec("security_perfection", "Security & Perfection Status"),
+                        sec("financials", "Financial Position (latest)"),
+                        sec("financial_trend", "Financial Trend (multi-year)"),
+                        sec("ratios", "Key Ratios"),
+                        sec("rating", "Risk Rating"),
+                        sec("key_risks_mitigants", "Key Risks & Mitigants"),
+                        sec("capital", "Capital Projection"),
+                        sec("pricing", "Risk-Adjusted Pricing"),
+                        sec("raroc_profitability", "RAROC & Profitability"),
+                        sec("covenants", "Covenants"),
+                        sec("conditions", "Conditions Precedent & Subsequent"),
+                        sec("deviations", "Deviations & Justifications"),
+                        sec("esg", "ESG Assessment"),
+                        sec("account_conduct", "Account Conduct"),
+                        sec("regulatory_compliance", "Regulatory & Exposure-Norm Compliance"),
+                        sec("routing", "Approval Routing"),
+                        sec("recommendation", "Recommendation"),
+                        sec("provenance", "Provenance"))));
     }
 
     private Map<String, Object> sec(String key, String title) {
